@@ -38,6 +38,9 @@ hf = [
 ]
 torch = ["torch", "torchvision"]
 track = ["mlflow"]
+cloud = [
+    "modal>=1.5.5",
+]
 
 [dependency-groups]
 dev = ["pytest", "ruff", "ipykernel"]

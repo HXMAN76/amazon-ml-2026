@@ -47,8 +47,13 @@ def main(argv: list[str] | None = None) -> None:
 
     import torch
     from datasets import Dataset
-    from transformers import (AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding,
-                              Trainer, TrainingArguments)
+    from transformers import (
+        AutoModelForSequenceClassification,
+        AutoTokenizer,
+        DataCollatorWithPadding,
+        Trainer,
+        TrainingArguments,
+    )
 
     from amlc.data.io import read_table
 
@@ -107,6 +112,10 @@ def main(argv: list[str] | None = None) -> None:
     trainer.train(resume_from_checkpoint=latest_checkpoint(a.output_dir))
     trainer.save_model(str(Path(a.output_dir) / "final"))  # LoRA: saves only the small adapter
     tok.save_pretrained(str(Path(a.output_dir) / "final"))
+    import json
+
+    (Path(a.output_dir) / "final" / "amlc_labels.json").write_text(json.dumps(
+        {"task": a.task, "target": a.target, "classes": list(label_map) if label_map else None}, default=str))
     print("saved", Path(a.output_dir) / "final")
 
 

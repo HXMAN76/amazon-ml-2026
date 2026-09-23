@@ -9,12 +9,14 @@
 #   02-processed/  03-features/  04-models/  05-predictions/  06-submissions/  07-experiments/
 set -euo pipefail
 cd "$(dirname "$0")" && source ./env.sh
-for v in ACCOUNT_A ACCOUNT_B ACCOUNT_C ACCOUNT_D; do : "${!v:?fill $v in aws/env.sh}"; done
+: "${ACCOUNT_A:?fill ACCOUNT_A in aws/env.sh}"
+# B/C/D may be filled in later: rerun this script to add them to the bucket policy
 [[ "$(me)" == "$ACCOUNT_A" ]] || { echo "run this in ACCOUNT_A ($ACCOUNT_A), you are in $(me)"; exit 1; }
 
 if ! aws s3api head-bucket --bucket "$HUB_BUCKET" 2>/dev/null; then
-  aws s3api create-bucket --bucket "$HUB_BUCKET" --region "$AWS_REGION" \
-    --create-bucket-configuration LocationConstraint="$AWS_REGION" \
+  loc=()  # us-east-1 rejects an explicit LocationConstraint
+  [[ "$AWS_REGION" != us-east-1 ]] && loc=(--create-bucket-configuration LocationConstraint="$AWS_REGION")
+  aws s3api create-bucket --bucket "$HUB_BUCKET" --region "$AWS_REGION" "${loc[@]}" \
     --object-ownership BucketOwnerEnforced
   echo "created s3://$HUB_BUCKET"
 fi
@@ -30,7 +32,12 @@ aws s3api put-bucket-lifecycle-configuration --bucket "$HUB_BUCKET" --lifecycle-
     {"ID": "tmp-expire", "Status": "Enabled", "Filter": {"Prefix": "tmp/"}, "Expiration": {"Days": 3}}
   ]}'
 
-TEAM="\"arn:aws:iam::$ACCOUNT_B:root\",\"arn:aws:iam::$ACCOUNT_C:root\",\"arn:aws:iam::$ACCOUNT_D:root\""
+TEAM=""
+for acct in "$ACCOUNT_B" "$ACCOUNT_C" "$ACCOUNT_D"; do
+  [[ -n "$acct" ]] && TEAM+="${TEAM:+,}\"arn:aws:iam::$acct:root\""
+done
+# no teammates yet: grant to A itself so the policy stays valid
+[[ -z "$TEAM" ]] && TEAM="\"arn:aws:iam::$ACCOUNT_A:root\""
 cat > /tmp/hub-policy.json <<EOF
 {
   "Version": "2012-10-17",

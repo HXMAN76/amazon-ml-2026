@@ -7,6 +7,8 @@
 set -uo pipefail
 cd "$(dirname "$0")" && source ./env.sh
 DRY_RUN="${DRY_RUN:-0}"
+GPU_VCPU="${GPU_VCPU:-4}"     # 4 = one g4dn/g5/g6.xlarge
+SAGEMAKER="${SAGEMAKER:-0}"   # 1 = also request SageMaker job quotas
 
 request() {  # service quota_code desired label
   local svc=$1 code=$2 want=$3 label=$4 cur
@@ -30,9 +32,11 @@ sm_code() {  # exact SageMaker quota name -> code
     --query "Quotas[?QuotaName=='$1'].QuotaCode | [0]" --output text
 }
 
-echo "== EC2 ($AWS_REGION): 8 vCPU = one g5/g6.2xlarge or two xlarge"
-request ec2 L-DB2E81BA 8 "Running On-Demand G and VT instances (vCPU)"
-request ec2 L-3819A6DF 8 "All G and VT Spot Instance Requests (vCPU)"
+echo "== EC2 ($AWS_REGION): $GPU_VCPU vCPU (xlarge = 4, 2xlarge = 8)"
+request ec2 L-DB2E81BA "$GPU_VCPU" "Running On-Demand G and VT instances (vCPU)"
+request ec2 L-3819A6DF "$GPU_VCPU" "All G and VT Spot Instance Requests (vCPU)"
+
+[[ "$SAGEMAKER" == 1 ]] || { echo "(SageMaker quotas skipped; SAGEMAKER=1 to request)"; exit 0; }
 
 echo "== SageMaker ($AWS_REGION), 1 instance each"
 # Priority order: training (incl. spot), processing (batch GPU jobs), transform. Endpoints not needed.

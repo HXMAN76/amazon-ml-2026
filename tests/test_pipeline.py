@@ -71,7 +71,8 @@ def test_cv_train_and_blend(tmp_path, monkeypatch):
     r1 = cv_train(X, y, Xt, model="lgbm", metric="smape", target="log1p", n_folds=3, name="a",
                   params={"n_estimators": 200})
     r2 = cv_train(X, y, Xt, model="xgb", metric="smape", target="log1p", n_folds=3, name="b",
-                  params={"n_estimators": 200, "early_stopping_rounds": 20})
+                  params={"n_estimators": 300, "learning_rate": 0.1, "max_depth": 4, "colsample_bytree": 1.0,
+                                    "early_stopping_rounds": 20})
     assert r1["score"] < 30 and r2["score"] < 30
     b = blend(["a", "b"], y, metric="smape")
     assert b["score"] <= min(r1["score"], r2["score"]) + 1e-6
@@ -88,3 +89,33 @@ def test_tracking_writes_runs_file(tmp_path, monkeypatch):
         run.log_metrics({"cv": 1.23})
     rec = json.loads((tmp_path / "runs.jsonl").read_text())
     assert rec["metrics"]["cv"] == 1.23 and rec["status"] == "ok" and rec["tags"]["dataset"] == "v1"
+
+
+@pytest.mark.parametrize("task", ["reg", "clf"])
+def test_baseline_end_to_end(tmp_path, monkeypatch, task):
+    monkeypatch.chdir(tmp_path)
+    rng = np.random.default_rng(1)
+    words = ["tea", "coffee", "sugar", "pack", "bottle", "organic", "large", "small"]
+    n = 300
+
+    def rows(k, offset):
+        qty = rng.integers(1, 50, k)
+        text = [f"Item Name: {' '.join(rng.choice(words, 4))} Value: {q} Unit: Ounce" for q in qty]
+        return pl.DataFrame({"sample_id": np.arange(offset, offset + k), "catalog_content": text,
+                             "price": qty * 2.0 + rng.normal(0, 1, k), "label": np.where(qty > 25, "big", "small")})
+
+    tr, te = rows(n, 0), rows(60, 10_000).drop("price", "label")
+    tr.write_csv(tmp_path / "train.csv")
+    te.write_csv(tmp_path / "test.csv")
+    target, pred_type = ("price", "float") if task == "reg" else ("label", "str")
+    (tmp_path / "spec.yaml").write_text(f"id_col: sample_id\npred_cols: [{target}]\npred_type: {pred_type}\n")
+
+    from amlc.baseline import main
+
+    main(["--train", "train.csv", "--test", "test.csv", "--id-col", "sample_id", "--target", target,
+          "--text-cols", "catalog_content", "--task", task, "--metric", "smape" if task == "reg" else "accuracy",
+          "--svd-dim", "8", "--folds", "3", "--spec", "spec.yaml", "--out", "sub.csv"])
+    sub = pl.read_csv("sub.csv")
+    assert sub.height == 60 and sub.columns == ["sample_id", target]
+    if task == "clf":
+        assert set(sub[target].unique().to_list()) <= {"big", "small"}

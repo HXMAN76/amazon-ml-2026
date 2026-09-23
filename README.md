@@ -14,17 +14,32 @@ raw csv ──> downloader (async, resumable) ──> images + manifest ──> 
              VLM (4-bit, sharded, chunk-checkpointed) ─> parsed values ┘
 ```
 
-Compute pools, in order of use:
-1. **Local RTX 4060 (8 GB)**: embeddings, small VLMs in 4-bit, GBMs on 24 CPU cores.
-2. **Kaggle**: about 30 free GPU-hours a week per account on T4×2 or P100, so roughly 120 hours for the team. Use [notebooks/kaggle_bootstrap.py](notebooks/kaggle_bootstrap.py).
-3. **AWS g5/g6**: only if quota was approved and the account is on the Paid plan. See [aws/40_launch_gpu.sh](aws/40_launch_gpu.sh). The instance auto-terminates after `MAX_HOURS`.
+Compute pools, in order of use (budget: $200 of AWS credits per account, but GPU quota starts at 0):
+
+| Pool | What | Cost | Use for |
+|---|---|---|---|
+| Laptop | RTX 4060 8GB, 24 cores, 30GB RAM | $0 | GBMs, TF-IDF, small models, debugging |
+| Kaggle ×4 | T4×2 (32GB) or P100; 30 h/week each; the quota **resets Saturday 00:00 UTC**, which falls inside the window | $0 | long training, embeddings. Setup: [notebooks/kaggle_bootstrap.py](notebooks/kaggle_bootstrap.py) |
+| Modal ×4 | $30/month free per workspace, no card; L4/A10G/A100; up to 10 GPUs in parallel | $0 | big sharded inference (VLM or embeddings over the whole test set). Setup: [src/amlc/modal_app.py](src/amlc/modal_app.py) |
+| AWS hub | `s3://amlc-2026-hub-567503593043`, us-east-1 | ~$1–3 | shared data, images, features, predictions |
+| AWS GPU | account A is on the Paid plan; 4 vCPU of G-type quota requested (on-demand + spot) | g4dn spot ≈ $0.19/h, g6 ≈ $0.97/h | bonus, only if the quota is approved. [aws/40_launch_gpu.sh](aws/40_launch_gpu.sh) auto-terminates |
+
+### Modal setup (each member, ~5 min)
+
+```bash
+uv sync --all-extras
+uv run modal token new                      # browser login, creates your own free workspace
+uv run modal secret create amlc-aws AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+    AWS_DEFAULT_REGION=us-east-1 AMLC_BUCKET=amlc-2026-hub-567503593043 HF_TOKEN=hf_...
+# the keys are the amlc-external user's (account A owner creates them: aws iam create-access-key --user-name amlc-external)
+```
 
 ## Before the dataset drops (each member)
 
 - [ ] Accept the GitHub invite and clone. Run `make setup`, then `make test`.
 - [ ] **Kaggle**: create an account, **verify your phone** (needed for GPU and internet), and add Secrets: `GITHUB_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AMLC_BUCKET`.
 - [ ] **Hugging Face**: create an account and a read token, then run `huggingface-cli login`. Some models (Llama, Gemma, PaliGemma) need you to accept a license on the model page first.
-- [ ] **AWS**: work in your own account's CloudShell (console, top bar `>_`), region **ap-south-1**:
+- [ ] **AWS**: work in your own account's CloudShell (console, top bar `>_`), region **us-east-1**:
   ```bash
   git clone https://github.com/HXMAN76/amazon-ml-2026.git && cd amazon-ml-2026
   bash aws/00_account_check.sh                    # paste output in team chat
@@ -34,7 +49,7 @@ Compute pools, in order of use:
   ```
 - [ ] **Account A only**: fill the account ids in [aws/env.sh](aws/env.sh) and commit. Then run `bash aws/10_hub_bucket.sh` and `bash aws/15_external_user.sh`.
 - [ ] **B, C, D**: run `bash aws/30_verify_hub_access.sh`. It should print PASS for list, write, read, and the 00-raw denial.
-- [ ] **Laptop AWS access**: run `aws login --profile amlc`, then `export AWS_PROFILE=amlc AMLC_BUCKET=amlc-2026-hub-<ACCOUNT_A>`.
+- [ ] **Laptop AWS access**: run `aws login --profile amlc`, then `export AWS_PROFILE=amlc AMLC_BUCKET=amlc-2026-hub-567503593043`.
 
 ### Free plan vs Paid plan
 

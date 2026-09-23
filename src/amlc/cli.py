@@ -4,6 +4,7 @@ import importlib
 import sys
 
 COMMANDS = {
+    "baseline": "amlc.baseline",
     "download": "amlc.data.downloader",
     "embed": "amlc.features.embed",
     "vlm": "amlc.inference.vlm",

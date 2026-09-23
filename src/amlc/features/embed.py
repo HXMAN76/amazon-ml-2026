@@ -64,7 +64,7 @@ def embed_images(paths: list[str | None], model_name: str, batch_size: int = 64,
     from transformers import AutoImageProcessor, AutoModel
 
     device, dtype = _device_dtype()
-    model = AutoModel.from_pretrained(model_name, torch_dtype=dtype).to(device).eval()
+    model = AutoModel.from_pretrained(model_name, dtype=dtype).to(device).eval()
     processor = AutoImageProcessor.from_pretrained(model_name)
     ds = _ImageDS([p or "" for p in paths], processor)
     dl = DataLoader(ds, batch_size=batch_size, num_workers=num_workers, pin_memory=device == "cuda")
@@ -96,7 +96,7 @@ def embed_texts(texts: list[str | None], model_name: str, batch_size: int = 128,
         # text tower of a CLIP/SigLIP model: same space as its image embeddings
         from transformers import AutoModel, AutoTokenizer
 
-        model = AutoModel.from_pretrained(model_name, torch_dtype=dtype).to(device).eval()
+        model = AutoModel.from_pretrained(model_name, dtype=dtype).to(device).eval()
         tok = AutoTokenizer.from_pretrained(model_name)
         out = []
         with torch.inference_mode():

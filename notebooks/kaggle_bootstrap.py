@@ -13,7 +13,7 @@ for k in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AMLC_BUCKET"]:
         os.environ[k] = s.get_secret(k)
     except Exception:
         print("missing secret", k)
-os.environ["AWS_DEFAULT_REGION"] = "ap-south-1"
+os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
 os.environ["AMLC_MEMBER"] = "kaggle-" + os.environ.get("KAGGLE_USERNAME", "x")
 
 REPO = "HXMAN76/amazon-ml-2026"

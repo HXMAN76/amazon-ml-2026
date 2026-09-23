@@ -1,11 +1,11 @@
 # Shared settings for every aws/*.sh script. Edit once, commit, everyone pulls.
 # Source-safe: only variable definitions.
 
-export AWS_REGION="${AWS_REGION:-ap-south-1}"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_DEFAULT_REGION="$AWS_REGION"
 
-# 12-digit account ids. Fill all four before running 10_hub_bucket.sh.
-export ACCOUNT_A="${ACCOUNT_A:-}"   # data hub (S3, ECR)
+# 12-digit account ids. B/C/D: fill, commit, and rerun 10_hub_bucket.sh in account A.
+export ACCOUNT_A="${ACCOUNT_A:-567503593043}"   # data hub (S3, ECR)
 export ACCOUNT_B="${ACCOUNT_B:-}"
 export ACCOUNT_C="${ACCOUNT_C:-}"
 export ACCOUNT_D="${ACCOUNT_D:-}"

@@ -66,25 +66,32 @@ def _fit(est, model, Xtr, ytr, Xva, yva):
 def cv_train(X, y, X_test=None, model: str = "lgbm", metric: str = "rmse", task: str = "reg",
              target: str | None = None, n_folds: int = 5, seed: int = 42, params: dict | None = None,
              gpu: bool = False, name: str | None = None) -> dict:
-    """Returns {"oof", "test", "fold_scores", "score"}. Saves preds under artifacts/preds/<name>/."""
+    """Returns {"oof", "test", "fold_scores", "score"}; for task="clf" oof/test are class probabilities
+    (labels 0..k-1 = argmax). Saves preds under artifacts/preds/<name>/."""
     fwd, inv = TARGETS[target]
     y = np.asarray(y)
     yt = fwd(y) if task == "reg" else y
     metric_fn, _ = get_metric(metric)
     splitter = (StratifiedKFold if task == "clf" else KFold)(n_folds, shuffle=True, random_state=seed)
-    oof = np.zeros(len(y), dtype=float)
-    test = np.zeros(len(X_test), dtype=float) if X_test is not None else None
+    # classification keeps class probabilities (averaged over folds); labels = argmax
+    n_cls = len(np.unique(y)) if task == "clf" else 0
+    oof = np.zeros((len(y), n_cls) if n_cls else len(y), dtype=float)
+    test = None
+    if X_test is not None:
+        test = np.zeros((len(X_test), n_cls) if n_cls else len(X_test), dtype=float)
     scores = []
     for k, (tr, va) in enumerate(splitter.split(X, y)):
         est = _fit(_make(model, task, params or {}, gpu), model, X[tr], yt[tr], X[va], yt[va])
-        pred = est.predict(X[va])
-        oof[va] = inv(pred) if task == "reg" else pred
-        scores.append(metric_fn(y[va], oof[va]))
+        if task == "reg":
+            oof[va] = inv(est.predict(X[va]))
+            scores.append(metric_fn(y[va], oof[va]))
+        else:
+            oof[va] = est.predict_proba(X[va])
+            scores.append(metric_fn(y[va], oof[va].argmax(1)))
         print(f"  fold {k}: {metric}={scores[-1]:.5f}", flush=True)
         if X_test is not None:
-            tp = est.predict(X_test)
-            test += (inv(tp) if task == "reg" else tp) / n_folds
-    score = metric_fn(y, oof)
+            test += (inv(est.predict(X_test)) if task == "reg" else est.predict_proba(X_test)) / n_folds
+    score = metric_fn(y, oof if task == "reg" else oof.argmax(1))
     print(f"CV {metric}={score:.5f} (folds {np.mean(scores):.5f} +- {np.std(scores):.5f})")
     if name:
         d = PRED_DIR / name
@@ -96,7 +103,7 @@ def cv_train(X, y, X_test=None, model: str = "lgbm", metric: str = "rmse", task:
 
 
 def blend(names: list[str], y, metric: str = "rmse") -> dict:
-    """Non-negative weights summing to 1 that optimise the metric on saved OOFs."""
+    """Non-negative weights summing to 1 that optimise the metric on saved regression OOFs."""
     from scipy.optimize import minimize
 
     fn, greater = get_metric(metric)

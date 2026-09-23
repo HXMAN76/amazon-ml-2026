@@ -29,10 +29,10 @@ def load_vlm(model_name: str, load_in_4bit: bool = False, load_in_8bit: bool = F
     import torch
     from transformers import AutoModelForImageTextToText, AutoProcessor, BitsAndBytesConfig
 
-    kwargs = {"device_map": "auto", "torch_dtype": torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16}
+    kwargs = {"device_map": "auto", "dtype": torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16}
     if load_in_4bit:
         kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=kwargs["torch_dtype"],
+            load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=kwargs["dtype"],
             bnb_4bit_use_double_quant=True,
         )
     elif load_in_8bit:

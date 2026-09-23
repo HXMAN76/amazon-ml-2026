@@ -31,7 +31,7 @@ class SubmissionSpec:
     header: bool = True
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "SubmissionSpec":
+    def from_yaml(cls, path: str | Path) -> SubmissionSpec:
         return cls(**(yaml.safe_load(Path(path).read_text()) or {}))
 
 
