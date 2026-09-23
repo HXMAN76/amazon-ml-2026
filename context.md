@@ -21,7 +21,8 @@ Handoff notes for any new session (human or Claude). Last updated 2026-09-24.
 | Kaggle ×4 | Each member sets up their own | T4×2 or P100, 30 GPU-h/week each; the quota resets Saturday 00:00 UTC (inside the window). Bootstrap: `notebooks/kaggle_bootstrap.py` |
 | Modal | Account A's workspace is verified working | $30/month credit per workspace. **A card is required.** Set spend limit $0 so only credits are used. Up to 10 GPUs in parallel |
 | AWS account A (567503593043) | Paid plan, $200 credits | Budget alert at $180 to the owner's email. GPU quota 4 vCPU on-demand plus 4 spot, case open (not approved as of 24 Sep) |
-| AWS accounts B/C/D | Free plan, $200 each | Free plan cannot launch GPUs. Use them for S3 and CPU only, or keep them in reserve |
+| AWS account B (767397931665) | Free plan, $200 | Has hub access through the bucket policy. Verify from B with `bash aws/30_verify_hub_access.sh` |
+| AWS accounts C/D | Free plan, $200 each | Free plan cannot launch GPUs. Use them for S3 and CPU only. Send the account IDs so they can be added to the hub |
 
 - Region is **us-east-1** for everything.
 - Hub bucket: `s3://amlc-2026-hub-567503593043`.
