@@ -20,7 +20,7 @@ Compute pools, in order of use (budget: $200 of AWS credits per account, but GPU
 |---|---|---|---|
 | Laptop | RTX 4060 8GB, 24 cores, 30GB RAM | $0 | GBMs, TF-IDF, small models, debugging |
 | Kaggle ×4 | T4×2 (32GB) or P100; 30 h/week each; the quota **resets Saturday 00:00 UTC**, which falls inside the window | $0 | long training, embeddings. Setup: [notebooks/kaggle_bootstrap.py](notebooks/kaggle_bootstrap.py) |
-| Modal ×4 | $30/month free per workspace, no card; L4/A10G/A100; up to 10 GPUs in parallel | $0 | big sharded inference (VLM or embeddings over the whole test set). Setup: [src/amlc/modal_app.py](src/amlc/modal_app.py) |
+| Modal ×4 | $30/month free credit per workspace (card required: set spend limit **$0** so only credits are used); L4/A10G/A100; up to 10 GPUs in parallel | $0 | big sharded inference (VLM or embeddings over the whole test set). Setup: [src/amlc/modal_app.py](src/amlc/modal_app.py) |
 | AWS hub | `s3://amlc-2026-hub-567503593043`, us-east-1 | ~$1–3 | shared data, images, features, predictions |
 | AWS GPU | account A is on the Paid plan; 4 vCPU of G-type quota requested (on-demand + spot) | g4dn spot ≈ $0.19/h, g6 ≈ $0.97/h | bonus, only if the quota is approved. [aws/40_launch_gpu.sh](aws/40_launch_gpu.sh) auto-terminates |
 
@@ -28,10 +28,13 @@ Compute pools, in order of use (budget: $200 of AWS credits per account, but GPU
 
 ```bash
 uv sync --all-extras
-uv run modal token new                      # browser login, creates your own free workspace
+uv run modal token new                      # browser login, creates your own workspace
+# Modal dashboard > Usage & Billing: add card, set custom spend limit $0 (credits only, card never charged)
 uv run modal secret create amlc-aws AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
     AWS_DEFAULT_REGION=us-east-1 AMLC_BUCKET=amlc-2026-hub-567503593043 HF_TOKEN=hf_...
-# the keys are the amlc-external user's (account A owner creates them: aws iam create-access-key --user-name amlc-external)
+# keys: amlc-external user. Create/paste them in a terminal OUTSIDE Claude so secrets never land in a transcript.
+uv run modal app list                       # anything 'ephemeral'/'deployed' still running is billing
+uv run modal app stop <app-id>
 ```
 
 ## Before the dataset drops (each member)

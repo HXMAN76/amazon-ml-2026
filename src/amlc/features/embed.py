@@ -36,6 +36,19 @@ def _device_dtype():
     return "cpu", torch.float32
 
 
+def _pooled(out):
+    """transformers v5 returns ModelOutput from get_*_features (v4 returned a tensor)."""
+    import torch
+
+    if isinstance(out, torch.Tensor):
+        return out
+    for key in ("pooler_output", "image_embeds", "text_embeds"):
+        v = getattr(out, key, None)
+        if v is not None:
+            return v
+    return out.last_hidden_state[:, 0]
+
+
 class _ImageDS:
     def __init__(self, paths, processor):
         self.paths = paths
@@ -75,10 +88,9 @@ def embed_images(paths: list[str | None], model_name: str, batch_size: int = 64,
         for i, (px, ok) in enumerate(dl):
             px = px.to(device, dtype=dtype, non_blocking=True)
             if hasattr(model, "get_image_features"):  # CLIP / SigLIP family
-                feats = model.get_image_features(pixel_values=px)
+                feats = _pooled(model.get_image_features(pixel_values=px))
             else:  # ViT / DINOv2 / generic encoders
-                o = model(pixel_values=px)
-                feats = o.pooler_output if getattr(o, "pooler_output", None) is not None else o.last_hidden_state[:, 0]
+                feats = _pooled(model(pixel_values=px))
             feats = torch.nn.functional.normalize(feats.float(), dim=-1)
             out.append(feats.cpu().numpy())
             oks.append(ok.numpy())
@@ -103,7 +115,7 @@ def embed_texts(texts: list[str | None], model_name: str, batch_size: int = 128,
             for i in range(0, len(texts), batch_size):
                 enc = tok(texts[i : i + batch_size], padding="max_length", truncation=True,
                           max_length=min(max_length, tok.model_max_length), return_tensors="pt").to(device)
-                f = model.get_text_features(**enc)
+                f = _pooled(model.get_text_features(**enc))
                 out.append(torch.nn.functional.normalize(f.float(), dim=-1).cpu().numpy())
         return np.concatenate(out)
 

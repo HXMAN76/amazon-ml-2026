@@ -35,17 +35,21 @@ from pathlib import Path
 
 import modal
 
-ROOT = Path(__file__).resolve().parents[2]
-
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("libgl1", "libglib2.0-0", "curl")
-    .pip_install_from_pyproject(str(ROOT / "pyproject.toml"), optional_dependencies=["hf", "torch"])
-    .pip_install("awscli")
     .env({"HF_HOME": "/cache/hf", "PYTHONUNBUFFERED": "1", "TOKENIZERS_PARALLELISM": "false"})
-    .add_local_dir(ROOT / "configs", "/root/work/configs")
-    .add_local_python_source("amlc")
 )
+if modal.is_local():
+    # Repo paths only exist on the laptop; inside the container this module lives at /root/modal_app.py
+    # and the already-built image is reused, so these steps are skipped there.
+    ROOT = Path(__file__).resolve().parents[2]
+    image = (
+        image.pip_install_from_pyproject(str(ROOT / "pyproject.toml"), optional_dependencies=["hf", "torch"])
+        .pip_install("awscli")
+        .add_local_dir(ROOT / "configs", "/root/work/configs")
+        .add_local_python_source("amlc")
+    )
 
 app = modal.App("amlc-2026", image=image)
 hf_cache = modal.Volume.from_name("amlc-hf-cache", create_if_missing=True)
@@ -56,7 +60,10 @@ SYNC = 'aws s3 sync out/ "s3://$AMLC_BUCKET/{out}/" --only-show-errors'
 PRELUDE = """set -euo pipefail
 mkdir -p out
 aws s3 sync "s3://$AMLC_BUCKET/{out}/" out/ --only-show-errors || true
-(while true; do sleep 180; {sync} || true; done) &
+(while true; do sleep 180; {sync} || true; done) >/dev/null 2>&1 &
+SYNC_PID=$!
+# the loop must die with the script, or it holds the output pipe open and the shard never returns
+trap 'kill $SYNC_PID 2>/dev/null || true' EXIT
 """
 
 
@@ -137,8 +144,9 @@ def main(preset: str = "", script: str = "", input_key: str = "", out_key: str =
 
     fn = run_shard.with_options(gpu=gpu)
     failed = []
-    for shard, res in zip(todo, fn.map(todo, kwargs={"script": script, "num_shards": num_shards, "n_rows": n_rows},
-                                       return_exceptions=True)):
+    results = list(fn.map(todo, kwargs={"script": script, "num_shards": num_shards, "n_rows": n_rows},
+                          return_exceptions=True))
+    for shard, res in zip(todo, results):
         if isinstance(res, Exception):
             failed.append(shard)
             print(f"FAILED shard {shard}: {res}")
