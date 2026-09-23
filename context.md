@@ -22,7 +22,8 @@ Handoff notes for any new session (human or Claude). Last updated 2026-09-24.
 | Modal | Account A's workspace is verified working | $30/month credit per workspace. **A card is required.** Set spend limit $0 so only credits are used. Up to 10 GPUs in parallel |
 | AWS account A (567503593043) | Paid plan, $200 credits | Budget alert at $180 to the owner's email. GPU quota 4 vCPU on-demand plus 4 spot, case open (not approved as of 24 Sep) |
 | AWS account B (767397931665) | Free plan, $200 | Has hub access through the bucket policy. Verify from B with `bash aws/30_verify_hub_access.sh` |
-| AWS accounts C/D | Free plan, $200 each | Free plan cannot launch GPUs. Use them for S3 and CPU only. Send the account IDs so they can be added to the hub |
+| AWS account C (323170157217) | Free plan, $200 | Has hub access through the bucket policy. Verify from C with the same script |
+| AWS account D | Free plan, $200 | ID not received yet. Add it to `aws/env.sh` and rerun `aws/10_hub_bucket.sh` from account A |
 
 - Region is **us-east-1** for everything.
 - Hub bucket: `s3://amlc-2026-hub-567503593043`.

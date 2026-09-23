@@ -7,7 +7,7 @@ export AWS_DEFAULT_REGION="$AWS_REGION"
 # 12-digit account ids. B/C/D: fill, commit, and rerun 10_hub_bucket.sh in account A.
 export ACCOUNT_A="${ACCOUNT_A:-567503593043}"   # data hub (S3, ECR)
 export ACCOUNT_B="${ACCOUNT_B:-767397931665}"
-export ACCOUNT_C="${ACCOUNT_C:-}"
+export ACCOUNT_C="${ACCOUNT_C:-323170157217}"
 export ACCOUNT_D="${ACCOUNT_D:-}"
 
 export HUB_BUCKET="${HUB_BUCKET:-amlc-2026-hub-${ACCOUNT_A}}"
