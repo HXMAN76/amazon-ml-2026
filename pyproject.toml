@@ -1,0 +1,59 @@
+[project]
+name = "amlc"
+version = "0.1.0"
+description = "Amazon ML Challenge 2026 team pipeline"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "numpy",
+    "pandas",
+    "polars",
+    "pyarrow",
+    "scipy",
+    "scikit-learn",
+    "lightgbm",
+    "xgboost",
+    "catboost",
+    "tqdm",
+    "aiohttp",
+    "pillow",
+    "boto3",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+# GPU / Hugging Face stack. On Kaggle/Colab torch is preinstalled: install with `pip install -e .[hf]`
+# so their CUDA build of torch is kept.
+hf = [
+    "transformers",
+    "accelerate",
+    "peft",
+    "datasets",
+    "huggingface-hub",
+    "safetensors",
+    "sentence-transformers",
+    "timm",
+    "bitsandbytes; platform_system == 'Linux'",
+    "opencv-python-headless",
+]
+torch = ["torch", "torchvision"]
+track = ["mlflow"]
+
+[dependency-groups]
+dev = ["pytest", "ruff", "ipykernel"]
+
+[project.scripts]
+amlc = "amlc.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/amlc"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
