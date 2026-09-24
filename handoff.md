@@ -1,15 +1,17 @@
 # Handoff: Amazon ML Challenge 2026 (Business Entity Resolution)
 
-Written 2026-09-25, refreshed about 04:30 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
+Written 2026-09-25, refreshed about 05:15 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
 
 ## 1. State in brief
 
 Task: link each Source 1 (S1) business record to its S2/S3 records (entity resolution), scored by macro F0.5 per S1 entity; submissions are `matching_results.tsv` plus `candidate_pairs.tsv`. Window closes **Sun 27 Sep 2026 23:59 IST**, 5 submissions per day. Everything runs on one AWS SageMaker notebook (`test-notebook`, ml.g5.xlarge with an A10G, 4 vCPU, 15 GB RAM) driven from the laptop through an S3 job queue (no SSH needed).
 
-- **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Its `matching_results.tsv` passed the official validator including `--check-ids` and is at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. The human uploads to the portal; the leaderboard score is not yet known to the agent.
-- **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singletons 0.959, precision 0.989, recall 0.906). Test prediction job `v1b` is running; outputs will appear under `runs/v1/`.
-- **Remaining loss (4.5 points):** blocking recall 2.19 (pair recall 0.941, unchanged) and matcher 2.30. The token-type upgrade (`g`, `x`, `k`) was measured and reverted (no recall gain, see `research.md` section 14); the fix under test is **cascade blocking**: K 100 raw candidates, a learned first-stage ranker (`stages/prune.py`) keeps the best 30. Jobs `zc1a`, `zc1b`, `zc1c` rebuild blocking, prune, retrain (model name `v2`) and predict.
-- Error analysis of v0 and v1 (`src/scripts/error_analysis.py`, findings in `research.md` sections 12 and 13) drives the priorities.
+- **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Output at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`.
+- **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singleton entities 0.959, precision 0.989, recall 0.906). Output at `runs/v1/output/`. **Both v0 and v1 passed** the official validator (including `--check-ids` on both v1 files) and the bundled rule checker; on test, France is matched at 94.8% of S1 (US 94.3%, India 92.9%). The human uploads to the portal; leaderboard scores are not yet known to the agent. v1 is the recommended upload.
+- **Remaining loss (4.5 points on the train sample):** blocking recall 2.19 (pair recall 0.941) and matcher 2.30.
+- **Blocking upgrade result:** the token-type experiment (`g`, `x`, `k`) gave no gain and was reverted (`research.md` section 14). Truncation by the top-30 rule is the real limit (misses: 1.8% over the df cap, 3.4 to 4.5% truncated; K 60 gives recall 0.9473). The fix being run is **cascade blocking**: K 100 raw candidates, then a learned first-stage ranker (`stages/prune.py`) keeps the best 30. Jobs `zc1a`, `zc1b`, `zc1c` run the chain and produce model `v2` under `runs/v2/`.
+- **Code zip for the portal:** `dist/business_entity_resolution_code.zip` (local, git-ignored), all source under `src/`, README with run steps, pinned requirements. Rebuild from the final code at freeze (commands in section 9).
+- A teammate's plan (`v2.md`, layers L0 to L5 and a harness) was reviewed; agreed integration is in section 9.
 
 ## 2. Access and identity
 
@@ -133,6 +135,8 @@ Everything is in `code/business_entity_resolution`; parameters in `configs/param
 | pairs | `python -m ber.stages.pairs --split train` (7.48M pairs) / `--split test` (51.9M) | `features/{split}/part_*.parquet` (66 columns, 63 model features) | v0: about 13 s per 1.5M-pair chunk; v1: about 60 s per chunk, so test features take about 35 min (Python loops for digit strings and skeletons are the next thing to vectorise) |
 | train_gpu | `python -m ber.stages.train_gpu --name v1` | XGBoost (CUDA) 5-fold grouped OOF, exclusive assignment and threshold tuning; `models/<name>/{xgb.json,config.json,report.json,oof.parquet}` | about 22 s per fold, 3 min in total |
 | predict | `python -m ber.stages.predict --name v1` | `output/<name>/{matching_results.tsv,candidate_pairs.tsv}` and validation (official validator if found at `work/official/validate_submission.py`); scores part by part to fit RAM | about 2 min |
+| prune (cascade, optional) | `python -m ber.stages.block --split test --k 100 --out-name test_raw`, same for `train --all-train --out-name train_raw`, then `python -m ber.stages.prune --train` and `--apply train test` | `blocks/{split}_raw/` (K 100), `models/prune/`, then `blocks/{split}/` (best 30 per S1, plus `p_block`, dropped before the matcher) | raw blocking about the same time as K 30; pruning seconds per shard |
+| result checker | `python src/scripts/check_submission.py <output_dir> <test_dir>` | rule check of both TSVs (format bytes, ids exist, matches subset of candidates, one owner per record) and per-country match statistics | about 1 min |
 | error analysis | `python src/scripts/error_analysis.py v1` | loss decomposition (blocking vs matcher), segments, false-positive/negative taxonomy with raw-text examples | about 2 min |
 
 Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c` name x address word, `m` name-word pair, `d` address-word pair, `h` house-number x address word, and (new, being measured) `g` glued whole name, `x` one-deletion variants of the two rarest name words, `k` consonant skeleton of name words (pool side only for non-Latin names, via romanisation). The pool-index cache key includes `INDEX_VERSION` in `block.py`; bump it when token generation changes. Key parameters: `k` 30, `cap_df` 800 (tokens more frequent than this in the 10.3M pool are ignored; raising it changes nothing but costs up to 100x time), `per_type` rarest-token limits. Candidate id convention: `pid = src * 10_000_000 + rid` (`src` 2 or 3). S1 identifier is `rid`, the row index in the Parquet (0-based, equals row number in the TSV).
@@ -175,18 +179,40 @@ AWS sessions expire: when a command prints "Your session has expired", the human
 9. Job scripts must sync code themselves; forgetting it runs stale code.
 10. `s3 sync --delete` needs `--exclude 'work/*'` when the target contains work data.
 
+11. `polars.write_csv` quotes empty strings (`""`); the official validator reads that as an ID without prefix. Always `quote_style="never"` for the outputs. The old local validator hid this because pandas un-quotes; the local validator now parses raw lines.
+12. The pruner's own score must not be a matcher feature (it was fit on the training S1's labels); `pairs.py` drops `p_block`.
+13. The DuckDB pool-index files under `work/blocks/` are large (train about 15 GB, more with extra token types); delete them to reclaim space (they rebuild from the Parquet), and check `df -h` before adding token types.
+14. Job names starting with `zc` sort last; use such prefixes to control the order of chained jobs.
+
 ## 9. Design summary and next steps
 
 Approved design is `plan.md` (multi-channel blocking, feature matcher, calibration, exclusive assignment, expected-F0.5 per-S1 decision, Makefile + MLflow, single account, baseline first). A teammate proposed a **record-centric** v1 (each S2/S3 record picks its owner or none; sibling consensus; fine-tuned multilingual bi-encoder; Modal); review conclusions: adopt the record-level decision with a none class and calibrated owner probability, the forensics of noise operators from matched train pairs, the evaluation discipline (locked holdout, bootstrap CI, US to India transfer as France proxy, adversarial train-vs-test validation, an empty submission to measure the test singleton share), and sibling features as second-stage stacking; postpone dense-first retrieval, FAISS-GPU, Modal and the fine-tuned e5 until v0 shows where India is weak. Do not rebuild `prepare`, `block` or `features`: extend them.
 
-Suggested order from here (details and evidence in `research.md`):
-1. Finish the blocking upgrade (`g`, `x`, `k` tokens; possibly K 40 to 60 with a first-stage pruner). Blocking recall is the largest remaining loss (2.19 points).
-2. Vectorise the slow v1 features (digit strings, skeletons) so test features take minutes, not 35.
-3. Holdout protocol with bootstrap CI (extend `sample.py` to a dev/holdout split; reuse `decision.macro_f05`), so gains are provably real; US to India transfer as the France proxy.
-4. Record-level decision with a none class, isotonic calibration and per-S1 expected-F0.5 prefix selection (exact algorithms exist, see `research.md`); vetoes on conflicting PIN or house number.
-5. Sibling and consensus features (do the other records of the same S1 agree on digits and name variants?) against look-alike distractors.
-6. Dense multilingual channel or embedding feature only if India stays behind after romanisation; cross-encoder on the ambiguous band only after that.
-7. Freeze, reproduce from scratch, methodology write-up from `docs/Documentation_template.md` in S3, rebuild `dist/business_entity_resolution_code.zip` from the final code (the current zip predates the v1 features), package layout in `context.md` section 1.
+Suggested order from here (evidence in `research.md`, sections 12 to 15):
+1. **Finish the cascade run** (`zc1a` to `zc1c`): check the pruner report first (pair recall of the best 30 versus the top 30 by blocking score; target above 0.9416, K 60 reaches 0.9473). If recall improves and out-of-fold F0.5 beats v1, `v2` replaces v1.
+2. **Scores for all train S1.** The pair model is trained on 250k sampled S1, but competition in a later record-level layer needs p1 for every S1 (test has all of them). S1 outside the sample were never trained on, so scoring them with the final model gives unbiased probabilities. Export `p1` for all train S1 and for test (`predict` currently discards test p1; save it as `pair_p.parquet`).
+3. **Locked holdout.** Draw a disjoint holdout of about 150k S1 from the remaining 1.95M train S1 (blocking already covers all S1; only pair features are needed), plus bootstrap confidence intervals, so gains are provably real. US-to-India transfer is the France proxy; add a per-country drift monitor on test predictions.
+4. **Stage-2 stacking with consensus features** (do the other records of the same S1 agree on digits and name variants; margin of the record to its best other S1): targets the look-alike distractors, 84% of the false positives. Teammate's layer L2c.
+5. **Calibration and per-S1 expected-F0.5 selection** (exact algorithms exist, see `research.md`), then the owner layer L3 only if it helps (exclusive assignment already gives the same score because `margin_p` and `rank_p` encode competition).
+6. Cross-encoder on the ambiguous band (mmBERT-small, MIT, about 140M) only if steps 4 and 5 leave a gap; it occupies the single GPU and queue for about an hour of fine-tuning.
+7. Romanisation dictionary, dense channel: last; non-Latin is now 0.897 against an oracle of 0.920 (at most about 0.25 overall).
+8. Freeze, reproduce from scratch, methodology write-up from `docs/Documentation_template.md` in S3, rebuild the code zip, package layout in `context.md` section 1.
+
+Integration with the teammate's v2 plan (agreed in review): they own the evaluation harness, L2c, L3/L4, cross-encoder and dictionary work, on a branch that adds new modules only; the pipeline owner keeps `stages/` (prepare, blocking, features, pair model, cascade) and delivers the data contracts: candidates `blocks/{split}/cand_*.parquet` (`q` S1 row id, `pid = src * 10_000_000 + rid`), `models/<name>/oof.parquet` (`q, pid, p, label`), test `pair_p.parquet`, features `features/{split}/part_*.parquet`. Their access to AWS must be a scoped IAM user (working bucket prefixes `jobs/`, `runs/`, `ber/` plus read on the data bucket, keys created by the human outside chat), never the root login; or the pipeline owner runs their jobs.
+
+Rebuild the code zip from the repo root:
+```bash
+cd code && python3 - <<'PY'
+import zipfile, os
+root = "business_entity_resolution"; skip = {"__pycache__", ".pytest_cache", "work", "models", ".venv", "mlruns"}
+with zipfile.ZipFile("../dist/business_entity_resolution_code.zip", "w", zipfile.ZIP_DEFLATED) as z:
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if x not in skip)
+        for f in sorted(files):
+            if not f.endswith((".pyc", ".tmp")): z.write(os.path.join(d, f))
+PY
+```
+then unzip into an empty folder, create a venv from `requirements.txt` and run `pytest -q src/tests` before uploading.
 
 ## 10. Rules
 
@@ -196,3 +222,4 @@ Suggested order from here (details and evidence in `research.md`):
 - Stop the notebook when idle for long periods.
 - Log every experiment (`runs.jsonl` plus MLflow) with its validation number so the submission history required by the guidelines exists.
 - Commit documentation and code changes to branch `sai`; run tests before syncing to S3.
+- Never share the root AWS login; give collaborators a scoped IAM user and let the human create the keys outside the chat.

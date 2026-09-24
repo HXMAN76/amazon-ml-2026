@@ -8,13 +8,13 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 |---|---|---|
 | Tab-separated, exact columns `source1_entity_id`, `matched_entity_ids` | Done (checked by official validator header rule) | done |
 | Exactly one row per test S1 entity (1,732,544 rows), no duplicate S1 rows | Done (1,732,544 rows written from `test_source1`) | done |
-| Empty `matched_entity_ids` for singletons | **Bug found and fixed**: empty lists were written as the two characters `""`, which the official validator rejects. Writer now uses `quote_style="never"`; rerun `v0e` | fixed, verify on `v0e` log |
+| Empty `matched_entity_ids` for singletons | Fixed: empty lists were once written as the two characters `""`, which the official validator rejects. Writer now uses `quote_style="never"`; verified on v0 and v1 outputs | done |
 | No duplicate IDs inside a list | Done by construction (one row per (S1, pool id) after grouping) | done |
-| IDs are S2-/S3- only, exist in the test set, no self-matches | Built from the test Parquet only; **run the official validator with `--check-ids`** (job `v0f`) | in progress |
-| Final matches are a subset of candidates | Verified on the v0 output: 0 violations once the `""` issue is removed | done |
+| IDs are S2-/S3- only, exist in the test set, no self-matches | Official validator with `--check-ids` passes on v0 (matching file) and on both v1 files (9,969,589 valid ids); bundled checker `src/scripts/check_submission.py` agrees | done |
+| Final matches are a subset of candidates | Verified by the bundled checker on v0 and v1: 0 violations; each S2/S3 record is matched to at most one S1 | done |
 | Format: UTF-8, plain TSV | Done | done |
-| Official validator prints PASS before every upload | Not yet PASS (see first item) | pending `v0e` and `v0f` |
-| Upload in the portal, expect status `SCORED` | Human action, from one laptop or desktop only (see D) | human |
+| Official validator prints PASS before every upload | PASS for v0 and v1 (v1 both files, with `--check-ids`); rerun for every new candidate file | done for v0 and v1 |
+| Upload in the portal, expect status `SCORED` | Human action, from one laptop or desktop only (see D). v1 is the recommended file (`runs/v1/output/matching_results.tsv`); on test France is matched at 94.8% of S1 (US 94.3%, India 92.9%) | human |
 
 ## B. Final package: `<team_name>_submission.zip`
 
@@ -29,11 +29,11 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 | Requirement | Status | Owner |
 |---|---|---|
 | `candidate_pairs.tsv` is the exact set fed to the model; every matched ID appears in it | Done for v0 (all 51.9M scored pairs are the candidates) | done |
-| Candidate file size | **Risk:** 691 MB raw (95 MB matching). Portal or zip size limits are unknown; job `v0f` reports the gzip sizes. If too large, lower K or keep only candidates above a low probability (must remain the exact set the model scored, so the model would also have to be rerun on that set) | ask organisers if a limit exists |
+| Candidate file size | **Risk:** 691 MB raw (95 MB matching); gzip about 290 MB and 41 MB. Portal or zip size limits are unknown. If too large, lower K or keep only candidates above a low probability (must remain the exact set the model scored, so the model would also have to be rerun on that set) | ask organisers if a limit exists |
 | Code self-contained and runnable; anyone can regenerate both outputs from the training and test data | Done: `make reproduce` runs every stage; README lists steps and measured runtimes. The zip was unpacked in a clean virtualenv built from `requirements.txt` and its 14 tests pass. The full reproduction on the g5 was not rerun from the cleaned code (the v0 outputs came from the same logic before the unused legacy modules were removed) | done; rerun once before the final freeze |
 | All source under `src/`, plus `README.md` and pinned `requirements.txt` | `src/ber` exists; `configs/`, `Makefile`, `src/tests/`, `src/scripts/` sit beside `src/` (allowed as long as the README explains it). Legacy v0 modules removed | done |
-| Source code has proper comments describing the functions | Mostly docstrings on stages; review before packaging | agent |
-| Code zip for the portal | `dist/business_entity_resolution_code.zip` (top folder `business_entity_resolution/`) built after v0; **rebuild from the final code before the last upload** (v1 changed features, requirements now include `anyascii`, ISC licence) | rebuild at freeze |
+| Source code has proper comments describing the functions | Done: docstring audit shows every public function, class and module documented | done |
+| Code zip for the portal | `dist/business_entity_resolution_code.zip` (top folder `business_entity_resolution/`): all source under `src/` (`ber`, `scripts`, `tests`), README with run steps, pinned requirements including `anyascii` (ISC), docstrings on every function, unzip and 17 tests verified. Built before the cascade and vectorised-feature changes, so **rebuild from the final code before the last upload** (commands in `handoff.md` section 9) | rebuild at freeze |
 | Methodology document filled from `Documentation_template.md` (template is in S3 `docs/`) | **Not done.** Sections needed: executive summary, problem analysis, solution strategy, blocking (keys, number of candidate pairs, how true matches were kept), matching model (features, model, threshold method), results and error analysis, conclusion, appendix (code structure and entry points) | agent drafts, team reviews |
 | Guidelines say a 1 to 2 page document; the statement says no page limit | Keep the main body about 2 pages and move detail to the appendix | agent |
 | Team name, members, date for the template and zip name | **Missing** | human |
@@ -62,7 +62,8 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 ## E. Open items to close now
 
 1. Team name, team member names and submission date for the zip name and the template (human).
-2. Confirm the official validator PASS on `v0e`/`v0f`, then upload `matching_results.tsv` (human, one device).
-3. Reproduce entry point, README, cleanup of legacy modules, licence table (agent).
-4. Draft the methodology document with real numbers: OOF macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, test candidate pairs 51,892,359 (agent; update after the holdout run and the final model).
-5. Ask whether the portal or organisers limit upload size (matching 95 MB, candidates 691 MB raw) (human).
+2. Upload v1 `matching_results.tsv` (or v0) in the portal from one device and tell the agent the leaderboard score (human).
+3. Ask the organisers, if unsure, whether the portal limits upload size (matching 95 MB, candidates 691 MB raw, about 290 MB gzipped) (human).
+4. Draft the methodology document with real numbers (agent): out-of-fold macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, 51,892,359 test candidate pairs, error analysis; update after the holdout run and the final model.
+5. Rebuild the code zip from the final code, rerun the full reproduction once from scratch, and rerun the official validator on the final files (agent).
+6. Confirm each team member has a single registration (humans).

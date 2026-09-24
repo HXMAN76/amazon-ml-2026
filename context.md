@@ -107,34 +107,38 @@ New pipeline (phase 0 and 1):
 | `stages/block.py` | DuckDB weighted token index. Token types: `n` name word, `a` address word/number, `p` 5-char prefix, `c` name-word x address-word, `m` name-word pair, `d` address-word pair, `h` house-number x address-word. IDF scoring, document-frequency cap, per-type rarest-token limits, top-K per S1, Parquet shards with resume, persistent pool-index cache |
 | `stages/block_eval.py` | recall per configuration on a 20k-S1 subset: pair recall, S1 with all matches found, candidates per S1, recall by country, channel coverage, and a miss breakdown (unreachable / over df cap / lost to per-type limits and top-K) plus a no-cap lexical reachability diagnosis |
 | `stages/pairs.py` | vectorised pair features (63): blocking scores per token type, rank/gap/margin inside the S1's list and the record's claimant list, rapidfuzz name and address similarities, name rarity counts, token coverage, glued-name, digit alignment, romanised and skeleton similarities |
+| `stages/prune.py` | cascade blocking: S1-local features on K 100 raw candidates, XGBoost first-stage ranker, keeps the best 30 per S1 (writes `blocks/{split}` from `blocks/{split}_raw`) |
 | `stages/train_gpu.py`, `stages/predict.py`, `decision.py`, `validate.py` | XGBoost CUDA with grouped 5-fold OOF, exclusive assignment and threshold tuning; chunked prediction and TSV writing (never quote empty lists); local validator that parses raw lines like the official one |
-| `src/scripts/qa_prepare.py`, `src/scripts/error_analysis.py` | normalisation samples; loss decomposition and error taxonomy of a trained model |
+| `src/scripts/qa_prepare.py`, `error_analysis.py`, `check_submission.py` | normalisation samples; loss decomposition and error taxonomy of a trained model; rule checker for the output files |
 
 The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed from the package; `data.py` now only holds `read_tsv`.
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
-## 5. Status (2026-09-25 about 04:30 IST)
+## 5. Status (2026-09-25 about 05:15 IST)
 
-Read `handoff.md` for access, commands and pitfalls. Summary:
+Read `handoff.md` for access, commands, pitfalls and next steps. Summary:
 
 Done:
 - Infra: account A, notebook `test-notebook` (g5 A10G), S3 job queue with live logs, conda env `ber` (Python 3.12).
-- Data profiled (section 2b). Phase 0 (normaliser, `prepare`, `sample`, Makefile, tests) complete.
-- Blocking (token-index, DuckDB): pair recall 0.9416 at 30 candidates per S1 (US 0.970, India 0.899); 99.99% of true pairs share a token. Blocked all test S1 (51,892,359 pairs) and all train S1 (66,075,079 pairs).
-- **v0** matcher (42 features, XGBoost CUDA): out-of-fold macro F0.5 0.9377. Test output passed the official validator (also with `--check-ids`); file at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. Leaderboard score not yet known.
-- Error analysis of v0 (`src/scripts/error_analysis.py`): matcher loss 4.0 points, blocking loss 2.2; weak spots were non-Latin names, empty addresses, look-alike distractors, missing name-rarity features (`research.md` section 12).
-- **v1** matcher (63 features: name rarity and exact-name flags, token coverage, glued-name and digit-alignment features, romanised names via `anyascii` and consonant skeletons): out-of-fold macro F0.5 **0.9551** (+1.74 points); India 0.935, US 0.968, singleton entities 0.959; precision 0.989, recall 0.906. Loss now: blocking 2.19, matcher 2.30.
-- Code zip for the portal built (`dist/business_entity_resolution_code.zip`, predates v1; rebuild before the final upload). `submission_checklist.md` maps every rule in the two PDFs to its status.
+- Data profiled (section 2b). Normaliser, `prepare`, `sample`, Makefile, tests complete (17 tests).
+- Blocking (token index, DuckDB): pair recall 0.9416 at 30 candidates per S1 (US 0.970, India 0.899); blocked all test S1 (51.9M pairs) and all train S1 (66.1M pairs) at K 30.
+- **v0** (42 features): out-of-fold macro F0.5 0.9377. **v1** (63 features): **0.9551** (US 0.968, India 0.935, singleton entities 0.959, precision 0.989, recall 0.906). Outputs published at `s3://sagemaker-us-east-1-567503593043/runs/v0/` and `runs/v1/`.
+- **Submission checks:** both outputs pass the official validator (v1 including `--check-ids` on both files) and `src/scripts/check_submission.py` (format bytes, one row per S1, ids exist, matches subset of candidates, one owner per S2/S3 record). France is matched at 94.8% (US 94.3%, India 92.9%). A bug that once failed the validator (empty lists written as `""`) is fixed.
+- Error analysis (`src/scripts/error_analysis.py`): v0 loss was 4.0 points matcher plus 2.2 blocking; v1 cut the matcher loss to 2.3 (`research.md` sections 12 and 13). Remaining errors: look-alike distractors (84% of false positives), non-Latin and empty-address matches, and blocking truncation.
+- Blocking experiment (`research.md` section 14): the new token types `g`, `x`, `k` gave no recall gain and were reverted; K 60 gives +0.6 points recall. **Cascade blocking** (`stages/prune.py`: K 100 raw candidates, learned first-stage ranker keeps the best 30) is built and tested on synthetic data.
+- Code zip for the portal built in the guideline layout (all source under `src/`, docstrings on every function, README with run steps, pinned requirements, unzip-and-test verified). It is stale relative to the repo after the cascade and vectorisation changes; rebuild at freeze.
+- Documents: `handoff.md`, `plan.md`, `research.md`, `submission_checklist.md`, code `README.md` updated.
+- A teammate's plan (layers L0 to L5, harness, cross-encoder) was reviewed; agreed order and data contracts are in `handoff.md` section 9.
 
-Running or pending: `v1b` (test features, predict, publish to `runs/v1/`), `v1c-blockeval` (recall of the new token types `g`, `x`, `k`). See `handoff.md` section 6.
+Running or pending: job chain `zc1a` (block test and all train at K 100, index rebuilt), `zc1b` (prune, train features, retrain as `v2`, error analysis), `zc1c` (test features, predict, checker, publish to `runs/v2/`). See `handoff.md` section 6.
 
 Not done:
 - Leaderboard scores for v0 and v1 (human uploads); decide which to keep.
-- Blocking upgrade decision from `v1c-blockeval`, then re-block, re-featurise, retrain.
-- Holdout protocol with bootstrap CI, calibration, record-level decision and per-S1 expected-F0.5, sibling features, France-proxy validation (US to India transfer).
-- Vectorise the slow v1 features (about 60 s per 1.5M pairs).
-- Methodology document from the template and the final package (team name, members, date still needed from the human).
+- Read the cascade results; adopt `v2` only if out-of-fold F0.5 beats v1 and the checks pass.
+- p1 for all train S1 and test (exports), disjoint holdout with bootstrap CI, US to India transfer, per-country drift monitor.
+- Stage-2 stacking with consensus features, calibration and per-S1 expected-F0.5 selection, optional owner layer and cross-encoder.
+- Methodology document from the template and the final package (team name, members and date still needed from the human); rebuild the code zip from the final code; rerun the full reproduction once before the freeze.
 
 ## 6. Rules of the road
 

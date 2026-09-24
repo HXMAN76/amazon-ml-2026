@@ -241,3 +241,15 @@ Reading:
 - Raising K helps (K 60: +0.6 points), but doubles the pair volume for every later stage.
 
 **Cascade blocking** (built, `stages/prune.py`): block with K 100, then re-rank with a tiny XGBoost on S1-local blocking features (score, shared tokens, per-type scores, rank, gap, ratio to the best, number of token types present) trained on the training sample's labels, and keep the best 30. The expensive string features are then computed on 30 pairs per S1 with the recall of a much larger K. The pruner's own score is dropped from the matcher's features so it cannot leak labels of the S1 it was fit on. Success criterion: pair recall at 30 kept above 0.9416, ideally approaching the K 60 and K 100 recall.
+
+## 15. Review of the teammate's v2 layered plan and the resulting priorities (2026-09-25)
+
+The plan (layers L0 data and text views, L1 candidates, L2a pair model, L2b cross-encoder on the uncertain band, L2c stacking with consensus features, L3 owner selection per pool record with a none option, L4 per-S1 expected-F0.5 with vetoes, X1 evaluation harness with a locked holdout and bootstrap CI, X2 forensics) is sound in structure: data contracts, leakage rules, hard gates per layer, licence discipline. Corrections after comparing it with the measurements:
+- Numbers were stale: out-of-fold macro F0.5 is 0.9551 (v1 features), non-Latin 0.897 versus an oracle 0.920, so the transliteration dictionary is worth at most about 0.25 points overall.
+- Priorities: blocking recall (2.19 points) was missing from the plan and is the largest remaining loss; the owner layer L3 and decision layer L4 are expected to add little because competition is already in the pair model (exclusive assignment gave the identical 0.9551 score) and the threshold curve is flat. The most valuable matcher layer is L2c consensus stacking, aimed at the look-alike distractors (84% of false positives). Cross-encoder next; dictionary last.
+- Design flaw to fix: L3 features (best, second, gap, competitors) computed over p1 for only the 250k sampled S1 understate competition in train (11% of S1) versus test (all S1). Fix: score every train S1 with the final model (S1 outside the sample were never trained on, so their probabilities are unbiased) and use those for record-level training.
+- Contract details: use the pipeline's identifiers (`q`, `pid = src * 10_000_000 + rid`); export test `pair_p`; the locked holdout must be a separate draw of about 150k S1 because the current 250k sample is all in cross-validation; add a per-country drift monitor on test predictions as a France proxy.
+- Operations: one GPU and one sequential queue mean a one-hour cross-encoder fine-tune blocks other jobs; a collaborator needs a scoped IAM user, not the root login.
+Realistic remaining headroom on train-like data is about 1.5 to 2.5 points (blocking about 1 to 1.5, stacking about 0.5 to 1, decision about 0.3).
+
+Result checks of the v1 test output: rows 1,732,544; matched S1 share France 0.948, US 0.943, India 0.929; mean matches per S1 France 3.37, US 3.33, India 3.07; share of matched ids from S2 0.489, from S3 0.511; no rule violated.

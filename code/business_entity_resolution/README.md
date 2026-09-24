@@ -28,6 +28,9 @@ registries or geocoding are used, and the model uses no pretrained neural networ
    romanised text (offline transliteration with anyascii) plus a consonant skeleton to bridge Latin and Indic scripts.
 5. **train_gpu** (`stages/train_gpu.py`): XGBoost binary classifier (CUDA when available, CPU otherwise), 5-fold cross-validation
    grouped by S1 entity, then the decision rule is tuned on the out-of-fold predictions.
+5b. **prune** (`stages/prune.py`, optional cascade, under evaluation): block with 100 candidates per S1 (`--k 100 --out-name <split>_raw`),
+   then a small XGBoost on S1-local blocking features (score, shared tokens, per-token-type scores, rank and gap inside the list)
+   keeps the best 30 per S1 before the expensive string features. The submitted files were produced with the plain top-30 blocking.
 6. **predict** (`stages/predict.py`, `decision.py`): scores all test candidates, keeps for every S2/S3 record only its
    highest-probability S1 (records belong to at most one S1 in the training data), applies the tuned threshold, and writes
    `matching_results.tsv` and `candidate_pairs.tsv` (the candidates are exactly the pairs the model scored), then validates.
@@ -72,7 +75,7 @@ python src/scripts/check_submission.py $BER_WORK/output/v1 $BER_DATA/test
 
 `make` reruns a stage only when its parameters or source changed. Parameters for every stage are in `configs/params.yaml`.
 Run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl` and an MLflow sqlite database.
-Tests (`make test`, 16 tests) include end-to-end runs on a small synthetic dataset, including the output checker.
+Tests (`make test`, 17 tests) include end-to-end runs on a small synthetic dataset, including the output checker.
 
 ## Layout
 
@@ -85,7 +88,7 @@ src/ber/                 package
   decision.py            exclusive assignment, threshold tuning, vectorised macro F_0.5
   validate.py            local re-implementation of the format rules (raw-line parsing)
   synth.py               small synthetic dataset used by the tests
-  stages/                prepare, sample, block, block_eval, pairs, train_gpu, predict
+  stages/                prepare, sample, block, block_eval, prune, pairs, train_gpu, predict
 src/scripts/             qa_prepare.py (raw vs normalised text), error_analysis.py (loss decomposition and error
                          taxonomy of a trained model), check_submission.py (rule checker for the output files)
 src/tests/               unit and end-to-end tests (`make test`)
