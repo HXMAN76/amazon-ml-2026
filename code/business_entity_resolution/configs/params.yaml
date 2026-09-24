@@ -26,8 +26,19 @@ block_eval:
   n_s1: 20000
   seed: 7
   runs:                # each run overrides block params; index for the pool is cached across runs
-    - {name: base_cap800,   types: [n, a, p, c, m, d, h], over: {}}
-    - {name: cap5000,       types: [n, a, p, c, m, d, h], over: {cap_df: 5000}}
-    - {name: cap20000,      types: [n, a, p, c, m, d, h], over: {cap_df: 20000}}
-    - {name: cap20000_k100, types: [n, a, p, c, m, d, h], over: {cap_df: 20000, k: 100}}
-    - {name: cap20000_comp, types: [c, m, d, h],          over: {cap_df: 20000}}
+    - {name: base_cap800,  types: [n, a, p, c, m, d, h], over: {}}
+    - {name: cap800_k60,   types: [n, a, p, c, m, d, h], over: {k: 60}}
+    - {name: cap800_k100,  types: [n, a, p, c, m, d, h], over: {k: 100}}
+    - {name: cap800_no_p,  types: [n, a, c, m, d, h],    over: {}}
+    - {name: cap800_comp,  types: [c, m, d, h],          over: {}}
+train_gpu:
+  device: auto         # cuda when a GPU is visible, else cpu
+  folds: 5
+  rounds: 600
+  early_stop: 30
+  max_depth: 8
+  eta: 0.1
+  subsample: 0.8
+  colsample: 0.8
+  min_child_weight: 1
+  seed: 0

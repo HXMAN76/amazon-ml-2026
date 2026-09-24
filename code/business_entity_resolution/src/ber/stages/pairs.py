@@ -1,0 +1,151 @@
+"""pairs: turn blocking candidates into a feature table for the matcher (vectorised, streamed in chunks).
+
+Inputs : WORK/blocks/{split}/cand_*.parquet, WORK/parquet/{split}/source{1,2,3}.parquet
+Outputs: WORK/features/{split}/part_XXXX.parquet  with q, pid, [label], features (see FEATURES below)
+
+Blocking-score features are computed over the full candidate set of the split (all S1 that were blocked), so
+the competition statistics (how many S1 want this S2/S3 record, how strong the best competitor is) match
+test-time conditions. String features use rapidfuzz `cpdist` (multi-threaded C++) plus polars list ops.
+"""
+
+from __future__ import annotations
+
+import argparse
+import time
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+from rapidfuzz import fuzz, process
+from rapidfuzz.distance import JaroWinkler, Levenshtein
+
+from ber import config
+from ber.stages.block import PID_BASE, TYPES
+from ber.tracking import log_stage
+
+
+def blocking_features(cand_glob: str) -> pl.DataFrame:
+    """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record."""
+    c = pl.read_parquet(cand_glob)
+    f32 = [pl.col(x).cast(pl.Float32) for x in ("score", *[f"s_{t}" for t in TYPES])]
+    c = c.with_columns(f32).with_columns(pl.col("ns").cast(pl.Int16))
+    c = c.with_columns(
+        pl.col("score").rank("ordinal", descending=True).over("q").cast(pl.Int16).alias("rank_q"),
+        (pl.col("score").max().over("q") - pl.col("score")).alias("gap_q"),
+        pl.len().over("q").cast(pl.Int16).alias("n_cand_q"),
+        pl.col("score").rank("ordinal", descending=True).over("pid").cast(pl.Int16).alias("rank_p"),
+        pl.len().over("pid").cast(pl.Int16).alias("n_q_for_p"),
+    )
+    top2 = c.group_by("pid").agg(pl.col("score").sort(descending=True).head(2).alias("t")).with_columns(
+        pl.col("t").list.get(0).cast(pl.Float32).alias("p_top1"),
+        pl.col("t").list.get(1, null_on_oob=True).cast(pl.Float32).alias("p_top2"),
+    ).drop("t")
+    c = c.join(top2, on="pid", how="left").with_columns(
+        # margin to the best competing S1 for this record: positive when this S1 is the leader
+        pl.when(pl.col("rank_p") == 1).then(pl.col("score") - pl.col("p_top2").fill_null(0))
+          .otherwise(pl.col("score") - pl.col("p_top1")).alias("margin_p")
+    ).drop("p_top1", "p_top2")
+    return c
+
+
+def _cp(a: list[str], b: list[str], scorer) -> np.ndarray:
+    if not a:
+        return np.zeros(0, dtype=np.float32)
+    return process.cpdist(a, b, scorer=scorer, dtype=np.float32, workers=-1)
+
+
+def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
+    """a: S1 side, b: pool side (row-aligned pairs), columns core1 name2 addr legal ctry nl_name nl_addr."""
+    ac, bc = a["core1"].to_list(), b["core1"].to_list()
+    aa, ba = a["addr"].to_list(), b["addr"].to_list()
+    f: dict[str, np.ndarray] = {}
+    for nm, sc in (("ratio", fuzz.ratio), ("partial", fuzz.partial_ratio), ("tsort", fuzz.token_sort_ratio),
+                   ("tset", fuzz.token_set_ratio)):
+        f[f"name_{nm}"] = _cp(ac, bc, sc)
+        f[f"addr_{nm}"] = _cp(aa, ba, sc)
+    f["name_jw"] = _cp(ac, bc, JaroWinkler.normalized_similarity)
+    f["name_lev"] = _cp(ac, bc, Levenshtein.normalized_similarity)
+    f["addr_lev"] = _cp(aa, ba, Levenshtein.normalized_similarity)
+    # alias / domain label of the pool record (name2) against the S1 core name, and the reverse
+    b2, a2 = b["name2"].to_list(), a["name2"].to_list()
+    f["alias_tset"] = np.maximum(_cp(ac, b2, fuzz.token_set_ratio), _cp(a2, bc, fuzz.token_set_ratio))
+    f["name_nospace_ratio"] = _cp([x.replace(" ", "") for x in ac], [x.replace(" ", "") for x in bc], fuzz.ratio)
+
+    d = pl.DataFrame({"a": aa, "b": ba}).with_columns(
+        pl.col("a").str.extract_all(r"\d+").alias("an"), pl.col("b").str.extract_all(r"\d+").alias("bn"))
+    d = d.with_columns(
+        pl.col("an").list.set_intersection(pl.col("bn")).list.len().alias("common"),
+        pl.col("an").list.len().alias("na"), pl.col("bn").list.len().alias("nb"),
+        pl.col("an").list.first().alias("ah"), pl.col("bn").list.first().alias("bh"),
+        pl.col("an").list.eval(pl.element().filter(pl.element().str.len_chars() >= 5)).alias("apin"),
+        pl.col("bn").list.eval(pl.element().filter(pl.element().str.len_chars() >= 5)).alias("bpin"),
+    ).with_columns(
+        pl.col("apin").list.set_intersection(pl.col("bpin")).list.len().alias("pin_common"),
+        (pl.col("apin").list.len() > 0).alias("a_has_pin"), (pl.col("bpin").list.len() > 0).alias("b_has_pin"),
+    )
+    f["num_common"] = d["common"].to_numpy().astype(np.float32)
+    f["num_common_frac"] = d.select((pl.col("common") / pl.max_horizontal("na", "nb", pl.lit(1))).alias("v"))["v"].to_numpy().astype(np.float32)
+    f["house_eq"] = (d["ah"].is_not_null() & (d["ah"] == d["bh"])).to_numpy().astype(np.float32)
+    f["pin_match"] = (d["pin_common"] > 0).to_numpy().astype(np.float32)
+    f["pin_conflict"] = (d["a_has_pin"] & d["b_has_pin"] & (d["pin_common"] == 0)).to_numpy().astype(np.float32)
+    f["len_core_a"] = np.array([len(x) for x in ac], dtype=np.float32)
+    f["len_core_b"] = np.array([len(x) for x in bc], dtype=np.float32)
+    f["len_addr_b"] = np.array([len(x) for x in ba], dtype=np.float32)
+    f["addr_b_empty"] = (np.array([len(x) for x in ba]) == 0).astype(np.float32)
+    f["nl_name_b"] = b["nl_name"].to_numpy().astype(np.float32)
+    f["nl_addr_b"] = b["nl_addr"].to_numpy().astype(np.float32)
+    f["same_ctry"] = (a["ctry"].to_numpy() == b["ctry"].to_numpy()).astype(np.float32)
+    la, lb = a["legal"].to_list(), b["legal"].to_list()
+    f["legal_eq"] = np.array([x != "" and x == y for x, y in zip(la, lb)], dtype=np.float32)
+    f["legal_conflict"] = np.array([x != "" and y != "" and x != y for x, y in zip(la, lb)], dtype=np.float32)
+    return f
+
+
+def pool_index(pool: pl.DataFrame, pid: np.ndarray, n2: int) -> np.ndarray:
+    return np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--split", choices=["train", "test"], required=True)
+    ap.add_argument("--chunk", type=int, default=1_500_000)
+    a = ap.parse_args(argv)
+    P = config.paths()
+    pq = P["parquet"] / a.split
+    t0 = time.time()
+    cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"))
+    if a.split == "train":  # only the sampled S1 need features; competition stats used the full candidate set
+        smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])
+        cand = cand.join(smp.rename({"rid": "q"}), on="q", how="semi")
+        lab = pl.read_parquet(pq / "labels.parquet").with_columns(
+            (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"),
+            pl.col("s1_rid").alias("q"), pl.lit(1, dtype=pl.Int8).alias("label")).select("q", "pid", "label")
+        cand = cand.join(lab, on=["q", "pid"], how="left").with_columns(pl.col("label").fill_null(0))
+    cand = cand.sort("q", "pid")
+    print(f"{a.split}: {cand.height} pairs after blocking features in {time.time() - t0:.0f}s", flush=True)
+
+    cols = ["core1", "name2", "addr", "legal", "ctry", "nl_name", "nl_addr"]
+    s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", *cols]).sort("rid")
+    s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", *cols]).sort("rid")
+    s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", *cols]).sort("rid")
+    pool = pl.concat([s2, s3])
+    out = P["work"] / "features" / a.split
+    out.mkdir(parents=True, exist_ok=True)
+    for old in out.glob("part_*.parquet"):
+        old.unlink()
+    q_all, pid_all = cand["q"].to_numpy(), cand["pid"].to_numpy()
+    pidx = pool_index(pool, pid_all, s2.height)
+    for i, s in enumerate(range(0, cand.height, a.chunk)):
+        t = time.time()
+        sl = slice(s, s + a.chunk)
+        sa = s1[q_all[sl]]  # rid is 0..n-1 and sorted, so row index == rid
+        sb = pool[pidx[sl]]
+        f = string_features(sa, sb)
+        part = cand[sl].with_columns([pl.Series(k, v) for k, v in f.items()])
+        part.write_parquet(out / f"part_{i:04d}.parquet", compression="zstd")
+        print(f"chunk {i}: {part.height} pairs, {part.width} columns in {time.time() - t:.0f}s", flush=True)
+    log_stage(f"pairs_{a.split}", {"chunk": a.chunk}, {"pairs": float(cand.height), "seconds": time.time() - t0})
+
+
+if __name__ == "__main__":
+    main()

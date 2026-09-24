@@ -1,6 +1,6 @@
 # Amazon ML Challenge 2026: implementation context
 
-Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Companion documents: `plan.md` (approved baseline, evaluation and MLOps design), `research.md` (literature and findings), `code/business_entity_resolution/README.md` (how to run). Update the "Status" section as work proceeds.
+Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Companion documents: `handoff.md` (access, infra, commands, pitfalls, current state; read first), `plan.md` (approved baseline, evaluation and MLOps design), `research.md` (literature and findings), `code/business_entity_resolution/README.md` (how to run). Update the "Status" section as work proceeds.
 
 ## 1. Challenge
 
@@ -112,22 +112,23 @@ Legacy v0 (`normalize.py`, `data.py`, `blocking.py`, `features.py`, `model.py`, 
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
-## 5. Status (2026-09-25 about 02:00 IST)
+## 5. Status (2026-09-25 about 03:00 IST)
+
+Read `handoff.md` for access, commands and pitfalls. Summary:
 
 Done:
-- AWS account A set up for this task; notebook `test-notebook` InService; env `ber` on Python 3.12; job queue with live logs.
-- Data profiled (section 2b). Stats jobs `stats1`, `stats3` done.
-- Plan v1 written and approved (`plan.md`): Makefile + MLflow, baseline first, single account.
-- Phase 0 done: normaliser, `prepare`, `sample`, Makefile scaffold, tests. Parquet at `/home/ec2-user/SageMaker/work/parquet` (2 GB), 7,638,365 true pairs, 250k-S1 sample (US 150k / India 100k, singleton rate 5.55% vs 5.58% population).
-- Phase 1 started. First blocking measurement on 20k train S1 (pool 10.3M records, `cap_df` 800): recall 0.85 at 29.2 candidates per S1 with token types n+a+p+c; US 0.90, India 0.78; composites `c` alone reach 0.78. **Gate 1 (recall at least 0.98 at at most 30 candidates) is not met.** Cause: `cap_df` 800 is far too low for a 10M pool, only about 8 tokens per query survive and half of S1 have no name token; composite keys carry most of the recall.
-- Code since then (uncommitted at the time of writing, then committed): more composite types (`m`, `d`, `h`), pool-index cache, miss breakdown and reachability diagnosis. Job `blockeval2` (cap 800 / 5000 / 20000, K 30 and 100, composites only) was running; its output decides the next blocking change.
+- Infra: account A, notebook `test-notebook` (g5 A10G), S3 job queue with live logs, conda env `ber` (Python 3.12).
+- Data profiled (section 2b). Phase 0 complete: normaliser, `prepare`, `sample`, Makefile, tests.
+- Blocking (token-index, DuckDB): recall 0.9416 on 20k train S1 at cap_df 800, K 30 (US 0.970, India 0.899); 99.99% of true pairs share a token, so lexical blocking suffices for v0. Blocking run for **test (51,892,359 pairs, 1.73M S1)** and **all train S1 (66,075,079 pairs)**.
+- v0 matcher code written and tested end to end on synthetic data: `stages/pairs.py` (42 vectorised features), `decision.py`, `stages/train_gpu.py` (XGBoost CUDA, grouped 5-fold OOF, exclusive assignment, threshold tuning), `stages/predict.py` (writes both TSVs and validates).
+- Train pair features built (7,484,833 pairs for the 250k sample, 814,538 positives). GPU training started: fold 0 reached aucpr 0.9951 in 18 s (600 rounds, no early stop yet).
+
+Running or pending (see `handoff.md` section 6): `v0b` (training) then `v0c` (test features, predict, validate, publish outputs to `s3://sagemaker-us-east-1-567503593043/runs/v0/`).
 
 Not done:
-- Read `blockeval2` and tune blocking to gate 1; decide whether a dense channel is needed (about 9% of India S2 names are non-Latin, and some true pairs share no token at all).
-- Block all S1 for train (competitor statistics) and test; write `candidate_pairs`.
-- Phase 2: vectorised features, LightGBM with grouped CV, isotonic calibration, exclusive assignment, expected-F0.5 per-entity decision, country hold-out and collision stress validation.
-- First submission (target: about 16 hours from the start, validate with the official `utils/validate_submission.py`).
-- Methodology doc from `Documentation_template.md`; final zip.
+- First leaderboard score (upload `matching_results.tsv` by hand in the portal after the official validator prints PASS).
+- Holdout protocol with bootstrap CI, record-level decision with a none class and per-S1 expected-F0.5, higher K with a first-stage pruner, forensics of noise operators, optional dense channel for non-Latin India names, cross-encoder, methodology document and final zip.
+- A teammate's record-centric v1 proposal is reviewed in `handoff.md` section 9; adopt the decision layer, forensics and evaluation protocol on top of the existing candidates.
 
 ## 6. Rules of the road
 
