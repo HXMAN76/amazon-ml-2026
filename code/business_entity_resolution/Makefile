@@ -7,7 +7,7 @@ export BER_WORK := $(WORK)
 STAMPS := $(WORK)/.stamps
 DONE := $(WORK)/.done
 
-.PHONY: all prepare sample block_eval test clean-stamps FORCE
+.PHONY: all prepare sample block_eval reproduce test clean-stamps FORCE
 all: sample
 FORCE:
 
@@ -37,3 +37,16 @@ test:
 	$(PY) -m pytest -q tests
 clean-stamps:
 	rm -rf $(STAMPS) $(DONE)
+
+# End-to-end reproduction of output/matching_results.tsv and output/candidate_pairs.tsv from the raw TSVs.
+# Needs BER_DATA (folder with train/ and test/), BER_WORK (scratch, about 60 GB) and, for speed, a CUDA GPU
+# (XGBoost falls back to CPU automatically). Model name defaults to v0; outputs land in $(WORK)/output/$(NAME).
+NAME ?= v0
+reproduce: sample
+	$(PY) -m ber.stages.block --split test
+	$(PY) -m ber.stages.block --split train --all-train
+	$(PY) -m ber.stages.pairs --split train
+	$(PY) -m ber.stages.train_gpu --name $(NAME)
+	$(PY) -m ber.stages.pairs --split test
+	$(PY) -m ber.stages.predict --name $(NAME)
+	@echo "outputs: $(WORK)/output/$(NAME)/matching_results.tsv and candidate_pairs.tsv"

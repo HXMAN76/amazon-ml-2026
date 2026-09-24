@@ -1,36 +1,100 @@
-# Business Entity Resolution: pipeline
+# Business Entity Resolution: blocking + gradient-boosted matcher
 
-Stage pipeline driven by a Makefile with hash-based caching. Every tunable is in `configs/params.yaml`.
-Design rationale and the approved plan are in the repository root: `plan.md`, `research.md`, `context.md`.
-No external lookups (APIs, registries, geocoding) are used anywhere; pretrained models, when added, are MIT or
-Apache-2.0 and at most 8B parameters.
+Solution for the Amazon ML Challenge 2026 (Business Entity Resolution). For every Source 1 (S1) business record it predicts
+the matching Source 2 / Source 3 (S2/S3) records, and it also writes the candidate set the model scored. Score: macro F_0.5
+over S1 entities. Everything is derived from the provided training and test TSV files only; no external data, APIs,
+registries or geocoding are used, and v0 uses no pretrained neural network.
 
-## Stages (implemented so far)
+## Pipeline
 
-| Stage | Command | Output (under `$BER_WORK`) |
-|---|---|---|
-| prepare | `make prepare` | `parquet/{train,test}/source{1,2,3}.parquet`, `parquet/train/labels.parquet` |
-| sample | `make sample` | `sample/train_s1.parquet` (250k S1 queries with CV folds) |
-| block (train sample / test) | `python -m ber.stages.block --split train` / `--split test` | `blocks/{split}/cand_*.parquet` |
-| block_eval | `make block_eval` | `blocks/eval_report.json` (recall and miss breakdown per configuration) |
+1. **prepare** (`stages/prepare.py`, `text.py`): reads the TSVs and writes Parquet. Text normalisation is rule based:
+   HTML entity decoding, Latin-only accent stripping (Devanagari, Telugu and other scripts are preserved), lowercase,
+   punctuation removal, abbreviation expansion (`corp`, `ltd`, `rd`, `st`), repair of digit-for-letter noise inside words
+   (`c0mpany`), DBA/alias and domain-name splitting (`X dba Y`, `X | www.x.com`), legal forms (`pvt`, `llc`, `sarl`, `sci`)
+   kept in their own field, glued city suffix cleanup, and script fractions. Also builds the label table from the ground truth.
+2. **sample** (`stages/sample.py`): draws 250,000 training S1 entities as queries and assigns 5 cross-validation folds. The
+   full S2+S3 pool is kept, so competition between S1 entities matches test time.
+3. **block** (`stages/block.py`): candidate generation with a weighted token index in DuckDB. Every record becomes tagged
+   tokens: name words, address words and numbers, 5-character prefixes of long words, and composite keys (rare name word
+   with rare address word, two rare name words, two rare address words, house number with rare address word). A pool record's
+   score for an S1 query is the sum of inverse document frequency over shared tokens; the top 30 per S1 are kept (about 30
+   candidates per S1; recall of true pairs 0.94 on a 20k-S1 check, ceiling for the current matcher).
+   Tokens with document frequency above 800 in the S2+S3 pool are ignored.
+4. **pairs** (`stages/pairs.py`): 42 vectorised features per candidate pair: blocking score per token type, rank and gap within
+   the S1's list and within the candidate record's list (competition between S1 entities for the same record), rapidfuzz
+   name and address similarities, Jaro-Winkler, Levenshtein, alias match, house-number and postal-code agreement or conflict,
+   legal-form agreement, script fractions, country agreement.
+5. **train_gpu** (`stages/train_gpu.py`): XGBoost binary classifier (CUDA when available, CPU otherwise), 5-fold cross-validation
+   grouped by S1 entity, then the decision rule is tuned on the out-of-fold predictions.
+6. **predict** (`stages/predict.py`, `decision.py`): scores all test candidates, keeps for every S2/S3 record only its
+   highest-probability S1 (records belong to at most one S1 in the training data), applies the tuned threshold, and writes
+   `matching_results.tsv` and `candidate_pairs.tsv` (the candidates are exactly the pairs the model scored), then validates.
 
-Features, training, calibration, decision and prediction stages follow in later phases.
+Every S1 entity, including entities of a country never seen in training (France), gets exactly one row; empty list means no match.
 
-## Run
+## Reproduce
+
+Requirements: Python 3.12, about 60 GB of scratch disk, 15 GB RAM or more; a CUDA GPU makes training take under 3 minutes
+(CPU works, slower). Measured on an AWS g5.xlarge (4 vCPU, 15 GB RAM, NVIDIA A10G):
 
 ```bash
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export BER_DATA=/path/to/dataset          # contains train/ and test/ TSV folders
-export BER_WORK=/path/to/work             # outputs
-make prepare sample block_eval
-make test
+export BER_DATA=/path/to/dataset     # folder containing train/ and test/ (the TSV files from the challenge)
+export BER_WORK=/path/to/work        # scratch and outputs
+make reproduce                       # runs every stage below; outputs in $BER_WORK/output/v0/
 ```
 
-`make` reruns a stage only when its params section or source files changed (stamps under `$BER_WORK/.stamps`).
-Runs are logged to MLflow (sqlite, `$BER_WORK/mlflow.db`) and `$BER_WORK/runs/runs.jsonl`.
+`make reproduce` runs, in order (timings measured on the g5):
 
-## Legacy v0
+| Step | Command | Time |
+|---|---|---|
+| prepare + sample | `make sample` | about 9 min (24M records) |
+| block test | `python -m ber.stages.block --split test` | about 18 min (includes building the pool index) |
+| block train | `python -m ber.stages.block --split train --all-train` | about 13 min |
+| features train | `python -m ber.stages.pairs --split train` | about 2 min |
+| train | `python -m ber.stages.train_gpu --name v0` | about 3 min on GPU |
+| features test | `python -m ber.stages.pairs --split test` | about 8 min |
+| predict | `python -m ber.stages.predict --name v0` | about 2 min |
 
-`ber.run`, `blocking.py`, `features.py`, `model.py`, `decide.py`, `normalize.py`, `data.py` and `validate.py` are the
-first baseline (dense per-country TF-IDF kNN, 49 pair features, LightGBM). It was only tested on synthetic data and
-does not scale to the real pool; it is kept until the new stages replace it.
+Outputs: `$BER_WORK/output/v0/matching_results.tsv` (submitted to the leaderboard) and
+`$BER_WORK/output/v0/candidate_pairs.tsv`. Validate with the organisers' script:
+
+```bash
+python3 utils/validate_submission.py --matching $BER_WORK/output/v0/matching_results.tsv \
+    --candidate $BER_WORK/output/v0/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
+```
+
+`make` reruns a stage only when its parameters or source changed. Parameters for every stage are in `configs/params.yaml`.
+Run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl` and an MLflow sqlite database.
+Tests (`make test`) include an end-to-end run on a small synthetic dataset.
+
+## Layout
+
+```
+src/ber/                 package
+  text.py                text normalisation
+  config.py stamp.py tracking.py   parameters, stage cache stamps, run logging
+  decision.py            exclusive assignment, threshold tuning, vectorised macro F_0.5
+  validate.py            local re-implementation of the format rules (raw-line parsing)
+  synth.py               small synthetic dataset used by the tests
+  stages/                prepare, sample, block, block_eval, pairs, train_gpu, predict
+configs/params.yaml      all tunables
+Makefile                 stage DAG and `make reproduce`
+tests/                   unit and end-to-end tests
+scripts/qa_prepare.py    sanity report of raw vs normalised text
+```
+
+## Results (training data, cross-validated)
+
+Out-of-fold macro F_0.5 on 250,000 training S1 entities: 0.9377 at threshold 0.63 (recall ceiling of blocking 0.94). Test
+run: 51,892,359 candidate pairs for 1,732,544 S1 entities, 93.9% of S1 receive at least one match, mean 3.24 matches per S1
+(training truth: 94.4% and 3.46). Candidate recall by country on training: US 0.970, India 0.899. France has no training
+data, so its behaviour is unvalidated.
+
+## Licences and constraints
+
+No pretrained model is used. Libraries and their licences: numpy (BSD-3), pandas (BSD-3), polars (MIT), duckdb (MIT),
+rapidfuzz (MIT), xgboost (Apache-2.0), pyyaml (MIT), mlflow (Apache-2.0), pytest (MIT). The final model is an XGBoost
+gradient-boosted tree ensemble (Apache-2.0, far below 8B parameters). The abbreviation and legal-form tables in `text.py`
+are hand-written string rules, not external data lookups.

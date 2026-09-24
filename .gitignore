@@ -2,3 +2,4 @@ smssh-venv/
 .venv-ber/
 __pycache__/
 *.pyc
+dist/
