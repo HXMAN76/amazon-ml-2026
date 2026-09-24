@@ -35,20 +35,30 @@ COUNTRY_ALIASES = {
     "fr": "france", "fra": "france", "république française": "france", "republique francaise": "france",
 }
 
-_PUNCT = re.compile(r"[^\w\s]", re.UNICODE)
 _WS = re.compile(r"\s+")
 _NUM = re.compile(r"\d+")
 
 
+def _is_latin(c: str) -> bool:
+    o = ord(c)
+    return o < 0x250 or 0x1E00 <= o <= 0x1EFF
+
+
 def strip_accents(s: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    """Drop accents on Latin letters only. NFKD + dropping every combining mark would also delete
+    Devanagari vowel signs (matras), destroying Hindi names, so non-Latin characters are kept intact."""
+    return "".join(
+        "".join(d for d in unicodedata.normalize("NFKD", c) if not unicodedata.combining(d)) if _is_latin(c) else c
+        for c in s
+    )
 
 
 def _base(s: object) -> str:
     if not isinstance(s, str):
         return ""
     s = strip_accents(s).lower().replace("&", " and ")
-    s = _PUNCT.sub(" ", s)
+    # replace punctuation/symbols only: `[^\w\s]` would also split words at Devanagari combining marks
+    s = "".join(" " if unicodedata.category(c)[0] in "PS" else c for c in s)
     return _WS.sub(" ", s).strip()
 
 
