@@ -14,6 +14,8 @@ import string
 import unicodedata
 from dataclasses import dataclass
 
+from anyascii import anyascii
+
 NAME_ABBR = {
     "corp": "corporation", "inc": "incorporated", "ltd": "limited", "pvt": "private",
     "co": "company", "intl": "international", "int": "international", "svcs": "services",
@@ -162,13 +164,23 @@ def nonlatin_frac(s: object) -> float:
     return sum(ord(c) > 0x24F and not (0x1E00 <= ord(c) <= 0x1EFF) for c in letters) / len(letters)
 
 
+def romanize(s: str) -> str:
+    """Latin transliteration (anyascii, offline) of non-Latin text, tokenised like the rest; ASCII passes through.
+    Indic scripts become approximate phonetic Latin (`राम मीडिया` -> `ram midiya`), enough for fuzzy similarity."""
+    if s.isascii():
+        return s
+    return " ".join(_tokens(anyascii(s)))
+
+
 def normalise_row(name: str, addr: str, country: str) -> tuple:
     """Row-level entry point used by the prepare stage. Returns a tuple in COLUMNS order."""
     p = parse_name(name)
+    a = norm_address(addr)
     return (
         p.name1, p.name2, p.core1, p.legal, p.is_domain, p.has_alias,
-        norm_address(addr), norm_country(country), nonlatin_frac(name), nonlatin_frac(addr),
+        a, norm_country(country), nonlatin_frac(name), nonlatin_frac(addr), romanize(p.core1), romanize(a),
     )
 
 
-COLUMNS = ["name1", "name2", "core1", "legal", "is_domain", "has_alias", "addr", "ctry", "nl_name", "nl_addr"]
+COLUMNS = ["name1", "name2", "core1", "legal", "is_domain", "has_alias", "addr", "ctry", "nl_name", "nl_addr",
+           "core_rom", "addr_rom"]

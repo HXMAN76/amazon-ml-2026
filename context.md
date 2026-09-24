@@ -106,29 +106,35 @@ New pipeline (phase 0 and 1):
 | `stages/sample.py` | 250k S1 training queries (seeded, folds 0..4), full S2/S3 pool kept |
 | `stages/block.py` | DuckDB weighted token index. Token types: `n` name word, `a` address word/number, `p` 5-char prefix, `c` name-word x address-word, `m` name-word pair, `d` address-word pair, `h` house-number x address-word. IDF scoring, document-frequency cap, per-type rarest-token limits, top-K per S1, Parquet shards with resume, persistent pool-index cache |
 | `stages/block_eval.py` | recall per configuration on a 20k-S1 subset: pair recall, S1 with all matches found, candidates per S1, recall by country, channel coverage, and a miss breakdown (unreachable / over df cap / lost to per-type limits and top-K) plus a no-cap lexical reachability diagnosis |
-| `scripts/qa_prepare.py` | side-by-side raw vs normalised samples and empty/alias/domain rates |
+| `stages/pairs.py` | vectorised pair features (63): blocking scores per token type, rank/gap/margin inside the S1's list and the record's claimant list, rapidfuzz name and address similarities, name rarity counts, token coverage, glued-name, digit alignment, romanised and skeleton similarities |
+| `stages/train_gpu.py`, `stages/predict.py`, `decision.py`, `validate.py` | XGBoost CUDA with grouped 5-fold OOF, exclusive assignment and threshold tuning; chunked prediction and TSV writing (never quote empty lists); local validator that parses raw lines like the official one |
+| `scripts/qa_prepare.py`, `scripts/error_analysis.py` | normalisation samples; loss decomposition and error taxonomy of a trained model |
 
-Legacy v0 (`normalize.py`, `data.py`, `blocking.py`, `features.py`, `model.py`, `decide.py`, `run.py`, `validate.py`, `synth.py`, `metrics.py`) is kept for reference and its tests; `metrics.py` and `synth.py` are still used, the rest will be replaced by scalable stages (features, train, calibrate, decide, predict) in phase 2 per `plan.md`.
+The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed from the package; `data.py` now only holds `read_tsv`.
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
-## 5. Status (2026-09-25 about 03:00 IST)
+## 5. Status (2026-09-25 about 04:30 IST)
 
 Read `handoff.md` for access, commands and pitfalls. Summary:
 
 Done:
 - Infra: account A, notebook `test-notebook` (g5 A10G), S3 job queue with live logs, conda env `ber` (Python 3.12).
-- Data profiled (section 2b). Phase 0 complete: normaliser, `prepare`, `sample`, Makefile, tests.
-- Blocking (token-index, DuckDB): recall 0.9416 on 20k train S1 at cap_df 800, K 30 (US 0.970, India 0.899); 99.99% of true pairs share a token, so lexical blocking suffices for v0. Blocking run for **test (51,892,359 pairs, 1.73M S1)** and **all train S1 (66,075,079 pairs)**.
-- v0 matcher code written and tested end to end on synthetic data: `stages/pairs.py` (42 vectorised features), `decision.py`, `stages/train_gpu.py` (XGBoost CUDA, grouped 5-fold OOF, exclusive assignment, threshold tuning), `stages/predict.py` (writes both TSVs and validates).
-- Train pair features built (7,484,833 pairs for the 250k sample, 814,538 positives). GPU training started: fold 0 reached aucpr 0.9951 in 18 s (600 rounds, no early stop yet).
+- Data profiled (section 2b). Phase 0 (normaliser, `prepare`, `sample`, Makefile, tests) complete.
+- Blocking (token-index, DuckDB): pair recall 0.9416 at 30 candidates per S1 (US 0.970, India 0.899); 99.99% of true pairs share a token. Blocked all test S1 (51,892,359 pairs) and all train S1 (66,075,079 pairs).
+- **v0** matcher (42 features, XGBoost CUDA): out-of-fold macro F0.5 0.9377. Test output passed the official validator (also with `--check-ids`); file at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. Leaderboard score not yet known.
+- Error analysis of v0 (`scripts/error_analysis.py`): matcher loss 4.0 points, blocking loss 2.2; weak spots were non-Latin names, empty addresses, look-alike distractors, missing name-rarity features (`research.md` section 12).
+- **v1** matcher (63 features: name rarity and exact-name flags, token coverage, glued-name and digit-alignment features, romanised names via `anyascii` and consonant skeletons): out-of-fold macro F0.5 **0.9551** (+1.74 points); India 0.935, US 0.968, singleton entities 0.959; precision 0.989, recall 0.906. Loss now: blocking 2.19, matcher 2.30.
+- Code zip for the portal built (`dist/business_entity_resolution_code.zip`, predates v1; rebuild before the final upload). `submission_checklist.md` maps every rule in the two PDFs to its status.
 
-Running or pending (see `handoff.md` section 6): `v0b` (training) then `v0c` (test features, predict, validate, publish outputs to `s3://sagemaker-us-east-1-567503593043/runs/v0/`).
+Running or pending: `v1b` (test features, predict, publish to `runs/v1/`), `v1c-blockeval` (recall of the new token types `g`, `x`, `k`). See `handoff.md` section 6.
 
 Not done:
-- First leaderboard score (upload `matching_results.tsv` by hand in the portal after the official validator prints PASS).
-- Holdout protocol with bootstrap CI, record-level decision with a none class and per-S1 expected-F0.5, higher K with a first-stage pruner, forensics of noise operators, optional dense channel for non-Latin India names, cross-encoder, methodology document and final zip.
-- A teammate's record-centric v1 proposal is reviewed in `handoff.md` section 9; adopt the decision layer, forensics and evaluation protocol on top of the existing candidates.
+- Leaderboard scores for v0 and v1 (human uploads); decide which to keep.
+- Blocking upgrade decision from `v1c-blockeval`, then re-block, re-featurise, retrain.
+- Holdout protocol with bootstrap CI, calibration, record-level decision and per-S1 expected-F0.5, sibling features, France-proxy validation (US to India transfer).
+- Vectorise the slow v1 features (about 60 s per 1.5M pairs).
+- Methodology document from the template and the final package (team name, members, date still needed from the human).
 
 ## 6. Rules of the road
 

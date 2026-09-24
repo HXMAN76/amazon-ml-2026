@@ -31,5 +31,5 @@ def test_block_and_eval_on_synthetic(tmp_path, monkeypatch):
 
     r = json.loads(rep)
     assert "diagnose" in r and r["diagnose"]["true_pairs"] > 0
-    assert r["base_cap800"]["pair_recall"] > 0.9
-    assert r["base_cap800"]["pair_recall"] >= r["cap800_comp"]["pair_recall"] - 0.05
+    assert r["all_k30"]["pair_recall"] > 0.9
+    assert r["all_k30"]["pair_recall"] >= r["old_types"]["pair_recall"] - 0.02

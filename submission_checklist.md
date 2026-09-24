@@ -33,7 +33,7 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 | Code self-contained and runnable; anyone can regenerate both outputs from the training and test data | Done: `make reproduce` runs every stage; README lists steps and measured runtimes. The zip was unpacked in a clean virtualenv built from `requirements.txt` and its 14 tests pass. The full reproduction on the g5 was not rerun from the cleaned code (the v0 outputs came from the same logic before the unused legacy modules were removed) | done; rerun once before the final freeze |
 | All source under `src/`, plus `README.md` and pinned `requirements.txt` | `src/ber` exists; `configs/`, `Makefile`, `tests/`, `scripts/` sit beside `src/` (allowed as long as the README explains it). Legacy v0 modules removed | done |
 | Source code has proper comments describing the functions | Mostly docstrings on stages; review before packaging | agent |
-| Code zip for the portal | `dist/business_entity_resolution_code.zip` (38 KB, top folder `business_entity_resolution/`), built by the commands in the handoff | done |
+| Code zip for the portal | `dist/business_entity_resolution_code.zip` (top folder `business_entity_resolution/`) built after v0; **rebuild from the final code before the last upload** (v1 changed features, requirements now include `anyascii`, ISC licence) | rebuild at freeze |
 | Methodology document filled from `Documentation_template.md` (template is in S3 `docs/`) | **Not done.** Sections needed: executive summary, problem analysis, solution strategy, blocking (keys, number of candidate pairs, how true matches were kept), matching model (features, model, threshold method), results and error analysis, conclusion, appendix (code structure and entry points) | agent drafts, team reviews |
 | Guidelines say a 1 to 2 page document; the statement says no page limit | Keep the main body about 2 pages and move detail to the appendix | agent |
 | Team name, members, date for the template and zip name | **Missing** | human |
@@ -64,5 +64,5 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 1. Team name, team member names and submission date for the zip name and the template (human).
 2. Confirm the official validator PASS on `v0e`/`v0f`, then upload `matching_results.tsv` (human, one device).
 3. Reproduce entry point, README, cleanup of legacy modules, licence table (agent).
-4. Draft the methodology document with real numbers: OOF macro F0.5 0.9377 on the 250k train sample (not a holdout), blocking recall 0.9416, test candidate pairs 51,892,359, matches per S1 3.24 (train truth 3.46) (agent; update after the holdout run).
+4. Draft the methodology document with real numbers: OOF macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, test candidate pairs 51,892,359 (agent; update after the holdout run and the final model).
 5. Ask whether the portal or organisers limit upload size (matching 95 MB, candidates 691 MB raw) (human).

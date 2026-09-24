@@ -45,7 +45,7 @@ def prepare_source(tsv: Path, out: Path, workers: int, chunk_rows: int) -> int:
     derived = pl.DataFrame(
         {c: list(v) for c, v in zip(text.COLUMNS, cols)},
         schema={"name1": pl.Utf8, "name2": pl.Utf8, "core1": pl.Utf8, "legal": pl.Utf8, "is_domain": pl.Boolean,
-                "has_alias": pl.Boolean, "addr": pl.Utf8, "ctry": pl.Utf8, "nl_name": pl.Float32, "nl_addr": pl.Float32},
+                "has_alias": pl.Boolean, "addr": pl.Utf8, "ctry": pl.Utf8, "nl_name": pl.Float32, "nl_addr": pl.Float32, "core_rom": pl.Utf8, "addr_rom": pl.Utf8},
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     df.hstack(derived).write_parquet(out, compression="zstd")

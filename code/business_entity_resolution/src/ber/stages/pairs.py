@@ -11,6 +11,7 @@ test-time conditions. String features use rapidfuzz `cpdist` (multi-threaded C++
 from __future__ import annotations
 
 import argparse
+import re
 import time
 from pathlib import Path
 
@@ -52,6 +53,26 @@ def _cp(a: list[str], b: list[str], scorer) -> np.ndarray:
     if not a:
         return np.zeros(0, dtype=np.float32)
     return process.cpdist(a, b, scorer=scorer, dtype=np.float32, workers=-1)
+
+
+_VOWELS = re.compile(r"[aeiouy]")
+_NONDIGIT = re.compile(r"\D")
+
+
+def skeleton(x: str) -> str:
+    """Consonant skeleton of a Latin string: a crude phonetic key that survives vowel differences between a
+    Latin name and the romanisation of the same name written in an Indic script."""
+    return re.sub(r"(.)\1+", r"\1", _VOWELS.sub("", x.replace(" ", "")))
+
+
+def _coverage(a: list[str], b: list[str]) -> tuple[np.ndarray, np.ndarray]:
+    """Fraction of a's tokens found in b and of b's tokens found in a."""
+    d = pl.DataFrame({"a": a, "b": b}).with_columns(pl.col("a").str.split(" ").alias("at"), pl.col("b").str.split(" ").alias("bt"))
+    d = d.with_columns(pl.col("at").list.set_intersection(pl.col("bt")).list.len().alias("k"),
+                       pl.col("at").list.len().alias("na"), pl.col("bt").list.len().alias("nb"))
+    ca = d.select((pl.col("k") / pl.col("na").clip(lower_bound=1)).alias("v"))["v"].to_numpy().astype(np.float32)
+    cb = d.select((pl.col("k") / pl.col("nb").clip(lower_bound=1)).alias("v"))["v"].to_numpy().astype(np.float32)
+    return ca, cb
 
 
 def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
@@ -98,6 +119,37 @@ def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
     la, lb = a["legal"].to_list(), b["legal"].to_list()
     f["legal_eq"] = np.array([x != "" and x == y for x, y in zip(la, lb)], dtype=np.float32)
     f["legal_conflict"] = np.array([x != "" and y != "" and x != y for x, y in zip(la, lb)], dtype=np.float32)
+    # --- rarity / genericness of the name (how many S1 / pool records share it) and exact-name flag
+    f["core_eq"] = np.array([x != "" and x == y for x, y in zip(ac, bc)], dtype=np.float32)
+    f["log_cnt_s1_a"] = np.log1p(a["cnt_s1_a"].to_numpy()).astype(np.float32)
+    f["log_cnt_pool_b"] = np.log1p(b["cnt_pool_b"].to_numpy()).astype(np.float32)
+    f["log_cnt_s1_b"] = np.log1p(b["cnt_s1_b"].to_numpy()).astype(np.float32)
+    f["name_cov_a"], f["name_cov_b"] = _coverage(ac, bc)
+    f["addr_cov_a"], f["addr_cov_b"] = _coverage(aa, ba)
+    f["ntok_addr_a"] = np.array([x.count(" ") + 1 if x else 0 for x in aa], dtype=np.float32)
+    f["ntok_addr_b"] = np.array([x.count(" ") + 1 if x else 0 for x in ba], dtype=np.float32)
+    # --- glued / handle style names: compare with spaces removed
+    nsa, nsb = [x.replace(" ", "") for x in ac], [x.replace(" ", "") for x in bc]
+    f["nospace_partial"] = _cp(nsa, nsb, fuzz.partial_ratio)
+    f["nospace_jw"] = _cp(nsa, nsb, JaroWinkler.normalized_similarity)
+    # --- digit alignment: all digits of the address as one string, and the house number edit distance
+    da = ["".join(_NONDIGIT.sub("", x)) for x in aa]
+    db = ["".join(_NONDIGIT.sub("", x)) for x in ba]
+    f["digits_ratio"] = _cp(da, db, fuzz.ratio)
+    f["digits_lev"] = _cp(da, db, Levenshtein.distance)
+    ha = [x if x is not None else "" for x in d["ah"].to_list()]
+    hb = [x if x is not None else "" for x in d["bh"].to_list()]
+    hl = _cp(ha, hb, Levenshtein.distance)
+    f["house_lev"] = np.where(np.array([bool(x) and bool(y) for x, y in zip(ha, hb)]), hl, -1.0).astype(np.float32)
+    # --- romanised copies (bridge Devanagari, Telugu, Malayalam ... to Latin) and consonant skeletons
+    ra, rb = a["core_rom"].to_list(), b["core_rom"].to_list()
+    f["rom_tset"] = _cp(ra, rb, fuzz.token_set_ratio)
+    f["rom_partial"] = _cp(ra, rb, fuzz.partial_ratio)
+    f["rom_jw"] = _cp(ra, rb, JaroWinkler.normalized_similarity)
+    f["skel_ratio"] = _cp([skeleton(x) for x in ra], [skeleton(x) for x in rb], fuzz.ratio)
+    ara, arb = a["addr_rom"].to_list(), b["addr_rom"].to_list()
+    f["addr_rom_tset"] = _cp(ara, arb, fuzz.token_set_ratio)
+    f["addr_skel_ratio"] = _cp([skeleton(x) for x in ara], [skeleton(x) for x in arb], fuzz.ratio)
     return f
 
 
@@ -124,11 +176,16 @@ def main(argv: list[str] | None = None) -> None:
     cand = cand.sort("q", "pid")
     print(f"{a.split}: {cand.height} pairs after blocking features in {time.time() - t0:.0f}s", flush=True)
 
-    cols = ["core1", "name2", "addr", "legal", "ctry", "nl_name", "nl_addr"]
+    cols = ["core1", "name2", "addr", "legal", "ctry", "nl_name", "nl_addr", "core_rom", "addr_rom"]
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", *cols]).sort("rid")
     s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", *cols]).sort("rid")
     s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", *cols]).sort("rid")
     pool = pl.concat([s2, s3])
+    # name rarity: S1 rows sharing a core name, pool rows sharing a core name, S1 rows sharing a pool record's core name
+    s1 = s1.with_columns(pl.len().over("core1").alias("cnt_s1_a"))
+    pool = pool.with_columns(pl.len().over("core1").alias("cnt_pool_b"))
+    s1cnt = s1.group_by("core1").agg(pl.len().alias("cnt_s1_b"))
+    pool = pool.join(s1cnt, on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0))
     out = P["work"] / "features" / a.split
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("part_*.parquet"):

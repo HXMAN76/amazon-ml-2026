@@ -2,12 +2,13 @@
 
 Written 2026-09-25. Supersedes the informal plan in `research.md` section 4 and section 10. Facts about the data are in `context.md` section 2b. Nothing below is implemented yet except v0 (`code/business_entity_resolution/`), which this plan replaces at scale.
 
-## Status (2026-09-25 about 02:00 IST)
+## Status (2026-09-25 about 04:30 IST)
 
-- Phase 0 (foundation): done. Normaliser, `prepare`, `sample`, Makefile with hash stamps, MLflow logging, live job logs, tests.
-- Phase 1 (blocking): in progress. First measurement with the plan's channels A (`n`, `a`, `p`) and composite keys: recall 0.85 at 29 candidates per S1, gate 1 not met. Root cause is the document-frequency cap (800) being far too small for a 10.3M-record pool. Composite keys (rare name word with rare address word) were the strongest channel (0.78 alone), so more composite types were added (`m` name pair, `d` address pair, `h` house number with address word). The dense multilingual channel (E) is still open and will be added only if the lexical reachability diagnosis shows true pairs that share no token.
-- Phases 2 to 4: not started.
-- One design change since approval: the pool-side token index is cached in a persistent DuckDB file keyed by an index-parameter hash, so `cap_df`, per-type limits and K can be tuned in seconds instead of rebuilding for about 3 minutes.
+- Phase 0 (foundation): done.
+- Phase 1 (blocking): recall 0.9416 at 30 candidates per S1 with token types n, a, p, c, m, d, h (gate 1 asked for 0.98; the ceiling is set by 5.9% of true pairs the tokens miss: typo with empty address, glued handle names, non-Latin names, aliases). A second blocking upgrade (`g`, `x`, `k` tokens, larger K) is under measurement (`v1c-blockeval`). Dense embeddings were shown to be unnecessary for reachability (99.99% of true pairs share a token).
+- Phase 2 (matcher): done twice. v0 out-of-fold macro F0.5 0.9377, v1 0.9551 (63 features). Decision rule so far: exclusive assignment (features `margin_p`, `rank_p` already encode it) plus one global threshold at about 0.63; the threshold curve is flat, so the remaining gain is in ranking quality, calibration and per-S1 expected-F0.5 selection.
+- Phase 3 (improvements): in progress. Order of expected gain: blocking recall, then decision layer and calibration, then sibling features, then optional embeddings.
+- Phase 4: not started.
 
 ## 0. Review of the earlier plan: what holds and what changes
 

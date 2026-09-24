@@ -8,3 +8,4 @@ xgboost==3.4.1
 pyyaml==6.0.3
 mlflow==3.16.1
 pytest==9.1.1
+anyascii==0.3.3

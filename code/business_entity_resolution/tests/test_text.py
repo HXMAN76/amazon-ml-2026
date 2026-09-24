@@ -73,3 +73,10 @@ def test_ascii_fast_path_equals_slow_path():
 def test_street_and_saint_share_one_token():
     a = text.norm_address("12 Rue St Jean, Lille")
     assert a == text.norm_address("12 Rue Saint Jean, Lille") == text.norm_address("12 Rue Street Jean, Lille")
+
+
+def test_romanisation_bridges_scripts():
+    assert text.romanize("राम मीडिया प्राइवेट लिमिटेड") == "ram midiya praivet limited"
+    assert text.romanize("Ram Media") == "Ram Media"  # ASCII passes through unchanged
+    row = text.normalise_row("रियल फाउंडेशन", "महाराष्ट्र", "India")
+    assert row[text.COLUMNS.index("core_rom")] == "riyl phaumdesn" and row[text.COLUMNS.index("addr_rom")] == "mharastr"

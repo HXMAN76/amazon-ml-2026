@@ -20,10 +20,12 @@ registries or geocoding are used, and v0 uses no pretrained neural network.
    score for an S1 query is the sum of inverse document frequency over shared tokens; the top 30 per S1 are kept (about 30
    candidates per S1; recall of true pairs 0.94 on a 20k-S1 check, ceiling for the current matcher).
    Tokens with document frequency above 800 in the S2+S3 pool are ignored.
-4. **pairs** (`stages/pairs.py`): 42 vectorised features per candidate pair: blocking score per token type, rank and gap within
+4. **pairs** (`stages/pairs.py`): 63 features per candidate pair: blocking score per token type, rank and gap within
    the S1's list and within the candidate record's list (competition between S1 entities for the same record), rapidfuzz
    name and address similarities, Jaro-Winkler, Levenshtein, alias match, house-number and postal-code agreement or conflict,
-   legal-form agreement, script fractions, country agreement.
+   legal-form agreement, script fractions, country agreement, name rarity (how many S1 and pool records share the name),
+   exact-name flag, token coverage, glued-name similarity (spaces removed), digit alignment, and similarities on
+   romanised text (offline transliteration with anyascii) plus a consonant skeleton to bridge Latin and Indic scripts.
 5. **train_gpu** (`stages/train_gpu.py`): XGBoost binary classifier (CUDA when available, CPU otherwise), 5-fold cross-validation
    grouped by S1 entity, then the decision rule is tuned on the out-of-fold predictions.
 6. **predict** (`stages/predict.py`, `decision.py`): scores all test candidates, keeps for every S2/S3 record only its
@@ -52,10 +54,10 @@ make reproduce                       # runs every stage below; outputs in $BER_W
 | prepare + sample | `make sample` | about 9 min (24M records) |
 | block test | `python -m ber.stages.block --split test` | about 18 min (includes building the pool index) |
 | block train | `python -m ber.stages.block --split train --all-train` | about 13 min |
-| features train | `python -m ber.stages.pairs --split train` | about 2 min |
-| train | `python -m ber.stages.train_gpu --name v0` | about 3 min on GPU |
-| features test | `python -m ber.stages.pairs --split test` | about 8 min |
-| predict | `python -m ber.stages.predict --name v0` | about 2 min |
+| features train | `python -m ber.stages.pairs --split train` | about 6 min |
+| train | `python -m ber.stages.train_gpu --name v1` | about 3 min on GPU |
+| features test | `python -m ber.stages.pairs --split test` | about 35 min |
+| predict | `python -m ber.stages.predict --name v1` | about 2 min |
 
 Outputs: `$BER_WORK/output/v0/matching_results.tsv` (submitted to the leaderboard) and
 `$BER_WORK/output/v0/candidate_pairs.tsv`. Validate with the organisers' script:
@@ -83,11 +85,12 @@ configs/params.yaml      all tunables
 Makefile                 stage DAG and `make reproduce`
 tests/                   unit and end-to-end tests
 scripts/qa_prepare.py    sanity report of raw vs normalised text
+scripts/error_analysis.py  loss decomposition and error taxonomy of a trained model
 ```
 
 ## Results (training data, cross-validated)
 
-Out-of-fold macro F_0.5 on 250,000 training S1 entities: 0.9377 at threshold 0.63 (recall ceiling of blocking 0.94). Test
+Out-of-fold macro F_0.5 on 250,000 training S1 entities: 0.9551 at threshold 0.65 (v0 with 42 features: 0.9377); recall ceiling of blocking 0.94. Test
 run: 51,892,359 candidate pairs for 1,732,544 S1 entities, 93.9% of S1 receive at least one match, mean 3.24 matches per S1
 (training truth: 94.4% and 3.46). Candidate recall by country on training: US 0.970, India 0.899. France has no training
 data, so its behaviour is unvalidated.
@@ -95,6 +98,6 @@ data, so its behaviour is unvalidated.
 ## Licences and constraints
 
 No pretrained model is used. Libraries and their licences: numpy (BSD-3), pandas (BSD-3), polars (MIT), duckdb (MIT),
-rapidfuzz (MIT), xgboost (Apache-2.0), pyyaml (MIT), mlflow (Apache-2.0), pytest (MIT). The final model is an XGBoost
+rapidfuzz (MIT), anyascii (ISC), xgboost (Apache-2.0), pyyaml (MIT), mlflow (Apache-2.0), pytest (MIT). The final model is an XGBoost
 gradient-boosted tree ensemble (Apache-2.0, far below 8B parameters). The abbreviation and legal-form tables in `text.py`
 are hand-written string rules, not external data lookups.

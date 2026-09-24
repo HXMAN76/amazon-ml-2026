@@ -194,3 +194,31 @@ Wrong-owner false positives are mostly non-Latin names at an identical address (
 3. Blocking: exact core-name key, glued-name tokens, a fuzzy name channel for typo plus empty-address cases, larger K with a first-stage pruner.
 4. Decision: probability calibration and per-S1 expected-F0.5 selection; the flat threshold curve says the gain is in the ranking quality, not the cut.
 5. Sibling and consensus features (do other records of the same S1 agree on the digits and name variants?) address the look-alike distractors.
+
+## 13. v1 results and the next blocking step (2026-09-25)
+
+Added to the matcher after the section 12 analysis (63 features instead of 42): name rarity (pool count of records sharing the core name, S1 count sharing it, S1 count for the pool record's name), exact core-name flag, token coverage of names and addresses on each side, address token counts, glued-name similarity (spaces removed: partial ratio, Jaro-Winkler), digit alignment (all-digit string ratio and Levenshtein, house-number edit distance), romanised name and address similarities using `anyascii` (offline, ISC licence) and a consonant-skeleton similarity that survives vowel differences between a Latin name and the romanisation of an Indic-script name.
+
+| Out-of-fold macro F0.5 | v0 | v1 |
+|---|---|---|
+| Overall | 0.9377 | **0.9551** |
+| US / India | 0.959 / 0.905 | 0.968 / 0.935 |
+| Singleton entities (predicted a match) | 0.920 (7.95%) | 0.959 (4.10%) |
+| Entities with one true match | 0.846 | 0.883 |
+| Some match has a non-Latin name | 0.846 | 0.897 |
+| Some match has an empty address | 0.912 | 0.923 |
+| Precision / recall vs all true pairs | 0.980 / 0.886 | 0.989 / 0.906 |
+| Loss from matcher / from blocking recall | 0.0404 / 0.0219 | 0.0230 / 0.0219 |
+| False positives / false negatives among candidates | 15,964 / 48,002 | 8,682 / 30,063 |
+
+Top features by gain: `margin_p`, `rank_p` (competition between S1 entities for the same record), `house_eq`, `addr_b_empty`, `house_lev`, `num_common_frac`, `digits_ratio`, `legal_conflict`, `pin_conflict`, `name_cov_b`. The competition features dominate: knowing whether another S1 explains the record better is the strongest signal, which supports the record-centric view (each record picks one owner).
+
+Cost note: the added Python loops (digit strings, skeletons) raised feature time from about 13 s to about 60 s per 1.5M-pair chunk; test features take about 35 minutes. Vectorising them is a pure engineering task.
+
+Blocking is now the largest single loss (0.0219). The token types added for it, and why:
+- `g` whole core name with spaces removed: handles glued and handle-style names (`@goldenfactory`, `#l0llydigiovanni`) and any exact-name pair whose tokenisation differs.
+- `x` one-deletion variants of the two rarest name words (SymSpell idea: two words within one edit share a variant): handles typos when the address is empty or short (`Global Oneim` versus `Global Onem`).
+- `k` consonant skeleton of name words, generated for the pool side only from romanised non-Latin names and for the S1 side from Latin names: bridges scripts at blocking time (`राम मीडिया` gives `ram midiya`, skeleton `rm md`; `Ram Media` gives `rm md`).
+Job `v1c-blockeval` measures recall of these against the old token set at K 30, 40 and 60. If the gain is real, blocking is re-run for train and test, features are rebuilt and the model retrained.
+
+Literature used for the decision layer: exact F-measure maximisation for sets of labels (Dembczynski et al., GFM: O(m^2) to O(m^3) for m candidates given the label probabilities) gives the optimal per-S1 prediction set under F-beta; calibration under domain shift (multi-domain temperature scaling, adaptive calibrator ensemble) is relevant because France is a new domain; triplet fine-tuning of embeddings on synthetic business records (arXiv 2608.16161) supports fine-tuning a bi-encoder later, if lexical features plateau.

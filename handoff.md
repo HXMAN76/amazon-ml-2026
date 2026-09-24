@@ -1,10 +1,15 @@
 # Handoff: Amazon ML Challenge 2026 (Business Entity Resolution)
 
-Written 2026-09-25 about 03:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
+Written 2026-09-25, refreshed about 04:30 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
 
-## 1. One-paragraph state
+## 1. State in brief
 
-Task: link each Source 1 (S1) business record to its S2/S3 records (entity resolution), scored by macro F0.5 per S1 entity; submissions are `matching_results.tsv` plus `candidate_pairs.tsv`. Window closes **Sun 27 Sep 2026 23:59 IST**, 5 submissions per day. Everything runs on one AWS SageMaker notebook (`test-notebook`, ml.g5.xlarge with an A10G, 4 vCPU, 15 GB RAM) driven from the laptop through an S3 job queue (no SSH needed). Pipeline stages built and run on real data: `prepare`, `sample`, `block` (test and train), `block_eval`. **A v0 submission chain is running**: `v0b` (pair features for train, then XGBoost GPU training) then `v0c` (test features, predict, validate, upload outputs to S3). No leaderboard score exists yet. Blocking recall is 0.942 (ceiling for v0) at about 30 candidates per S1.
+Task: link each Source 1 (S1) business record to its S2/S3 records (entity resolution), scored by macro F0.5 per S1 entity; submissions are `matching_results.tsv` plus `candidate_pairs.tsv`. Window closes **Sun 27 Sep 2026 23:59 IST**, 5 submissions per day. Everything runs on one AWS SageMaker notebook (`test-notebook`, ml.g5.xlarge with an A10G, 4 vCPU, 15 GB RAM) driven from the laptop through an S3 job queue (no SSH needed).
+
+- **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Its `matching_results.tsv` passed the official validator including `--check-ids` and is at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. The human uploads to the portal; the leaderboard score is not yet known to the agent.
+- **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singletons 0.959, precision 0.989, recall 0.906). Test prediction job `v1b` is running; outputs will appear under `runs/v1/`.
+- **Remaining loss (4.5 points):** blocking recall 2.19 (pair recall 0.941, unchanged) and matcher 2.30. A new blocking upgrade (token types `g` glued name, `x` one-deletion typo variants, `k` consonant skeleton) is being measured by job `v1c-blockeval`.
+- Error analysis of v0 and v1 (`scripts/error_analysis.py`, findings in `research.md` sections 12 and 13) drives the priorities.
 
 ## 2. Access and identity
 
@@ -14,7 +19,7 @@ Task: link each Source 1 (S1) business record to its S2/S3 records (entity resol
 | Region | `us-east-1` for everything |
 | CLI profile | `hxman-26`, a **root** session created with `aws login --profile hxman-26`; it expires, then re-run that command in a terminal (browser sign-in). Verify: `aws sts get-caller-identity --profile hxman-26` |
 | Laptop tools | `aws` CLI v2, `session-manager-plugin` 1.2.835.0 (installed, only needed for the optional SSH-helper path), `uv`, Python 3.12 |
-| Local dev env | `/home/hxman/amazon-ml-2026/.venv-ber/` (Python 3.12; includes polars, duckdb, xgboost, mlflow, pytest). Create with `uv venv --python 3.12 .venv-ber && VIRTUAL_ENV=.venv-ber uv pip install -r code/business_entity_resolution/requirements.txt` |
+| Local dev env | `/home/hxman/amazon-ml-2026/.venv-ber/` (Python 3.12; includes polars, duckdb, xgboost, mlflow, anyascii, pytest). Create with `uv venv --python 3.12 .venv-ber && VIRTUAL_ENV=.venv-ber uv pip install -r code/business_entity_resolution/requirements.txt` |
 | AWS MCP connector | not authorized in the desktop app; use the CLI instead |
 | Shell gotcha | a command typed in the desktop app terminal pane (including `!cmd` style input) runs on the **laptop**. To run something **on the g5**, either queue an S3 job (section 4) or open Jupyter and use its terminal |
 
@@ -125,29 +130,34 @@ Everything is in `code/business_entity_resolution`; parameters in `configs/param
 | sample | `make sample` | `sample/train_s1.parquet`: 250,000 S1 with folds 0..4 | seconds |
 | block_eval | `make block_eval` | `blocks/eval_report.json` (recall per configuration) | index cached; runs seconds each at cap 800 |
 | block | `python -m ber.stages.block --split test` and `--split train --all-train` | `blocks/{split}/cand_*.parquet` | test 51.9M pairs in 18.5 min (includes pool index build), train 66.1M pairs in 13 min |
-| pairs | `python -m ber.stages.pairs --split train` (7.48M pairs) / `--split test` (51.9M) | `features/{split}/part_*.parquet` (45 columns) | train blocking stats 46 s, string features about 13 s per 1.5M pairs |
-| train_gpu | `python -m ber.stages.train_gpu --name v0` | XGBoost (CUDA) 5-fold grouped OOF, exclusive assignment and threshold tuning; `models/v0/{xgb.json,config.json,report.json,oof.parquet}` | pending |
-| predict | `python -m ber.stages.predict --name v0` | `output/v0/{matching_results.tsv,candidate_pairs.tsv}` and validation (official validator if found at `work/official/validate_submission.py`) | pending |
+| pairs | `python -m ber.stages.pairs --split train` (7.48M pairs) / `--split test` (51.9M) | `features/{split}/part_*.parquet` (66 columns, 63 model features) | v0: about 13 s per 1.5M-pair chunk; v1: about 60 s per chunk, so test features take about 35 min (Python loops for digit strings and skeletons are the next thing to vectorise) |
+| train_gpu | `python -m ber.stages.train_gpu --name v1` | XGBoost (CUDA) 5-fold grouped OOF, exclusive assignment and threshold tuning; `models/<name>/{xgb.json,config.json,report.json,oof.parquet}` | about 22 s per fold, 3 min in total |
+| predict | `python -m ber.stages.predict --name v1` | `output/<name>/{matching_results.tsv,candidate_pairs.tsv}` and validation (official validator if found at `work/official/validate_submission.py`); scores part by part to fit RAM | about 2 min |
+| error analysis | `python scripts/error_analysis.py v1` | loss decomposition (blocking vs matcher), segments, false-positive/negative taxonomy with raw-text examples | about 2 min |
 
-Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c` name x address word, `m` name-word pair, `d` address-word pair, `h` house-number x address word. Key parameters: `k` 30, `cap_df` 800 (tokens more frequent than this in the 10.3M pool are ignored; raising it changes nothing but costs up to 100x time), `per_type` rarest-token limits. Candidate id convention: `pid = src * 10_000_000 + rid` (`src` 2 or 3). S1 identifier is `rid`, the row index in the Parquet (0-based, equals row number in the TSV).
+Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c` name x address word, `m` name-word pair, `d` address-word pair, `h` house-number x address word, and (new, being measured) `g` glued whole name, `x` one-deletion variants of the two rarest name words, `k` consonant skeleton of name words (pool side only for non-Latin names, via romanisation). The pool-index cache key includes `INDEX_VERSION` in `block.py`; bump it when token generation changes. Key parameters: `k` 30, `cap_df` 800 (tokens more frequent than this in the 10.3M pool are ignored; raising it changes nothing but costs up to 100x time), `per_type` rarest-token limits. Candidate id convention: `pid = src * 10_000_000 + rid` (`src` 2 or 3). S1 identifier is `rid`, the row index in the Parquet (0-based, equals row number in the TSV).
 
 Local tests: `make test` or `pytest -q tests` in `code/business_entity_resolution` (16 tests including an end-to-end synthetic run of the whole v0 chain; xgboost falls back to CPU when no GPU).
 
 ## 6. What is running or pending right now
 
-| Job | State at the time of writing | Notes |
+| Job | State | Notes |
 |---|---|---|
-| `v0a` | done | blocking for test (51,892,359 pairs) and all train S1 (66,075,079 pairs) |
-| `v0b` | running | `pairs --split train` (about 5 chunks of 1.5M) then `train_gpu --name v0` |
-| `v0c` | pending (already uploaded) | `pairs --split test`, `predict --name v0`, copies the validator, then publishes `matching_results.tsv`, `candidate_pairs.tsv`, model files and `runs.jsonl` to `s3://sagemaker-us-east-1-567503593043/runs/v0/` |
+| `v0a` to `v0f`, `v1a` | done | v0 chain and its validation; `v1a` rebuilt Parquet with romanised columns, built train features (63) and trained `v1` |
+| `v1b` | running | test features (about 35 min at 60 s per chunk), `predict --name v1`, then publishes outputs, model and `runs.jsonl` to `s3://sagemaker-us-east-1-567503593043/runs/v1/` |
+| `v1c-blockeval` | pending (runs after `v1b`) | rebuilds the pool token index with the new types (about 5 to 10 min, watch disk) and measures recall for old types, all types at K 30, 40 and 60, and the new types alone |
 
-After `v0c` finishes: fetch `runs/v0/output/matching_results.tsv` to the laptop, run the official validator locally (`python3 <validator> --matching ... --candidate ... --test-dir <test dir>`; the validator is at `s3://ml-challenge-nooglers/ml-challenge-2026/raw/v1/utils/validate_submission.py` and needs the three test TSVs; alternatively read the validator result from the `v0c` log), then upload `matching_results.tsv` in the Unstop portal by hand (leaderboard uploads are done by the human; do not automate portal actions). Record the leaderboard score next to the run in `runs.jsonl` notes.
+Jobs run one at a time in alphabetical order; names that sort later wait for earlier ones. After `v1b` finishes: fetch `runs/v1/output/matching_results.tsv`, check the validator line in the `v1b` log (the log shows the official validator verdict; rerun with `--check-ids` if desired), and upload by hand if v1 beats v0.
+
+AWS sessions expire: when a command prints "Your session has expired", the human runs `aws login --profile hxman-26` again.
 
 ## 7. Results and facts to trust (do not re-derive)
 
 - Data structure and noise: `context.md` section 2b (row counts, singleton rate 5.6%, mean 3.46 matches per S1, exclusive ownership, France differences, noise catalogue).
 - Blocking, 20k train S1 vs the full 10.3M pool, cap 800, K 30, all token types: **pair recall 0.9416** (US 0.970, India 0.899), 29.9 candidates per S1, S1 with all matches found 0.8375. Misses: 2.2% over the df cap, 3.7% lost to per-type limits and top-K. Diagnosis with no cap: only 0.01% of true pairs share no token; the rarest shared token has df at most 100 for 96%, at most 800 for 97.9%. So lexical blocking is enough; a dense channel is only for the non-Latin India minority (about 9%).
 - Higher `cap_df` does not help (0.9403 at 5000, 0.9412 at 20000) and is very slow (67 s and 797 s vs 5 s).
+- v1 out-of-fold (250k train S1): macro F0.5 0.9551, precision 0.989, recall 0.906; oracle on candidates 0.9781 (blocking loss 0.0219, matcher loss 0.0230). By segment: US 0.968, India 0.935, singletons 0.959, one-match entities 0.883, non-Latin match 0.897, empty-address match 0.923. F0.5 versus threshold is flat (0.9532 at 0.50, 0.9550 at 0.63, 0.9549 at 0.70).
+- v0 error taxonomy and the v1 improvements are in `research.md` sections 12 and 13.
 - Normaliser throughput: about 10 microseconds per row after the ASCII fast path (was about 400 before).
 
 ## 8. Known pitfalls (each cost real time)
@@ -167,14 +177,14 @@ After `v0c` finishes: fetch `runs/v0/output/matching_results.tsv` to the laptop,
 
 Approved design is `plan.md` (multi-channel blocking, feature matcher, calibration, exclusive assignment, expected-F0.5 per-S1 decision, Makefile + MLflow, single account, baseline first). A teammate proposed a **record-centric** v1 (each S2/S3 record picks its owner or none; sibling consensus; fine-tuned multilingual bi-encoder; Modal); review conclusions: adopt the record-level decision with a none class and calibrated owner probability, the forensics of noise operators from matched train pairs, the evaluation discipline (locked holdout, bootstrap CI, US to India transfer as France proxy, adversarial train-vs-test validation, an empty submission to measure the test singleton share), and sibling features as second-stage stacking; postpone dense-first retrieval, FAISS-GPU, Modal and the fine-tuned e5 until v0 shows where India is weak. Do not rebuild `prepare`, `block` or `features`: extend them.
 
-Suggested order after the v0 submission:
-1. Holdout protocol and bootstrap CI (extend `sample.py` to a dev/holdout split; reuse `decision.macro_f05`).
-2. Record-level decision: softmax or GBM over each record's candidate S1 list plus a none option, calibrated with isotonic regression; per-S1 expected-F0.5 prefix selection by dynamic programme; vetoes on conflicting PIN or house number.
-3. Raise K (60 to 100) after a cheap first-stage ranker prunes candidates before expensive string features.
-4. Forensics report from matched train pairs to improve the normaliser (leet mappings, abbreviations, domain constructions); rerun `prepare` (9 min) only when `text.py` changes.
-5. Dense multilingual channel (bge-m3 or multilingual-e5, both MIT) only for non-Latin India names if India recall stays below US.
-6. Cross-encoder on the ambiguous band only, after a real score exists.
-7. Freeze, reproduce from scratch, methodology write-up from `docs/Documentation_template.md` in S3, submission zip layout in `context.md` section 1.
+Suggested order from here (details and evidence in `research.md`):
+1. Finish the blocking upgrade (`g`, `x`, `k` tokens; possibly K 40 to 60 with a first-stage pruner). Blocking recall is the largest remaining loss (2.19 points).
+2. Vectorise the slow v1 features (digit strings, skeletons) so test features take minutes, not 35.
+3. Holdout protocol with bootstrap CI (extend `sample.py` to a dev/holdout split; reuse `decision.macro_f05`), so gains are provably real; US to India transfer as the France proxy.
+4. Record-level decision with a none class, isotonic calibration and per-S1 expected-F0.5 prefix selection (exact algorithms exist, see `research.md`); vetoes on conflicting PIN or house number.
+5. Sibling and consensus features (do the other records of the same S1 agree on digits and name variants?) against look-alike distractors.
+6. Dense multilingual channel or embedding feature only if India stays behind after romanisation; cross-encoder on the ambiguous band only after that.
+7. Freeze, reproduce from scratch, methodology write-up from `docs/Documentation_template.md` in S3, rebuild `dist/business_entity_resolution_code.zip` from the final code (the current zip predates the v1 features), package layout in `context.md` section 1.
 
 ## 10. Rules
 
