@@ -3,7 +3,7 @@ from pathlib import Path
 
 import polars as pl
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ber import synth  # noqa: E402
 from ber.stages import block, block_eval, prepare, sample  # noqa: E402
@@ -15,7 +15,7 @@ def test_block_and_eval_on_synthetic(tmp_path, monkeypatch):
     synth.make(data, "test", n=100, countries=("US", "India", "France"), seed=2)
     monkeypatch.setenv("BER_DATA", str(data))
     monkeypatch.setenv("BER_WORK", str(work))
-    monkeypatch.setenv("BER_PARAMS", str(Path(__file__).resolve().parents[1] / "configs" / "params.yaml"))
+    monkeypatch.setenv("BER_PARAMS", str(Path(__file__).resolve().parents[2] / "configs" / "params.yaml"))
     prepare.main([])
     sample.main()
     block.main(["--split", "train"])

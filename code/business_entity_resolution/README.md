@@ -3,7 +3,7 @@
 Solution for the Amazon ML Challenge 2026 (Business Entity Resolution). For every Source 1 (S1) business record it predicts
 the matching Source 2 / Source 3 (S2/S3) records, and it also writes the candidate set the model scored. Score: macro F_0.5
 over S1 entities. Everything is derived from the provided training and test TSV files only; no external data, APIs,
-registries or geocoding are used, and v0 uses no pretrained neural network.
+registries or geocoding are used, and the model uses no pretrained neural network.
 
 ## Pipeline
 
@@ -44,7 +44,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export BER_DATA=/path/to/dataset     # folder containing train/ and test/ (the TSV files from the challenge)
 export BER_WORK=/path/to/work        # scratch and outputs
-make reproduce                       # runs every stage below; outputs in $BER_WORK/output/v0/
+make reproduce                       # runs every stage below; outputs in $BER_WORK/output/v1/
 ```
 
 `make reproduce` runs, in order (timings measured on the g5):
@@ -59,33 +59,38 @@ make reproduce                       # runs every stage below; outputs in $BER_W
 | features test | `python -m ber.stages.pairs --split test` | about 35 min |
 | predict | `python -m ber.stages.predict --name v1` | about 2 min |
 
-Outputs: `$BER_WORK/output/v0/matching_results.tsv` (submitted to the leaderboard) and
-`$BER_WORK/output/v0/candidate_pairs.tsv`. Validate with the organisers' script:
+Outputs: `$BER_WORK/output/v1/matching_results.tsv` (submitted to the leaderboard) and
+`$BER_WORK/output/v1/candidate_pairs.tsv`. Validate with the organisers' script and with the bundled checker, which tests every
+rule of the statement (format, one row per S1, ids exist, matches are a subset of candidates, one owner per record) and prints
+per-country statistics:
 
 ```bash
-python3 utils/validate_submission.py --matching $BER_WORK/output/v0/matching_results.tsv \
-    --candidate $BER_WORK/output/v0/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
+python3 utils/validate_submission.py --matching $BER_WORK/output/v1/matching_results.tsv \
+    --candidate $BER_WORK/output/v1/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
+python src/scripts/check_submission.py $BER_WORK/output/v1 $BER_DATA/test
 ```
 
 `make` reruns a stage only when its parameters or source changed. Parameters for every stage are in `configs/params.yaml`.
 Run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl` and an MLflow sqlite database.
-Tests (`make test`) include an end-to-end run on a small synthetic dataset.
+Tests (`make test`, 16 tests) include end-to-end runs on a small synthetic dataset, including the output checker.
 
 ## Layout
 
+All Python source is under `src/`; `configs/`, `Makefile`, `README.md` and `requirements.txt` are at the package root.
+
 ```
 src/ber/                 package
-  text.py                text normalisation
+  text.py                text normalisation (entities, leetspeak, aliases, domains, legal forms, romanisation)
   config.py stamp.py tracking.py   parameters, stage cache stamps, run logging
   decision.py            exclusive assignment, threshold tuning, vectorised macro F_0.5
   validate.py            local re-implementation of the format rules (raw-line parsing)
   synth.py               small synthetic dataset used by the tests
   stages/                prepare, sample, block, block_eval, pairs, train_gpu, predict
-configs/params.yaml      all tunables
+src/scripts/             qa_prepare.py (raw vs normalised text), error_analysis.py (loss decomposition and error
+                         taxonomy of a trained model), check_submission.py (rule checker for the output files)
+src/tests/               unit and end-to-end tests (`make test`)
+configs/params.yaml      all tunables (`block.types` selects the token types used for the submitted run)
 Makefile                 stage DAG and `make reproduce`
-tests/                   unit and end-to-end tests
-scripts/qa_prepare.py    sanity report of raw vs normalised text
-scripts/error_analysis.py  loss decomposition and error taxonomy of a trained model
 ```
 
 ## Results (training data, cross-validated)

@@ -9,7 +9,7 @@ Task: link each Source 1 (S1) business record to its S2/S3 records (entity resol
 - **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Its `matching_results.tsv` passed the official validator including `--check-ids` and is at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. The human uploads to the portal; the leaderboard score is not yet known to the agent.
 - **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singletons 0.959, precision 0.989, recall 0.906). Test prediction job `v1b` is running; outputs will appear under `runs/v1/`.
 - **Remaining loss (4.5 points):** blocking recall 2.19 (pair recall 0.941, unchanged) and matcher 2.30. A new blocking upgrade (token types `g` glued name, `x` one-deletion typo variants, `k` consonant skeleton) is being measured by job `v1c-blockeval`.
-- Error analysis of v0 and v1 (`scripts/error_analysis.py`, findings in `research.md` sections 12 and 13) drives the priorities.
+- Error analysis of v0 and v1 (`src/scripts/error_analysis.py`, findings in `research.md` sections 12 and 13) drives the priorities.
 
 ## 2. Access and identity
 
@@ -67,7 +67,7 @@ In the repo:
 
 | Path | Content |
 |---|---|
-| `code/business_entity_resolution/` | package `ber` (`src/ber`), `Makefile`, `configs/params.yaml`, `tests/`, `scripts/`, `requirements.txt`, `README.md` |
+| `code/business_entity_resolution/` | package `ber` (`src/ber`), `Makefile`, `configs/params.yaml`, `src/tests/`, `src/scripts/`, `requirements.txt`, `README.md` |
 | `aws/notebook/` | `onstart.sh`, `bootstrap.sh`, `jobrunner.sh` (the infra scripts, also copied to S3 `ber/`) |
 | `iam/hxman/` | IAM policy documents for the role |
 | `context.md`, `plan.md`, `research.md`, `handoff.md` | project documents |
@@ -133,7 +133,7 @@ Everything is in `code/business_entity_resolution`; parameters in `configs/param
 | pairs | `python -m ber.stages.pairs --split train` (7.48M pairs) / `--split test` (51.9M) | `features/{split}/part_*.parquet` (66 columns, 63 model features) | v0: about 13 s per 1.5M-pair chunk; v1: about 60 s per chunk, so test features take about 35 min (Python loops for digit strings and skeletons are the next thing to vectorise) |
 | train_gpu | `python -m ber.stages.train_gpu --name v1` | XGBoost (CUDA) 5-fold grouped OOF, exclusive assignment and threshold tuning; `models/<name>/{xgb.json,config.json,report.json,oof.parquet}` | about 22 s per fold, 3 min in total |
 | predict | `python -m ber.stages.predict --name v1` | `output/<name>/{matching_results.tsv,candidate_pairs.tsv}` and validation (official validator if found at `work/official/validate_submission.py`); scores part by part to fit RAM | about 2 min |
-| error analysis | `python scripts/error_analysis.py v1` | loss decomposition (blocking vs matcher), segments, false-positive/negative taxonomy with raw-text examples | about 2 min |
+| error analysis | `python src/scripts/error_analysis.py v1` | loss decomposition (blocking vs matcher), segments, false-positive/negative taxonomy with raw-text examples | about 2 min |
 
 Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c` name x address word, `m` name-word pair, `d` address-word pair, `h` house-number x address word, and (new, being measured) `g` glued whole name, `x` one-deletion variants of the two rarest name words, `k` consonant skeleton of name words (pool side only for non-Latin names, via romanisation). The pool-index cache key includes `INDEX_VERSION` in `block.py`; bump it when token generation changes. Key parameters: `k` 30, `cap_df` 800 (tokens more frequent than this in the 10.3M pool are ignored; raising it changes nothing but costs up to 100x time), `per_type` rarest-token limits. Candidate id convention: `pid = src * 10_000_000 + rid` (`src` 2 or 3). S1 identifier is `rid`, the row index in the Parquet (0-based, equals row number in the TSV).
 

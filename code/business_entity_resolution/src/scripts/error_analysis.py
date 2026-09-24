@@ -12,7 +12,7 @@ import sys
 
 import polars as pl
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ber import decision  # noqa: E402
 
 W = os.environ.get("BER_WORK", "work")
@@ -42,6 +42,7 @@ print(f"model {name}, threshold {thr:.2f}, exclusive={cfg['exclusive']}, {oof.he
 
 
 def per_entity(pred: pl.DataFrame) -> pl.DataFrame:
+    """Per-S1 F0.5 table for a set of predicted pairs."""
     g = pred.group_by("q").agg(pl.len().alias("n_pred"), pl.col("label").sum().alias("tp"))
     d = qs.join(n_true.select("q", "n_true"), on="q", how="left").join(g, on="q", how="left").with_columns(
         pl.col("n_pred").fill_null(0), pl.col("tp").fill_null(0))
@@ -104,6 +105,7 @@ print(f"== BLOCKING MISSES {missed.height}")
 
 
 def show(df: pl.DataFrame, title: str, n: int = 12, cols=("p",)) -> None:
+    """Print raw-text examples for a sample of pairs."""
     j = (df.sample(min(n, df.height), seed=3).join(s1, on="q", how="left").join(pool, on="pid", how="left", suffix="_r"))
     print(f"\n--- {title}")
     for r in j.iter_rows(named=True):

@@ -101,6 +101,7 @@ def _name_tokens(s: str) -> list[str]:
 
 @dataclass(frozen=True)
 class NameParts:
+    """Parsed business name: primary name, alias, core name, legal forms and flags."""
     name1: str        # primary normalised name (all tokens)
     name2: str        # alias (dba) or domain label, "" if none
     core1: str        # name1 without legal forms and stop words
@@ -110,6 +111,7 @@ class NameParts:
 
 
 def parse_name(raw: object) -> NameParts:
+    """Split a raw business name into primary name, alias/domain label, core name and legal forms."""
     if not isinstance(raw, str) or not raw.strip():
         return NameParts("", "", "", "", False, False)
     s = unicodedata.normalize("NFC", html.unescape(raw)).strip()
@@ -136,6 +138,7 @@ def parse_name(raw: object) -> NameParts:
 
 
 def norm_address(raw: object) -> str:
+    """Normalise an address: decode entities, tokenise, drop filler words, expand abbreviations."""
     if not isinstance(raw, str) or not raw.strip():
         return ""
     toks: list[str] = []
@@ -149,6 +152,7 @@ def norm_address(raw: object) -> str:
 
 
 def norm_country(raw: object) -> str:
+    """Lower-case a country label and map a few known aliases; unseen labels pass through."""
     if not isinstance(raw, str):
         return ""
     c = strip_accents(raw).lower().strip()
@@ -156,6 +160,7 @@ def norm_country(raw: object) -> str:
 
 
 def nonlatin_frac(s: object) -> float:
+    """Fraction of alphabetic characters outside the Latin scripts."""
     if not isinstance(s, str):
         return 0.0
     letters = [c for c in s if c.isalpha()]

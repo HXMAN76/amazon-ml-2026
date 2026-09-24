@@ -25,6 +25,7 @@ from ber.validate import validate
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI: score test candidates, apply the decision rule, write both TSV outputs and validate them."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="v0")
     a = ap.parse_args(argv)

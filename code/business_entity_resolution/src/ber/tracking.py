@@ -22,6 +22,7 @@ def _git_sha() -> str:
 
 
 def log_stage(stage: str, params: dict, metrics: dict[str, float], extra: dict | None = None) -> None:
+    """Append a stage record to runs.jsonl and log it to MLflow (never fails the stage)."""
     rec = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "stage": stage, "git": _git_sha(), "params": params,
            "metrics": metrics, **(extra or {})}
     runs = paths()["runs"]

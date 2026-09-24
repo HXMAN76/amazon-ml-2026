@@ -17,6 +17,7 @@ def _raw_tsv(path: str | Path) -> pd.DataFrame:
 
 
 def validate(matching: str | Path, candidate: str | Path, test_dir: str | Path) -> list[str]:
+    """Check both output files against the format rules (raw-line parsing, like the official validator)."""
     test_dir = Path(test_dir)
     s1 = set(read_tsv(test_dir / "test_source1.tsv")["entity_id"])
     others = set(read_tsv(test_dir / "test_source2.tsv")["entity_id"]) | set(read_tsv(test_dir / "test_source3.tsv")["entity_id"])

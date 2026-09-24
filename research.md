@@ -164,7 +164,7 @@ Reading:
 
 ## 12. Error analysis of baseline v0 (2026-09-25, out-of-fold on the 250k-S1 train sample)
 
-Model: XGBoost on 42 features, exclusive assignment, threshold 0.63. Script: `code/business_entity_resolution/scripts/error_analysis.py`.
+Model: XGBoost on 42 features, exclusive assignment, threshold 0.63. Script: `code/business_entity_resolution/src/scripts/error_analysis.py`.
 
 **Loss decomposition.** Macro F0.5 0.9377. An oracle restricted to the candidate set scores 0.9781, so blocking recall costs 0.0219 and the matcher costs 0.0404. Precision is 0.980, recall against all true pairs is 0.886, so recall is the larger loss. F0.5 versus threshold is flat around the optimum (0.9349 at 0.50, 0.9377 at 0.63, 0.9373 at 0.70): the threshold choice is not fragile.
 

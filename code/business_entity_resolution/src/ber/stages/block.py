@@ -36,6 +36,7 @@ INDEX_VERSION = 2  # bump when token generation changes so the cached pool index
 
 
 def base_tokens(tbl: str, idcol: str, prefix_len: int, min_prefix: int, k_expr: str, k_where: str) -> str:
+    """SQL producing tagged tokens (name, address, prefix, glued name, skeleton) per record of a table."""
     return f"""
     SELECT DISTINCT id, typ, w FROM (
       SELECT {idcol} AS id, 'n' AS typ, unnest(string_split(core1 || ' ' || name2, ' ')) AS w FROM {tbl}
@@ -88,12 +89,14 @@ def make_composites(con: duckdb.DuckDBPyConnection, bt: str, dft: str, out: str,
 
 
 def index_hash(con: duckdb.DuckDBPyConnection, prm: dict) -> str:
+    """Hash identifying the pool-index build (token version, index params, pool size) for cache reuse."""
     n = con.execute("SELECT count(*), sum(length(core1) + length(addr)) FROM pool").fetchone()
     key = json.dumps([INDEX_VERSION, prm["prefix_len"], prm["min_prefix_len"], prm["comp"], list(n)], sort_keys=True)
     return hashlib.sha256(key.encode()).hexdigest()[:12]
 
 
 def build_pool_index(con: duckdb.DuckDBPyConnection, prm: dict) -> None:
+    """Build (or reuse from cache) the S2+S3 token postings and document frequencies."""
     h = index_hash(con, prm)
     try:
         if con.execute("SELECT h FROM meta").fetchone()[0] == h:
@@ -144,11 +147,13 @@ def build_query_index(con: duckdb.DuckDBPyConnection, prm: dict) -> dict:
 
 
 def build_index(con: duckdb.DuckDBPyConnection, prm: dict) -> dict:
+    """Build the pool index and the query-side token tables in one call."""
     build_pool_index(con, prm)
     return build_query_index(con, prm)
 
 
 def score_batches(con: duckdb.DuckDBPyConnection, prm: dict, out: Path, types: list[str]) -> int:
+    """Score queries against the pool in batches; write the top-K candidates per S1 as Parquet shards."""
     out.mkdir(parents=True, exist_ok=True)
     qs = [r[0] for r in con.execute("SELECT DISTINCT q FROM qtok ORDER BY q").fetchall()]
     total = 0
@@ -198,6 +203,7 @@ def open_db(split: str, qids_parquet: Path | None, prm: dict) -> duckdb.DuckDBPy
 
 
 def run(split: str, qids_parquet: Path | None, types: list[str], prm: dict, out: Path) -> dict:
+    """Open the database, build the index and score all queries; returns statistics."""
     con = open_db(split, qids_parquet, prm)
     st = build_index(con, prm)
     st["pairs"] = score_batches(con, prm, out, types)
@@ -206,10 +212,12 @@ def run(split: str, qids_parquet: Path | None, types: list[str], prm: dict, out:
 
 
 def params_hash(prm: dict, types: list[str], q: Path | None) -> str:
+    """Hash of parameters, token types and query selection; a change invalidates existing shards."""
     return hashlib.sha256(json.dumps([prm, types, str(q)], sort_keys=True).encode()).hexdigest()[:12]
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI: block one split (train sample or all S1, or test) into candidate shards."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "test"], required=True)
     ap.add_argument("--all-train", action="store_true", help="train: block all S1, not just the sample")

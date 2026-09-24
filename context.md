@@ -108,7 +108,7 @@ New pipeline (phase 0 and 1):
 | `stages/block_eval.py` | recall per configuration on a 20k-S1 subset: pair recall, S1 with all matches found, candidates per S1, recall by country, channel coverage, and a miss breakdown (unreachable / over df cap / lost to per-type limits and top-K) plus a no-cap lexical reachability diagnosis |
 | `stages/pairs.py` | vectorised pair features (63): blocking scores per token type, rank/gap/margin inside the S1's list and the record's claimant list, rapidfuzz name and address similarities, name rarity counts, token coverage, glued-name, digit alignment, romanised and skeleton similarities |
 | `stages/train_gpu.py`, `stages/predict.py`, `decision.py`, `validate.py` | XGBoost CUDA with grouped 5-fold OOF, exclusive assignment and threshold tuning; chunked prediction and TSV writing (never quote empty lists); local validator that parses raw lines like the official one |
-| `scripts/qa_prepare.py`, `scripts/error_analysis.py` | normalisation samples; loss decomposition and error taxonomy of a trained model |
+| `src/scripts/qa_prepare.py`, `src/scripts/error_analysis.py` | normalisation samples; loss decomposition and error taxonomy of a trained model |
 
 The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed from the package; `data.py` now only holds `read_tsv`.
 
@@ -123,7 +123,7 @@ Done:
 - Data profiled (section 2b). Phase 0 (normaliser, `prepare`, `sample`, Makefile, tests) complete.
 - Blocking (token-index, DuckDB): pair recall 0.9416 at 30 candidates per S1 (US 0.970, India 0.899); 99.99% of true pairs share a token. Blocked all test S1 (51,892,359 pairs) and all train S1 (66,075,079 pairs).
 - **v0** matcher (42 features, XGBoost CUDA): out-of-fold macro F0.5 0.9377. Test output passed the official validator (also with `--check-ids`); file at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. Leaderboard score not yet known.
-- Error analysis of v0 (`scripts/error_analysis.py`): matcher loss 4.0 points, blocking loss 2.2; weak spots were non-Latin names, empty addresses, look-alike distractors, missing name-rarity features (`research.md` section 12).
+- Error analysis of v0 (`src/scripts/error_analysis.py`): matcher loss 4.0 points, blocking loss 2.2; weak spots were non-Latin names, empty addresses, look-alike distractors, missing name-rarity features (`research.md` section 12).
 - **v1** matcher (63 features: name rarity and exact-name flags, token coverage, glued-name and digit-alignment features, romanised names via `anyascii` and consonant skeletons): out-of-fold macro F0.5 **0.9551** (+1.74 points); India 0.935, US 0.968, singleton entities 0.959; precision 0.989, recall 0.906. Loss now: blocking 2.19, matcher 2.30.
 - Code zip for the portal built (`dist/business_entity_resolution_code.zip`, predates v1; rebuild before the final upload). `submission_checklist.md` maps every rule in the two PDFs to its status.
 

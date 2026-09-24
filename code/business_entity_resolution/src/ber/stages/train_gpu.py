@@ -22,6 +22,7 @@ NON_FEATURES = {"q", "pid", "label", "fold"}
 
 
 def pick_device(want: str) -> str:
+    """Return "cuda" when a GPU can run XGBoost, else "cpu"."""
     if want != "auto":
         return want
     try:
@@ -32,6 +33,7 @@ def pick_device(want: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI: grouped 5-fold XGBoost training, threshold tuning on out-of-fold scores, final model save."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="v0")
     a = ap.parse_args(argv)

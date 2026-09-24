@@ -21,6 +21,7 @@ from ber.tracking import log_stage
 
 
 def metrics(con: duckdb.DuckDBPyConnection, shard_dir, labels: str, s1: str) -> dict:
+    """Pair recall, per-country/source recall, candidates per S1 and channel coverage against the labels."""
     cand = f"read_parquet('{shard_dir}/cand_*.parquet')"
     con.execute(f"""CREATE OR REPLACE TEMP TABLE tp AS
         SELECT l.s1_rid, l.src, l.src * {block.PID_BASE} + l.other_rid AS pid, s.ctry, cnt.n AS n_matches, c.pid IS NOT NULL AS found,
@@ -69,6 +70,7 @@ def diagnose(con: duckdb.DuckDBPyConnection, labels: str) -> dict:
 
 
 def main() -> None:
+    """CLI: evaluate blocking configurations on a subset of train S1 and print recall and miss breakdown."""
     P, cfg = config.paths(), config.load()
     base, ev = cfg["block"], cfg["block_eval"]
     s1 = P["sample"] / "train_s1.parquet"

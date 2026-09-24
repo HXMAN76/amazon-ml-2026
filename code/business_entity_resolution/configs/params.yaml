@@ -18,7 +18,7 @@ block:
     m: 3               # pairs among the rarest 3 name words
     d: 3               # pairs among the rarest 3 address words
     h: 3               # house/number token x rarest 3 non-numeric address words
-  types: [n, a, p, c, m, d, h, g, x, k]
+  types: [n, a, p, c, m, d, h]   # token types used for scoring; g, x, k (experimental) are not used for the submitted run
   batch_q: 100000
   memory_limit: 10GB
   threads: 4

@@ -34,14 +34,14 @@ prepare: $(DONE)/prepare
 sample: $(DONE)/sample
 block_eval: $(DONE)/block_eval
 test:
-	$(PY) -m pytest -q tests
+	$(PY) -m pytest -q src/tests
 clean-stamps:
 	rm -rf $(STAMPS) $(DONE)
 
 # End-to-end reproduction of output/matching_results.tsv and output/candidate_pairs.tsv from the raw TSVs.
 # Needs BER_DATA (folder with train/ and test/), BER_WORK (scratch, about 60 GB) and, for speed, a CUDA GPU
 # (XGBoost falls back to CPU automatically). Model name defaults to v0; outputs land in $(WORK)/output/$(NAME).
-NAME ?= v0
+NAME ?= v1
 reproduce: sample
 	$(PY) -m ber.stages.block --split test
 	$(PY) -m ber.stages.block --split train --all-train

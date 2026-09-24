@@ -154,10 +154,12 @@ def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
 
 
 def pool_index(pool: pl.DataFrame, pid: np.ndarray, n2: int) -> np.ndarray:
+    """Row positions in the concatenated S2+S3 table for pool ids (src * 10_000_000 + rid)."""
     return np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI: compute and write the feature table for all candidate pairs of a split, in chunks."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "test"], required=True)
     ap.add_argument("--chunk", type=int, default=1_500_000)

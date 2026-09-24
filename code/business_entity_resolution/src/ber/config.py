@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def load(path: str | Path | None = None) -> dict:
+    """Load the YAML parameters (default configs/params.yaml, override with BER_PARAMS)."""
     p = Path(path or os.environ.get("BER_PARAMS", ROOT / "configs" / "params.yaml"))
     return yaml.safe_load(p.read_text())
 

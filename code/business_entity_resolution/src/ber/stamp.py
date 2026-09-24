@@ -16,6 +16,7 @@ from ber import config
 
 
 def digest(sections: list[str], files: list[str]) -> str:
+    """Hash of the given params sections and source files."""
     h = hashlib.sha256()
     cfg = config.load()
     for sec in sections:
@@ -27,6 +28,7 @@ def digest(sections: list[str], files: list[str]) -> str:
 
 
 def main() -> None:
+    """CLI: refresh a stage stamp file only when its params or sources changed."""
     stage, rest = sys.argv[1], sys.argv[2:]
     sections = [stage]
     if rest and rest[0].startswith("--sections="):  # extra params sections this stage depends on

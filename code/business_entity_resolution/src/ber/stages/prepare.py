@@ -26,12 +26,14 @@ def _work(rows: list[tuple[str, str, str]]) -> list[tuple]:
 
 def read_tsv(path: Path) -> pl.DataFrame:
     # quote_char=None: the files are plain tab-separated; a stray quote in a name must not swallow rows
+    """Read a raw TSV with polars (no quote character, so stray quotes cannot swallow rows)."""
     return pl.read_csv(path, separator="\t", quote_char=None, infer_schema=False).with_columns(
         pl.all().fill_null("")
     )
 
 
 def prepare_source(tsv: Path, out: Path, workers: int, chunk_rows: int) -> int:
+    """Normalise one source file in parallel and write it as Parquet; returns the row count."""
     df = read_tsv(tsv)
     df = df.with_row_index("rid")
     names, addrs, ctry = df["business_name"].to_list(), df["business_address"].to_list(), df["country"].to_list()
@@ -53,6 +55,7 @@ def prepare_source(tsv: Path, out: Path, workers: int, chunk_rows: int) -> int:
 
 
 def build_labels(raw_gt: Path, pq: Path) -> pl.DataFrame:
+    """Turn the ground-truth file into (s1_rid, src, other_rid) rows and check every id resolves."""
     s1 = pl.read_parquet(pq / "train" / "source1.parquet", columns=["rid", "entity_id"])
     oth = pl.concat([pl.read_parquet(pq / "train" / f"source{i}.parquet", columns=["rid", "entity_id"]).with_columns(
         pl.lit(i, dtype=pl.UInt8).alias("src")) for i in (2, 3)])
@@ -67,6 +70,7 @@ def build_labels(raw_gt: Path, pq: Path) -> pl.DataFrame:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """CLI: prepare train and/or test Parquet files and the label table."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "test", "both"], default="both")
     a = ap.parse_args(argv)

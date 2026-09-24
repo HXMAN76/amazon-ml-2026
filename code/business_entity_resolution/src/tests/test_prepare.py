@@ -3,7 +3,7 @@ from pathlib import Path
 
 import polars as pl
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ber import synth  # noqa: E402
 from ber.data import read_tsv  # noqa: E402

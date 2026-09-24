@@ -9,4 +9,5 @@ import pandas as pd
 
 
 def read_tsv(path: str | Path) -> pd.DataFrame:
+    """Read a tab-separated file with every column as a string and no NA conversion."""
     return pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)

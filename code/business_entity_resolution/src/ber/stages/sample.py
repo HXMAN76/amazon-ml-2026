@@ -15,6 +15,7 @@ from ber.tracking import log_stage
 
 
 def main() -> None:
+    """CLI: draw the training S1 queries and assign cross-validation folds."""
     P, prm = config.paths(), config.load()["sample"]
     s1 = pl.read_parquet(P["parquet"] / "train" / "source1.parquet", columns=["rid", "ctry"])
     lab = pl.read_parquet(P["parquet"] / "train" / "labels.parquet")
