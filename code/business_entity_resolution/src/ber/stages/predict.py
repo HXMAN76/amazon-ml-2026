@@ -35,10 +35,14 @@ def main(argv: list[str] | None = None) -> None:
     model = xgb.Booster()
     model.load_model(str(mdl / "xgb.json"))
     model.set_param({"device": "cuda"} if cfg.get("device_trained") == "cuda" else {})
-    df = pl.read_parquet(str(P["work"] / "features" / "test" / "part_*.parquet"))
     feats = cfg["features"]
-    p = model.predict(xgb.DMatrix(df.select(feats).to_numpy().astype(np.float32), feature_names=feats))
-    df = df.select("q", "pid").with_columns(pl.Series("p", p))
+    res = []
+    for f in sorted((P["work"] / "features" / "test").glob("part_*.parquet")):  # score part by part: 52M rows do not fit RAM at once
+        d = pl.read_parquet(f)
+        pp = model.predict(xgb.DMatrix(d.select(feats).to_numpy().astype(np.float32), feature_names=feats))
+        res.append(d.select("q", "pid").with_columns(pl.Series("p", pp)))
+    df = pl.concat(res)
+    p = df["p"].to_numpy()
     sel = decision.assign_exclusive(df) if cfg["exclusive"] else df
     sel = sel.filter(pl.col("p") >= cfg["threshold"])
     print(f"{df.height} candidate pairs scored, {sel.height} kept at threshold {cfg['threshold']:.2f} "
@@ -51,8 +55,15 @@ def main(argv: list[str] | None = None) -> None:
     pool = pl.concat([s2.with_columns((pl.col("rid").cast(pl.Int64) + 2 * PID_BASE).alias("pid")),
                       s3.with_columns((pl.col("rid").cast(pl.Int64) + 3 * PID_BASE).alias("pid"))]).select("pid", pid_eid="entity_id")
 
-    def lists(d: pl.DataFrame, col: str) -> pl.DataFrame:
-        g = (d.join(pool, on="pid").group_by("q").agg(pl.col("pid_eid").sort().str.join(",").alias(col)))
+    def lists(d: pl.DataFrame, col: str, step: int = 200_000) -> pl.DataFrame:
+        """Per-S1 comma-joined id lists, built in q-ranges to bound memory."""
+        d = d.sort("q")
+        parts = []
+        for lo in range(0, s1.height, step):
+            g = (d.filter((pl.col("q") >= lo) & (pl.col("q") < lo + step)).join(pool, on="pid")
+                   .group_by("q").agg(pl.col("pid_eid").sort().str.join(",").alias(col)))
+            parts.append(g)
+        g = pl.concat(parts) if parts else pl.DataFrame({"q": [], col: []})
         return (s1.rename({"rid": "q", "entity_id": "source1_entity_id"}).join(g, on="q", how="left")
                   .with_columns(pl.col(col).fill_null("")).select("source1_entity_id", col))
 
@@ -60,8 +71,8 @@ def main(argv: list[str] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     m = lists(sel, "matched_entity_ids")
     c = lists(df, "candidate_entity_ids")
-    m.write_csv(out / "matching_results.tsv", separator="\t")
-    c.write_csv(out / "candidate_pairs.tsv", separator="\t")
+    m.write_csv(out / "matching_results.tsv", separator="\t", quote_style="never")  # never quote: an empty list must be an empty field, not ""
+    c.write_csv(out / "candidate_pairs.tsv", separator="\t", quote_style="never")
     n_match = int((m["matched_entity_ids"] != "").sum())
     print(f"wrote {out}: {m.height} S1 rows, {n_match} with matches ({n_match / m.height:.1%}), "
           f"mean matches {float(sel.height / m.height):.2f}", flush=True)

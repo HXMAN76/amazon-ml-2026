@@ -9,6 +9,13 @@ import pandas as pd
 from ber.data import read_tsv
 
 
+def _raw_tsv(path: str | Path) -> pd.DataFrame:
+    with open(path, encoding="utf-8") as f:
+        header = f.readline().rstrip("\n").split("\t")
+        rows = [line.rstrip("\n").partition("\t") for line in f if line.strip()]
+    return pd.DataFrame({header[0]: [r[0] for r in rows], header[1]: [r[2] for r in rows]})
+
+
 def validate(matching: str | Path, candidate: str | Path, test_dir: str | Path) -> list[str]:
     test_dir = Path(test_dir)
     s1 = set(read_tsv(test_dir / "test_source1.tsv")["entity_id"])
@@ -16,7 +23,7 @@ def validate(matching: str | Path, candidate: str | Path, test_dir: str | Path) 
     issues: list[str] = []
     lists: dict[str, dict[str, set[str]]] = {}
     for name, path, col in (("matching", matching, "matched_entity_ids"), ("candidate", candidate, "candidate_entity_ids")):
-        df = read_tsv(path)
+        df = _raw_tsv(path)  # raw lines like the official validator: no CSV un-quoting (it hid a `""` bug once)
         if list(df.columns) != ["source1_entity_id", col]:
             issues.append(f"{name}: bad columns {list(df.columns)}")
             continue
