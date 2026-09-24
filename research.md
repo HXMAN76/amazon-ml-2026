@@ -128,3 +128,128 @@ Open questions for the data (answer via the stats job): exact row counts; fracti
 - NVIDIA cuVS / FAISS GPU integration and the CAGRA recall issue: developer.nvidia.com blog; github.com/facebookresearch/faiss/issues/5458
 - SageMaker checkpoints and managed spot training: docs.aws.amazon.com/sagemaker/latest/dg/model-checkpoints.html
 - Sentence Transformers CrossEncoder training and hard-negative mining: sbert.net, huggingface.co/blog/train-reranker
+
+## 10. Findings from the real data (2026-09-25) and what they change
+
+Full numbers are in `context.md` section 2b. Consequences for the plan above:
+
+1. **Exclusive ownership holds on train.** Use a global assignment step: every S2/S3 record goes to at most one S1 (highest-probability claimant). This removes a large class of false merges for free and also lets confident matches "use up" records, which helps ambiguous S1 neighbours.
+2. **Address is the strongest key, name is unreliable.** A match can have a completely different name (alias or DBA) and matched records often share the exact address. But generic names (`primary care`) collide, and in France many different businesses share one address. So the matcher must combine name and address evidence and must not treat "same address" as sufficient; it must look at how many S1 entities compete for the same address (a competition feature, already partly in v0 as rank/gap and `n_prop_j`).
+3. **France shift is structural, not just a new label.** Address multiplicity and tiny generic names appear only in test. Validate with a hold-out that mimics this (e.g. downweight or mask address for a US slice, or build a synthetic collision set), and keep thresholds conservative for entities that have many competitors. Precision matters double under F0.5.
+4. **Multi-script Indic text** (Devanagari, Telugu, Malayalam), about 9% of India S2 names and about 9% of addresses. A multilingual embedding (bge-m3 or Qwen3-Embedding) is the practical bridge, since rule-based romanisation would need one table per script. Native-script tokens in addresses (state or city names) are also worth mapping through the embedding rather than tables.
+5. **Cheap normalisation wins first:** `html.unescape`, leetspeak/digit-for-letter repair, domain-name splitting (`ipower.com` to `ipower`), DBA/`doing business as` splitting into two names, city-suffix cleanup (`CDP`). Each is a deterministic rule with no external lookup.
+6. **Scale.** About 2.2M S1 vs about 10M S2+S3 in train; test 1.7M vs about 10M. With about 3.5 true matches per S1, blocking at K=20 to 30 gives 35M to 65M candidate pairs, too many for per-pair Python features on 4 vCPU. Plan: (a) train on a subsample of S1 (200k to 300k) with all their matches and the full distractor pool restricted to blocked candidates; (b) at inference, vectorised features only, stage-2 models only on an ambiguous band; (c) blocking through an inverted index over each record's rarest tokens (DuckDB or polars), not dense matmul; dense embeddings only for the non-Latin subset (about 1M records) and as an extra recall channel on names.
+7. **Test-time inference is the real budget.** Decide early how many candidate pairs per S1 the inference stage can afford (target under 25 M pairs total) and design blocking to fit it.
+
+## 11. Blocking measurements (2026-09-25)
+
+First recall measurement of the token-index blocker on 20k train S1 against the full 10.3M-record pool (`cap_df` 800, K 30, per-type rarest-token limits n4 a4 p3 c6):
+
+| Token types | Pair recall | S1 with all matches found | Candidates per S1 | S1 with no candidate |
+|---|---|---|---|---|
+| n (name words) | 0.210 | 0.112 | 13.2 | 0.528 |
+| a (address words) | 0.388 | 0.240 | 21.0 | 0.250 |
+| p (5-char prefixes) | 0.123 | 0.066 | 9.7 | 0.657 |
+| c (name word x address word) | 0.778 | 0.486 | 15.8 | 0.002 |
+| n+a | 0.559 | 0.386 | 24.9 | 0.136 |
+| n+a+p | 0.557 | 0.381 | 25.2 | 0.136 |
+| n+a+p+c | 0.850 (US 0.896, India 0.781) | 0.624 | 29.2 | 0.000 |
+
+Reading:
+- Single common words do not identify a business in a 10M pool. With a df cap of 800 only about 8 tokens per query survived (156k tokens for 20k queries), so half of all S1 had no usable name token. The lexical baseline needs either a higher cap or, better, more composite keys whose document frequency is naturally tiny.
+- Composite keys alone beat the union of the single-word channels by a wide margin, which matches the literature view that blocking keys should combine attributes.
+- Prefix tokens (`p`) add nothing on top of `n+a`, so they are candidates for removal once the new run confirms it.
+- India is weaker than US (0.78 vs 0.90), consistent with non-Latin names and addresses in about 9% of India records; some of those pairs may be unreachable lexically and need a dense multilingual channel.
+- Follow-up run (`blockeval2`) adds composite types `m` (name pair), `d` (address pair), `h` (house number with address word), sweeps `cap_df` at 800, 5000 and 20000, K at 30 and 100, and reports why true pairs are missing (no shared token, shared token above the cap, or lost to per-type limits and top-K). Its result decides whether the dense channel is required before gate 1.
+
+## 12. Error analysis of baseline v0 (2026-09-25, out-of-fold on the 250k-S1 train sample)
+
+Model: XGBoost on 42 features, exclusive assignment, threshold 0.63. Script: `code/business_entity_resolution/src/scripts/error_analysis.py`.
+
+**Loss decomposition.** Macro F0.5 0.9377. An oracle restricted to the candidate set scores 0.9781, so blocking recall costs 0.0219 and the matcher costs 0.0404. Precision is 0.980, recall against all true pairs is 0.886, so recall is the larger loss. F0.5 versus threshold is flat around the optimum (0.9349 at 0.50, 0.9377 at 0.63, 0.9373 at 0.70): the threshold choice is not fragile.
+
+| Segment | Macro F0.5 | Oracle on candidates |
+|---|---|---|
+| US | 0.959 | 0.990 |
+| India | 0.905 | 0.960 |
+| Singletons (5.6% of S1) | 0.920 (7.95% of them receive a wrong match) | 1.000 |
+| 1 true match | 0.846 | 0.939 |
+| 2 to 3 matches | 0.934 | 0.976 |
+| 4 or more | 0.954 | 0.982 |
+| No non-Latin match, no empty address | 0.958 | 0.992 |
+| Some match has an empty address | 0.912 | 0.956 |
+| Some match has a non-Latin name | 0.846 | 0.920 |
+| Both | 0.785 | 0.857 |
+
+**False positives (15,964).** 84.6% are records with no owner (look-alike distractors), 15.4% belong to another S1. Look-alikes are near-copies of an S1 with a small change: `Jarlent States LLC` versus `Jarleix States LLC`, `Olanus Fortunex` versus `Olanuz Fortunex [Ltd]` with house number 312 versus 323, `Desert Safe Virginia Inc.` versus `Desert Se Virginia Inc` with 34765 versus 34768-34772. True pairs carry the same kinds of noise (`4114` versus `4119`, a name transposition), so a single pair cannot always tell them apart; sibling evidence and rarity are the extra information.
+Wrong-owner false positives are mostly non-Latin names at an identical address (`Tirupati Solutions` matched to a Telugu name owned by another S1): with no usable name similarity, the shared address dominates.
+
+**False negatives among candidates (48,002, 5.9% of found true pairs, median p 0.36).** Typical cases: exact same name but empty address (`Wexler's Vanguard Roofing Inc`, p 0.36), non-Latin name with a Latin twin (`राम मीडिया प्राइवेट लिमिटेड` for `Ram Media Private Limited`, p 0.42), digit noise plus a street typo (`4216 45th Street` versus `4515 45TH STRETE`, p 0.05). Only 1,217 were lost to exclusive assignment.
+
+**Blocking misses (5.9% of true pairs).** Name typo with an empty address (`Global Oneim` versus `Global Onem`), glued or handle names (`@goldenfactory`, `#l0llydigiovanni`), a completely different alias at an equal address (`Brixecto`), non-Latin name with a short address (`225, MOHALI, ਪੰਜਾਬ`), and very short addresses next to common names (`A-205, New Delhi`).
+
+**Conclusions and ranked levers**
+1. Missing features: name rarity and genericness (pool frequency of the name, IDF-weighted token coverage, exact-name flag), glued-name similarity, digit alignment (edit distance, range containment, prefix equality).
+2. Cross-script: a romanised copy of non-Latin names and addresses so every string similarity applies; embeddings only if India still lags.
+3. Blocking: exact core-name key, glued-name tokens, a fuzzy name channel for typo plus empty-address cases, larger K with a first-stage pruner.
+4. Decision: probability calibration and per-S1 expected-F0.5 selection; the flat threshold curve says the gain is in the ranking quality, not the cut.
+5. Sibling and consensus features (do other records of the same S1 agree on the digits and name variants?) address the look-alike distractors.
+
+## 13. v1 results and the next blocking step (2026-09-25)
+
+Added to the matcher after the section 12 analysis (63 features instead of 42): name rarity (pool count of records sharing the core name, S1 count sharing it, S1 count for the pool record's name), exact core-name flag, token coverage of names and addresses on each side, address token counts, glued-name similarity (spaces removed: partial ratio, Jaro-Winkler), digit alignment (all-digit string ratio and Levenshtein, house-number edit distance), romanised name and address similarities using `anyascii` (offline, ISC licence) and a consonant-skeleton similarity that survives vowel differences between a Latin name and the romanisation of an Indic-script name.
+
+| Out-of-fold macro F0.5 | v0 | v1 |
+|---|---|---|
+| Overall | 0.9377 | **0.9551** |
+| US / India | 0.959 / 0.905 | 0.968 / 0.935 |
+| Singleton entities (predicted a match) | 0.920 (7.95%) | 0.959 (4.10%) |
+| Entities with one true match | 0.846 | 0.883 |
+| Some match has a non-Latin name | 0.846 | 0.897 |
+| Some match has an empty address | 0.912 | 0.923 |
+| Precision / recall vs all true pairs | 0.980 / 0.886 | 0.989 / 0.906 |
+| Loss from matcher / from blocking recall | 0.0404 / 0.0219 | 0.0230 / 0.0219 |
+| False positives / false negatives among candidates | 15,964 / 48,002 | 8,682 / 30,063 |
+
+Top features by gain: `margin_p`, `rank_p` (competition between S1 entities for the same record), `house_eq`, `addr_b_empty`, `house_lev`, `num_common_frac`, `digits_ratio`, `legal_conflict`, `pin_conflict`, `name_cov_b`. The competition features dominate: knowing whether another S1 explains the record better is the strongest signal, which supports the record-centric view (each record picks one owner).
+
+Cost note: the added Python loops (digit strings, skeletons) raised feature time from about 13 s to about 60 s per 1.5M-pair chunk; test features take about 35 minutes. Vectorising them is a pure engineering task.
+
+Blocking is now the largest single loss (0.0219). The token types added for it, and why:
+- `g` whole core name with spaces removed: handles glued and handle-style names (`@goldenfactory`, `#l0llydigiovanni`) and any exact-name pair whose tokenisation differs.
+- `x` one-deletion variants of the two rarest name words (SymSpell idea: two words within one edit share a variant): handles typos when the address is empty or short (`Global Oneim` versus `Global Onem`).
+- `k` consonant skeleton of name words, generated for the pool side only from romanised non-Latin names and for the S1 side from Latin names: bridges scripts at blocking time (`राम मीडिया` gives `ram midiya`, skeleton `rm md`; `Ram Media` gives `rm md`).
+Job `v1c-blockeval` measures recall of these against the old token set at K 30, 40 and 60. If the gain is real, blocking is re-run for train and test, features are rebuilt and the model retrained.
+
+Literature used for the decision layer: exact F-measure maximisation for sets of labels (Dembczynski et al., GFM: O(m^2) to O(m^3) for m candidates given the label probabilities) gives the optimal per-S1 prediction set under F-beta; calibration under domain shift (multi-domain temperature scaling, adaptive calibrator ensemble) is relevant because France is a new domain; triplet fine-tuning of embeddings on synthetic business records (arXiv 2608.16161) supports fine-tuning a bi-encoder later, if lexical features plateau.
+
+## 14. Blocking measurement of the new token types, and the cascade (2026-09-25)
+
+Job `v1c-blockeval` (20k train S1 against the full 10.3M pool, cap_df 800):
+
+| Configuration | Pair recall | Candidates per S1 | Misses: unreachable / over cap / truncated |
+|---|---|---|---|
+| Old types (n a p c m d h), K 30 | **0.9416** | 29.9 | 0.000 / 0.018 / 0.040 |
+| Old + g x k, K 30 | 0.9370 | 30.0 | 0.000 / 0.018 / 0.045 |
+| Old + g x k, K 40 | 0.9410 | 39.9 | 0.000 / 0.018 / 0.040 |
+| Old + g x k, K 60 | **0.9473** (US 0.970, India 0.913) | 59.6 | 0.000 / 0.018 / 0.034 |
+| g x k only | 0.5055 | 22.5 | 0.000 / 0.018 / 0.476 |
+
+Reading:
+- `g` (glued whole name) and `x` (one-deletion typo variants) cover 55% and 38% of the found true pairs but are largely redundant with the old channels, and they displace better candidates in the top-K by summed IDF (K 30 gets worse). `k` (consonant skeleton) never scored: skeleton tokens of common words have document frequency far above the cap and are dropped. All three were reverted from the default pipeline.
+- Lexical reachability of the true pairs is essentially complete (no shared token 0.01%; the rarest shared token has df at most 800 for 98.2%, at most 100,000 for 99.95%). The recall limit is not missing tokens; it is **ranking**: 3.4 to 4.5% of true pairs are found by tokens but cut by the per-type limits and the top-K rule, and 1.8% sit above the df cap.
+- Raising K helps (K 60: +0.6 points), but doubles the pair volume for every later stage.
+
+**Cascade blocking** (built, `stages/prune.py`): block with K 100, then re-rank with a tiny XGBoost on S1-local blocking features (score, shared tokens, per-type scores, rank, gap, ratio to the best, number of token types present) trained on the training sample's labels, and keep the best 30. The expensive string features are then computed on 30 pairs per S1 with the recall of a much larger K. The pruner's own score is dropped from the matcher's features so it cannot leak labels of the S1 it was fit on. Success criterion: pair recall at 30 kept above 0.9416, ideally approaching the K 60 and K 100 recall.
+
+## 15. Review of the teammate's v2 layered plan and the resulting priorities (2026-09-25)
+
+The plan (layers L0 data and text views, L1 candidates, L2a pair model, L2b cross-encoder on the uncertain band, L2c stacking with consensus features, L3 owner selection per pool record with a none option, L4 per-S1 expected-F0.5 with vetoes, X1 evaluation harness with a locked holdout and bootstrap CI, X2 forensics) is sound in structure: data contracts, leakage rules, hard gates per layer, licence discipline. Corrections after comparing it with the measurements:
+- Numbers were stale: out-of-fold macro F0.5 is 0.9551 (v1 features), non-Latin 0.897 versus an oracle 0.920, so the transliteration dictionary is worth at most about 0.25 points overall.
+- Priorities: blocking recall (2.19 points) was missing from the plan and is the largest remaining loss; the owner layer L3 and decision layer L4 are expected to add little because competition is already in the pair model (exclusive assignment gave the identical 0.9551 score) and the threshold curve is flat. The most valuable matcher layer is L2c consensus stacking, aimed at the look-alike distractors (84% of false positives). Cross-encoder next; dictionary last.
+- Design flaw to fix: L3 features (best, second, gap, competitors) computed over p1 for only the 250k sampled S1 understate competition in train (11% of S1) versus test (all S1). Fix: score every train S1 with the final model (S1 outside the sample were never trained on, so their probabilities are unbiased) and use those for record-level training.
+- Contract details: use the pipeline's identifiers (`q`, `pid = src * 10_000_000 + rid`); export test `pair_p`; the locked holdout must be a separate draw of about 150k S1 because the current 250k sample is all in cross-validation; add a per-country drift monitor on test predictions as a France proxy.
+- Operations: one GPU and one sequential queue mean a one-hour cross-encoder fine-tune blocks other jobs; a collaborator needs a scoped IAM user, not the root login.
+Realistic remaining headroom on train-like data is about 1.5 to 2.5 points (blocking about 1 to 1.5, stacking about 0.5 to 1, decision about 0.3).
+
+Result checks of the v1 test output: rows 1,732,544; matched S1 share France 0.948, US 0.943, India 0.929; mean matches per S1 France 3.37, US 3.33, India 3.07; share of matched ids from S2 0.489, from S3 0.511; no rule violated.

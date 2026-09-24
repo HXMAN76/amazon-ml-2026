@@ -39,6 +39,7 @@ def _noisy(name: str, legal: tuple[str, str], addr: str, rng: random.Random) -> 
 
 
 def make(root: str | Path, split: str, n: int = 300, countries: tuple[str, ...] = ("US", "India"), seed: int = 0) -> None:
+    """Write a small synthetic train or test split (three sources and ground truth) for tests."""
     rng = random.Random(seed)
     root = Path(root) / split
     root.mkdir(parents=True, exist_ok=True)
