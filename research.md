@@ -161,3 +161,36 @@ Reading:
 - Prefix tokens (`p`) add nothing on top of `n+a`, so they are candidates for removal once the new run confirms it.
 - India is weaker than US (0.78 vs 0.90), consistent with non-Latin names and addresses in about 9% of India records; some of those pairs may be unreachable lexically and need a dense multilingual channel.
 - Follow-up run (`blockeval2`) adds composite types `m` (name pair), `d` (address pair), `h` (house number with address word), sweeps `cap_df` at 800, 5000 and 20000, K at 30 and 100, and reports why true pairs are missing (no shared token, shared token above the cap, or lost to per-type limits and top-K). Its result decides whether the dense channel is required before gate 1.
+
+## 12. Error analysis of baseline v0 (2026-09-25, out-of-fold on the 250k-S1 train sample)
+
+Model: XGBoost on 42 features, exclusive assignment, threshold 0.63. Script: `code/business_entity_resolution/scripts/error_analysis.py`.
+
+**Loss decomposition.** Macro F0.5 0.9377. An oracle restricted to the candidate set scores 0.9781, so blocking recall costs 0.0219 and the matcher costs 0.0404. Precision is 0.980, recall against all true pairs is 0.886, so recall is the larger loss. F0.5 versus threshold is flat around the optimum (0.9349 at 0.50, 0.9377 at 0.63, 0.9373 at 0.70): the threshold choice is not fragile.
+
+| Segment | Macro F0.5 | Oracle on candidates |
+|---|---|---|
+| US | 0.959 | 0.990 |
+| India | 0.905 | 0.960 |
+| Singletons (5.6% of S1) | 0.920 (7.95% of them receive a wrong match) | 1.000 |
+| 1 true match | 0.846 | 0.939 |
+| 2 to 3 matches | 0.934 | 0.976 |
+| 4 or more | 0.954 | 0.982 |
+| No non-Latin match, no empty address | 0.958 | 0.992 |
+| Some match has an empty address | 0.912 | 0.956 |
+| Some match has a non-Latin name | 0.846 | 0.920 |
+| Both | 0.785 | 0.857 |
+
+**False positives (15,964).** 84.6% are records with no owner (look-alike distractors), 15.4% belong to another S1. Look-alikes are near-copies of an S1 with a small change: `Jarlent States LLC` versus `Jarleix States LLC`, `Olanus Fortunex` versus `Olanuz Fortunex [Ltd]` with house number 312 versus 323, `Desert Safe Virginia Inc.` versus `Desert Se Virginia Inc` with 34765 versus 34768-34772. True pairs carry the same kinds of noise (`4114` versus `4119`, a name transposition), so a single pair cannot always tell them apart; sibling evidence and rarity are the extra information.
+Wrong-owner false positives are mostly non-Latin names at an identical address (`Tirupati Solutions` matched to a Telugu name owned by another S1): with no usable name similarity, the shared address dominates.
+
+**False negatives among candidates (48,002, 5.9% of found true pairs, median p 0.36).** Typical cases: exact same name but empty address (`Wexler's Vanguard Roofing Inc`, p 0.36), non-Latin name with a Latin twin (`राम मीडिया प्राइवेट लिमिटेड` for `Ram Media Private Limited`, p 0.42), digit noise plus a street typo (`4216 45th Street` versus `4515 45TH STRETE`, p 0.05). Only 1,217 were lost to exclusive assignment.
+
+**Blocking misses (5.9% of true pairs).** Name typo with an empty address (`Global Oneim` versus `Global Onem`), glued or handle names (`@goldenfactory`, `#l0llydigiovanni`), a completely different alias at an equal address (`Brixecto`), non-Latin name with a short address (`225, MOHALI, ਪੰਜਾਬ`), and very short addresses next to common names (`A-205, New Delhi`).
+
+**Conclusions and ranked levers**
+1. Missing features: name rarity and genericness (pool frequency of the name, IDF-weighted token coverage, exact-name flag), glued-name similarity, digit alignment (edit distance, range containment, prefix equality).
+2. Cross-script: a romanised copy of non-Latin names and addresses so every string similarity applies; embeddings only if India still lags.
+3. Blocking: exact core-name key, glued-name tokens, a fuzzy name channel for typo plus empty-address cases, larger K with a first-stage pruner.
+4. Decision: probability calibration and per-S1 expected-F0.5 selection; the flat threshold curve says the gain is in the ranking quality, not the cut.
+5. Sibling and consensus features (do other records of the same S1 agree on the digits and name variants?) address the look-alike distractors.
