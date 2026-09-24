@@ -38,7 +38,19 @@ Observed from header peeks:
 - US addresses have variable component order (`GREENSBORO, NC, 19 1/2 STARDUST TRAIL`). Some S3 names are domains (`wilfordhancock.com`), some addresses are empty.
 - France records exist only in test (`63 R. DE DIEPPE, LILLE, Hauts-de-France`, names like `... Sarl`, `SCI ...`).
 - Ground truth rows often list 3 to 5 matches across S2 and S3.
-- Row counts are large (millions per source, exact numbers pending the stats job below).
+- Row counts (lines incl. header): train S1 2.21M, S2 5.03M, S3 5.29M, ground truth 2.21M rows (one per S1); test S1 1.73M, S2 4.89M, S3 5.08M. See section 2b for the measured structure.
+
+## 2b. Measured data structure (stats3 job, train unless noted)
+
+- Countries: train US 60%, India 40%. Test S1: India 810k, US 663k, **France 259k (15%)**; France is also 14% of test S2 and S3.
+- **Match structure:** 5.6% of S1 are singletons (same in US and India). Mean 3.46 matches per S1 (max 11). 80.5% of S1 have both an S2 and an S3 match. S2 per S1 up to 5, S3 per S1 up to 6.
+- **Exclusive ownership:** 7.64M matched ids, all unique, **no S2/S3 record is claimed by more than one S1**. A one-to-one constraint (each S2/S3 record goes to at most one S1) is valid on train. 73% of S2 and 75% of S3 records are matched; the rest (27%, about 0.8M US + 0.54M India in S2) are distractors.
+- **Non-Latin text:** train S2 9.4% and S3 5.3% of names are non-Latin, all India; addresses non-Latin about 9%. Scripts seen: Devanagari, Telugu, Malayalam (so not only Hindi). S1 names are always Latin. Empty address: 3.4% in S2/S3, 0% in S1.
+- **Generic names:** S1 has many repeats (`primary care group` 253 rows, 84 names with 100+ rows); S2/S3 have `primary care`, `urgent care`, `womens health` ~400 each. Names alone cannot decide; address does the work. Train S1 addresses are almost unique (max 14 repeats).
+- **France differs:** test S1 has `bordeaux club sarl` (205 rows), `lille club sas` (122), and the same address repeated up to 101 times (`12 rue lyderic, lille, hauts-de-france`); test S2/S3 have tiny names (`cc`, `pc`, `lc` with 200-390 rows each) and repeated addresses (`27 rue jean bart, lille`). Many businesses share one address in France, unlike train. This is a real generalisation risk for any rule such as "same address means match".
+- **Noise seen in matched groups:**
+  - Names: HTML entities (`&amp;`, so run `html.unescape`), leetspeak/OCR (`C0mpany`, `5ecure`), typos (`Venmfes`), word-order shuffles, injected suffix words (`Indchem Power` matches `Indchem Center` and `Indchem Services`), domain forms (`ipower.com`, `www.cabreras.com`), DBA text (`Quoavi Co doing business as Asset Building Committee`), even a **completely different name at the same address** (`Ectozeph` matched to `Asset Building Committee`).
+  - Addresses: missing components, dropped or altered digits (`B-59` vs `B-259`, `344` vs `1344`), inserted `Door No 467`, `CDP` glued to city (`CHICAGOCDP`), state abbreviations vs full names vs native script (`Telangana`, `TG`, `తెలంగాణ`), reordered components.
 
 ## 3. Accounts and infrastructure
 
@@ -115,10 +127,9 @@ Done:
 - Laptop SSH-helper client ready (optional path).
 - Baseline v0 written and tested on synthetic data; code synced to `s3://sagemaker-us-east-1-567503593043/ber/code`.
 - Notebook restarted with the new lifecycle config (was Pending at last check).
-- Stats job `stats1` queued: syncs the dataset to the notebook and prints core counts, country mix, empty/non-Latin share, match-count distribution, matched fraction of S2/S3, and sample matched pairs. Log lands at `s3://sagemaker-us-east-1-567503593043/jobs/done/stats1.log`.
+- Stats jobs done (`stats1`, `stats3`; `stats2` failed on a broken env). Env `ber` rebuilt on Python 3.12 (3.11 failed the pinned requirements). Dataset is on the g5 at `/home/ec2-user/SageMaker/dataset`. Findings in section 2b.
 
 Not done:
-- Read the `stats1` log and record real row counts here.
 - Redesign blocking and normalisation for scale and Devanagari (section 4).
 - First real numbers on the g5: blocking recall ceiling, OOF F0.5.
 - First submission early (ties go to the earlier submitter). Validate with the official script.
