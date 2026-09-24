@@ -11,7 +11,6 @@ test-time conditions. String features use rapidfuzz `cpdist` (multi-threaded C++
 from __future__ import annotations
 
 import argparse
-import re
 import time
 from pathlib import Path
 
@@ -28,6 +27,8 @@ from ber.tracking import log_stage
 def blocking_features(cand_glob: str) -> pl.DataFrame:
     """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record."""
     c = pl.read_parquet(cand_glob)
+    if "p_block" in c.columns:  # the pruner was fit on the training S1: never let its score become a model feature
+        c = c.drop("p_block")
     f32 = [pl.col(x).cast(pl.Float32) for x in ("score", *[f"s_{t}" for t in TYPES])]
     c = c.with_columns(f32).with_columns(pl.col("ns").cast(pl.Int16))
     c = c.with_columns(
@@ -55,14 +56,10 @@ def _cp(a: list[str], b: list[str], scorer) -> np.ndarray:
     return process.cpdist(a, b, scorer=scorer, dtype=np.float32, workers=-1)
 
 
-_VOWELS = re.compile(r"[aeiouy]")
-_NONDIGIT = re.compile(r"\D")
-
-
-def skeleton(x: str) -> str:
-    """Consonant skeleton of a Latin string: a crude phonetic key that survives vowel differences between a
-    Latin name and the romanisation of the same name written in an Indic script."""
-    return re.sub(r"(.)\1+", r"\1", _VOWELS.sub("", x.replace(" ", "")))
+def skeleton(col: pl.Series) -> list[str]:
+    """Consonant skeleton of Latin strings (spaces and vowels removed): a crude phonetic key that survives vowel
+    differences between a Latin name and the romanisation of the same name written in an Indic script."""
+    return col.str.replace_all(" ", "", literal=True).str.replace_all("[aeiouy]", "").to_list()
 
 
 def _coverage(a: list[str], b: list[str]) -> tuple[np.ndarray, np.ndarray]:
@@ -109,32 +106,35 @@ def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
     f["house_eq"] = (d["ah"].is_not_null() & (d["ah"] == d["bh"])).to_numpy().astype(np.float32)
     f["pin_match"] = (d["pin_common"] > 0).to_numpy().astype(np.float32)
     f["pin_conflict"] = (d["a_has_pin"] & d["b_has_pin"] & (d["pin_common"] == 0)).to_numpy().astype(np.float32)
-    f["len_core_a"] = np.array([len(x) for x in ac], dtype=np.float32)
-    f["len_core_b"] = np.array([len(x) for x in bc], dtype=np.float32)
-    f["len_addr_b"] = np.array([len(x) for x in ba], dtype=np.float32)
-    f["addr_b_empty"] = (np.array([len(x) for x in ba]) == 0).astype(np.float32)
+    len_b = b["addr"].str.len_chars().to_numpy()
+    f["len_core_a"] = a["core1"].str.len_chars().to_numpy().astype(np.float32)
+    f["len_core_b"] = b["core1"].str.len_chars().to_numpy().astype(np.float32)
+    f["len_addr_b"] = len_b.astype(np.float32)
+    f["addr_b_empty"] = (len_b == 0).astype(np.float32)
     f["nl_name_b"] = b["nl_name"].to_numpy().astype(np.float32)
     f["nl_addr_b"] = b["nl_addr"].to_numpy().astype(np.float32)
     f["same_ctry"] = (a["ctry"].to_numpy() == b["ctry"].to_numpy()).astype(np.float32)
-    la, lb = a["legal"].to_list(), b["legal"].to_list()
-    f["legal_eq"] = np.array([x != "" and x == y for x, y in zip(la, lb)], dtype=np.float32)
-    f["legal_conflict"] = np.array([x != "" and y != "" and x != y for x, y in zip(la, lb)], dtype=np.float32)
+    la, lb = a["legal"], b["legal"]
+    f["legal_eq"] = ((la != "") & (la == lb)).to_numpy().astype(np.float32)
+    f["legal_conflict"] = ((la != "") & (lb != "") & (la != lb)).to_numpy().astype(np.float32)
     # --- rarity / genericness of the name (how many S1 / pool records share it) and exact-name flag
-    f["core_eq"] = np.array([x != "" and x == y for x, y in zip(ac, bc)], dtype=np.float32)
+    f["core_eq"] = ((a["core1"] != "") & (a["core1"] == b["core1"])).to_numpy().astype(np.float32)
     f["log_cnt_s1_a"] = np.log1p(a["cnt_s1_a"].to_numpy()).astype(np.float32)
     f["log_cnt_pool_b"] = np.log1p(b["cnt_pool_b"].to_numpy()).astype(np.float32)
     f["log_cnt_s1_b"] = np.log1p(b["cnt_s1_b"].to_numpy()).astype(np.float32)
     f["name_cov_a"], f["name_cov_b"] = _coverage(ac, bc)
     f["addr_cov_a"], f["addr_cov_b"] = _coverage(aa, ba)
-    f["ntok_addr_a"] = np.array([x.count(" ") + 1 if x else 0 for x in aa], dtype=np.float32)
-    f["ntok_addr_b"] = np.array([x.count(" ") + 1 if x else 0 for x in ba], dtype=np.float32)
+    for side, df_ in (("a", a), ("b", b)):
+        n_sp = df_["addr"].str.count_matches(" ", literal=True).to_numpy()
+        f[f"ntok_addr_{side}"] = np.where(df_["addr"].str.len_chars().to_numpy() > 0, n_sp + 1, 0).astype(np.float32)
     # --- glued / handle style names: compare with spaces removed
-    nsa, nsb = [x.replace(" ", "") for x in ac], [x.replace(" ", "") for x in bc]
+    nsa = a["core1"].str.replace_all(" ", "", literal=True).to_list()
+    nsb = b["core1"].str.replace_all(" ", "", literal=True).to_list()
     f["nospace_partial"] = _cp(nsa, nsb, fuzz.partial_ratio)
     f["nospace_jw"] = _cp(nsa, nsb, JaroWinkler.normalized_similarity)
     # --- digit alignment: all digits of the address as one string, and the house number edit distance
-    da = ["".join(_NONDIGIT.sub("", x)) for x in aa]
-    db = ["".join(_NONDIGIT.sub("", x)) for x in ba]
+    da = a["addr"].str.replace_all(r"\D", "").to_list()
+    db = b["addr"].str.replace_all(r"\D", "").to_list()
     f["digits_ratio"] = _cp(da, db, fuzz.ratio)
     f["digits_lev"] = _cp(da, db, Levenshtein.distance)
     ha = [x if x is not None else "" for x in d["ah"].to_list()]
@@ -146,10 +146,10 @@ def string_features(a: pl.DataFrame, b: pl.DataFrame) -> dict[str, np.ndarray]:
     f["rom_tset"] = _cp(ra, rb, fuzz.token_set_ratio)
     f["rom_partial"] = _cp(ra, rb, fuzz.partial_ratio)
     f["rom_jw"] = _cp(ra, rb, JaroWinkler.normalized_similarity)
-    f["skel_ratio"] = _cp([skeleton(x) for x in ra], [skeleton(x) for x in rb], fuzz.ratio)
+    f["skel_ratio"] = _cp(skeleton(a["core_rom"]), skeleton(b["core_rom"]), fuzz.ratio)
     ara, arb = a["addr_rom"].to_list(), b["addr_rom"].to_list()
     f["addr_rom_tset"] = _cp(ara, arb, fuzz.token_set_ratio)
-    f["addr_skel_ratio"] = _cp([skeleton(x) for x in ara], [skeleton(x) for x in arb], fuzz.ratio)
+    f["addr_skel_ratio"] = _cp(skeleton(a["addr_rom"]), skeleton(b["addr_rom"]), fuzz.ratio)
     return f
 
 

@@ -8,7 +8,7 @@ Task: link each Source 1 (S1) business record to its S2/S3 records (entity resol
 
 - **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Its `matching_results.tsv` passed the official validator including `--check-ids` and is at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`. The human uploads to the portal; the leaderboard score is not yet known to the agent.
 - **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singletons 0.959, precision 0.989, recall 0.906). Test prediction job `v1b` is running; outputs will appear under `runs/v1/`.
-- **Remaining loss (4.5 points):** blocking recall 2.19 (pair recall 0.941, unchanged) and matcher 2.30. A new blocking upgrade (token types `g` glued name, `x` one-deletion typo variants, `k` consonant skeleton) is being measured by job `v1c-blockeval`.
+- **Remaining loss (4.5 points):** blocking recall 2.19 (pair recall 0.941, unchanged) and matcher 2.30. The token-type upgrade (`g`, `x`, `k`) was measured and reverted (no recall gain, see `research.md` section 14); the fix under test is **cascade blocking**: K 100 raw candidates, a learned first-stage ranker (`stages/prune.py`) keeps the best 30. Jobs `zc1a`, `zc1b`, `zc1c` rebuild blocking, prune, retrain (model name `v2`) and predict.
 - Error analysis of v0 and v1 (`src/scripts/error_analysis.py`, findings in `research.md` sections 12 and 13) drives the priorities.
 
 ## 2. Access and identity
@@ -143,11 +143,13 @@ Local tests: `make test` or `pytest -q tests` in `code/business_entity_resolutio
 
 | Job | State | Notes |
 |---|---|---|
-| `v0a` to `v0f`, `v1a` | done | v0 chain and its validation; `v1a` rebuilt Parquet with romanised columns, built train features (63) and trained `v1` |
-| `v1b` | running | test features (about 35 min at 60 s per chunk), `predict --name v1`, then publishes outputs, model and `runs.jsonl` to `s3://sagemaker-us-east-1-567503593043/runs/v1/` |
-| `v1c-blockeval` | pending (runs after `v1b`) | rebuilds the pool token index with the new types (about 5 to 10 min, watch disk) and measures recall for old types, all types at K 30, 40 and 60, and the new types alone |
+| `v0a` to `v0f`, `v1a`, `v1b`, `v1c-blockeval` | done | v0 and v1 chains; v1 outputs published at `runs/v1/`; token-type experiment (see `research.md` section 14) |
+| `chk1` | run right after `v1b` | rule checker and official validator with `--check-ids` on v1 and v0 outputs (result in `jobs/done/chk1.log`) |
+| `zc1a` | queued | reclaim disk (deletes the two DuckDB index files, about 35 GB), rebuild the token index for the reverted token set, block test and all train S1 with K 100 into `blocks/{split}_raw` |
+| `zc1b` | queued | `prune --train`, `prune --apply train test` (writes K 30 shards to `blocks/{split}`), pair features for the train sample (vectorised, expected faster), `train_gpu --name v2`, error analysis of `v2` |
+| `zc1c` | queued | test features, `predict --name v2`, rule checker, publish to `s3://sagemaker-us-east-1-567503593043/runs/v2/` |
 
-Jobs run one at a time in alphabetical order; names that sort later wait for earlier ones. After `v1b` finishes: fetch `runs/v1/output/matching_results.tsv`, check the validator line in the `v1b` log (the log shows the official validator verdict; rerun with `--check-ids` if desired), and upload by hand if v1 beats v0.
+Job names starting with `zc` sort after everything else, so other jobs run first. Jobs run one at a time in alphabetical order. After `zc1c`: the v2 file is at `runs/v2/output/matching_results.tsv`; upload only if its out-of-fold macro F0.5 beats v1 (0.9551) and the checker and validator pass.
 
 AWS sessions expire: when a command prints "Your session has expired", the human runs `aws login --profile hxman-26` again.
 

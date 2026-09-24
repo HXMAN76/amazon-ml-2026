@@ -222,3 +222,22 @@ Blocking is now the largest single loss (0.0219). The token types added for it, 
 Job `v1c-blockeval` measures recall of these against the old token set at K 30, 40 and 60. If the gain is real, blocking is re-run for train and test, features are rebuilt and the model retrained.
 
 Literature used for the decision layer: exact F-measure maximisation for sets of labels (Dembczynski et al., GFM: O(m^2) to O(m^3) for m candidates given the label probabilities) gives the optimal per-S1 prediction set under F-beta; calibration under domain shift (multi-domain temperature scaling, adaptive calibrator ensemble) is relevant because France is a new domain; triplet fine-tuning of embeddings on synthetic business records (arXiv 2608.16161) supports fine-tuning a bi-encoder later, if lexical features plateau.
+
+## 14. Blocking measurement of the new token types, and the cascade (2026-09-25)
+
+Job `v1c-blockeval` (20k train S1 against the full 10.3M pool, cap_df 800):
+
+| Configuration | Pair recall | Candidates per S1 | Misses: unreachable / over cap / truncated |
+|---|---|---|---|
+| Old types (n a p c m d h), K 30 | **0.9416** | 29.9 | 0.000 / 0.018 / 0.040 |
+| Old + g x k, K 30 | 0.9370 | 30.0 | 0.000 / 0.018 / 0.045 |
+| Old + g x k, K 40 | 0.9410 | 39.9 | 0.000 / 0.018 / 0.040 |
+| Old + g x k, K 60 | **0.9473** (US 0.970, India 0.913) | 59.6 | 0.000 / 0.018 / 0.034 |
+| g x k only | 0.5055 | 22.5 | 0.000 / 0.018 / 0.476 |
+
+Reading:
+- `g` (glued whole name) and `x` (one-deletion typo variants) cover 55% and 38% of the found true pairs but are largely redundant with the old channels, and they displace better candidates in the top-K by summed IDF (K 30 gets worse). `k` (consonant skeleton) never scored: skeleton tokens of common words have document frequency far above the cap and are dropped. All three were reverted from the default pipeline.
+- Lexical reachability of the true pairs is essentially complete (no shared token 0.01%; the rarest shared token has df at most 800 for 98.2%, at most 100,000 for 99.95%). The recall limit is not missing tokens; it is **ranking**: 3.4 to 4.5% of true pairs are found by tokens but cut by the per-type limits and the top-K rule, and 1.8% sit above the df cap.
+- Raising K helps (K 60: +0.6 points), but doubles the pair volume for every later stage.
+
+**Cascade blocking** (built, `stages/prune.py`): block with K 100, then re-rank with a tiny XGBoost on S1-local blocking features (score, shared tokens, per-type scores, rank, gap, ratio to the best, number of token types present) trained on the training sample's labels, and keep the best 30. The expensive string features are then computed on 30 pairs per S1 with the recall of a much larger K. The pruner's own score is dropped from the matcher's features so it cannot leak labels of the S1 it was fit on. Success criterion: pair recall at 30 kept above 0.9416, ideally approaching the K 60 and K 100 recall.

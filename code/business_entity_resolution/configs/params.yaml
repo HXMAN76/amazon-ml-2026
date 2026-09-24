@@ -10,7 +10,7 @@ sample:
 block:
   k: 30                # candidates kept per S1
   cap_df: 800          # tokens more frequent than this in the S2+S3 pool are ignored
-  per_type: {n: 4, a: 4, p: 3, c: 6, m: 3, d: 3, h: 3, g: 1, x: 6, k: 4}   # rarest tokens kept per query and token type
+  per_type: {n: 4, a: 4, p: 3, c: 6, m: 3, d: 3, h: 3}   # rarest tokens kept per query and token type
   prefix_len: 5
   min_prefix_len: 7
   comp:                # composite keys from the rarest words of each record
@@ -18,7 +18,7 @@ block:
     m: 3               # pairs among the rarest 3 name words
     d: 3               # pairs among the rarest 3 address words
     h: 3               # house/number token x rarest 3 non-numeric address words
-  types: [n, a, p, c, m, d, h]   # token types used for scoring; g, x, k (experimental) are not used for the submitted run
+  types: [n, a, p, c, m, d, h]
   batch_q: 100000
   memory_limit: 10GB
   threads: 4
@@ -26,11 +26,9 @@ block_eval:
   n_s1: 20000
   seed: 7
   runs:                # each run overrides block params; index for the pool is cached across runs
-    - {name: old_types,   types: [n, a, p, c, m, d, h],               over: {}}
-    - {name: all_k30,     types: [n, a, p, c, m, d, h, g, x, k],      over: {}}
-    - {name: all_k40,     types: [n, a, p, c, m, d, h, g, x, k],      over: {k: 40}}
-    - {name: all_k60,     types: [n, a, p, c, m, d, h, g, x, k],      over: {k: 60}}
-    - {name: new_only,    types: [g, x, k],                            over: {}}
+    - {name: k30,   types: [n, a, p, c, m, d, h], over: {}}
+    - {name: k60,   types: [n, a, p, c, m, d, h], over: {k: 60}}
+    - {name: k100,  types: [n, a, p, c, m, d, h], over: {k: 100}}
 train_gpu:
   device: auto         # cuda when a GPU is visible, else cpu
   folds: 5
@@ -41,4 +39,11 @@ train_gpu:
   subsample: 0.8
   colsample: 0.8
   min_child_weight: 1
+  seed: 0
+prune:                 # cascade blocking: block with k_raw candidates, keep the k_keep best by a learned first-stage ranker
+  k_raw: 100
+  k_keep: 30
+  rounds: 300
+  max_depth: 6
+  eta: 0.1
   seed: 0

@@ -5,8 +5,7 @@ Every record becomes tagged tokens:
   p  5-character prefix of a long word (suffix typos)
   c  composite: rare name word | rare address word        m  composite: two rare name words
   d  composite: two rare address words                    h  composite: house number | rare address word
-  g  whole core name with spaces removed (glued names)    x  one-deletion variants of the 2 rarest name words (typos)
-  k  consonant skeleton of name words (pool: romanised non-Latin names; query: Latin names) - bridges scripts
+(Tested and dropped: g glued name, x one-deletion typo variants, k consonant skeleton: no recall gain, see research.md.)
 Tokens whose document frequency in the S2+S3 pool exceeds `cap_df` are dropped. A pool record's score for an
 S1 query is the sum of IDF over shared tokens; the top K per query are kept. Queries run in batches and are
 written as Parquet shards. The pool-side index is cached in a persistent DuckDB file keyed by a hash of the
@@ -31,12 +30,12 @@ from ber import config
 from ber.tracking import log_stage
 
 PID_BASE = 10_000_000
-TYPES = ("n", "a", "p", "c", "m", "d", "h", "g", "x", "k")
-INDEX_VERSION = 2  # bump when token generation changes so the cached pool index is rebuilt
+TYPES = ("n", "a", "p", "c", "m", "d", "h")
+INDEX_VERSION = 3  # bump when token generation changes so the cached pool index is rebuilt
 
 
-def base_tokens(tbl: str, idcol: str, prefix_len: int, min_prefix: int, k_expr: str, k_where: str) -> str:
-    """SQL producing tagged tokens (name, address, prefix, glued name, skeleton) per record of a table."""
+def base_tokens(tbl: str, idcol: str, prefix_len: int, min_prefix: int) -> str:
+    """SQL producing tagged tokens (name words, address words and numbers, long-word prefixes) per record of a table."""
     return f"""
     SELECT DISTINCT id, typ, w FROM (
       SELECT {idcol} AS id, 'n' AS typ, unnest(string_split(core1 || ' ' || name2, ' ')) AS w FROM {tbl}
@@ -47,12 +46,6 @@ def base_tokens(tbl: str, idcol: str, prefix_len: int, min_prefix: int, k_expr: 
     SELECT DISTINCT id, 'p', substr(w, 1, {prefix_len}) FROM (
       SELECT {idcol} AS id, unnest(string_split(core1 || ' ' || name2 || ' ' || addr, ' ')) AS w FROM {tbl}
     ) WHERE length(w) >= {min_prefix} AND NOT regexp_matches(w, '^[0-9]+$')
-    UNION
-    SELECT DISTINCT {idcol}, 'g', replace(core1, ' ', '') FROM {tbl} WHERE length(replace(core1, ' ', '')) >= 6
-    UNION
-    SELECT DISTINCT id, 'k', regexp_replace(w, '[aeiouy]', '', 'g') FROM (
-      SELECT {idcol} AS id, unnest(string_split({k_expr}, ' ')) AS w FROM {tbl} {k_where}
-    ) WHERE length(w) >= 3 AND length(regexp_replace(w, '[aeiouy]', '', 'g')) >= 2
     """
 
 
@@ -79,13 +72,7 @@ def make_composites(con: duckdb.DuckDBPyConnection, bt: str, dft: str, out: str,
           AND x.rk <= {k['d']} AND y.rk <= {k['d']}
         UNION ALL
         SELECT b.id, 'h', b.w || '|' || r.w FROM {bt} b JOIN rk_aw r ON r.id = b.id AND r.rk <= {k['h']}
-          WHERE b.typ = 'a' AND regexp_matches(b.w, '[0-9]')
-        UNION ALL
-        SELECT DISTINCT id, 'x', v FROM (
-          SELECT id, unnest(list_concat([w], list_transform(range(1, length(w) + 1),
-                                                          i -> substr(w, 1, i - 1) || substr(w, i + 1)))) AS v
-          FROM rk_n WHERE rk <= 2 AND length(w) BETWEEN 4 AND 12
-        )""")
+          WHERE b.typ = 'a' AND regexp_matches(b.w, '[0-9]')""")
 
 
 def index_hash(con: duckdb.DuckDBPyConnection, prm: dict) -> str:
@@ -107,7 +94,7 @@ def build_pool_index(con: duckdb.DuckDBPyConnection, prm: dict) -> None:
     t = time.time()
     for tb in ("pbase", "dfb", "pcomp", "ptok_all", "df"):
         con.execute(f"DROP TABLE IF EXISTS {tb}")
-    con.execute(f"CREATE TABLE pbase AS {base_tokens('pool', 'pid', prm['prefix_len'], prm['min_prefix_len'], 'core_rom', 'WHERE nl')}")
+    con.execute(f"CREATE TABLE pbase AS {base_tokens('pool', 'pid', prm['prefix_len'], prm['min_prefix_len'])}")
     con.execute("CREATE TABLE dfb AS SELECT typ || ':' || w AS tok, count(*) AS df FROM pbase GROUP BY 1")
     make_composites(con, "pbase", "dfb", "pcomp", prm)
     con.execute("CREATE TABLE ptok_all AS SELECT id, typ, typ || ':' || w AS tok FROM pbase UNION ALL "
@@ -126,7 +113,7 @@ def build_query_index(con: duckdb.DuckDBPyConnection, prm: dict) -> dict:
                 f"WHERE df <= {prm['cap_df']}")
     for tb in ("qbase", "qcomp", "qtok", "ptok"):
         con.execute(f"DROP TABLE IF EXISTS {tb}")
-    con.execute(f"CREATE TABLE qbase AS {base_tokens('qry', 'q', prm['prefix_len'], prm['min_prefix_len'], 'core1', '')}")
+    con.execute(f"CREATE TABLE qbase AS {base_tokens('qry', 'q', prm['prefix_len'], prm['min_prefix_len'])}")
     make_composites(con, "qbase", "dfb", "qcomp", prm)
     lim = " ".join(f"WHEN '{k}' THEN {v}" for k, v in prm["per_type"].items())
     con.execute(f"""
@@ -194,9 +181,9 @@ def open_db(split: str, qids_parquet: Path | None, prm: dict) -> duckdb.DuckDBPy
     con.execute(f"PRAGMA memory_limit='{prm['memory_limit']}'; PRAGMA threads={prm['threads']}; "
                 f"SET temp_directory='{tmp}'")
     con.execute(f"""CREATE OR REPLACE TABLE pool AS
-        SELECT ({2 * PID_BASE} + rid)::BIGINT AS pid, core1, name2, addr, core_rom, nl_name > 0.5 AS nl FROM read_parquet('{pq}/source2.parquet')
+        SELECT ({2 * PID_BASE} + rid)::BIGINT AS pid, core1, name2, addr FROM read_parquet('{pq}/source2.parquet')
         UNION ALL
-        SELECT ({3 * PID_BASE} + rid)::BIGINT, core1, name2, addr, core_rom, nl_name > 0.5 FROM read_parquet('{pq}/source3.parquet')""")
+        SELECT ({3 * PID_BASE} + rid)::BIGINT, core1, name2, addr FROM read_parquet('{pq}/source3.parquet')""")
     sel = f"WHERE rid IN (SELECT rid FROM read_parquet('{qids_parquet}'))" if qids_parquet else ""
     con.execute(f"CREATE OR REPLACE TABLE qry AS SELECT rid AS q, core1, name2, addr FROM read_parquet('{pq}/source1.parquet') {sel}")
     return con
@@ -221,12 +208,16 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "test"], required=True)
     ap.add_argument("--all-train", action="store_true", help="train: block all S1, not just the sample")
+    ap.add_argument("--k", type=int, default=None, help="override block.k (candidates kept per S1)")
+    ap.add_argument("--out-name", default=None, help="sub-folder of WORK/blocks for the shards (default: the split name)")
     a = ap.parse_args(argv)
-    P, prm = config.paths(), config.load()["block"]
+    P, prm = config.paths(), dict(config.load()["block"])
+    if a.k:
+        prm["k"] = a.k
     q = None
     if a.split == "train" and not a.all_train:
         q = P["sample"] / "train_s1.parquet"
-    out = P["work"] / "blocks" / a.split
+    out = P["work"] / "blocks" / (a.out_name or a.split)
     h = params_hash(prm, prm["types"], q)
     marker = out / ".params"
     if out.exists() and (not marker.exists() or marker.read_text() != h):
