@@ -2,6 +2,13 @@
 
 Written 2026-09-25. Supersedes the informal plan in `research.md` section 4 and section 10. Facts about the data are in `context.md` section 2b. Nothing below is implemented yet except v0 (`code/business_entity_resolution/`), which this plan replaces at scale.
 
+## Status (2026-09-25 about 02:00 IST)
+
+- Phase 0 (foundation): done. Normaliser, `prepare`, `sample`, Makefile with hash stamps, MLflow logging, live job logs, tests.
+- Phase 1 (blocking): in progress. First measurement with the plan's channels A (`n`, `a`, `p`) and composite keys: recall 0.85 at 29 candidates per S1, gate 1 not met. Root cause is the document-frequency cap (800) being far too small for a 10.3M-record pool. Composite keys (rare name word with rare address word) were the strongest channel (0.78 alone), so more composite types were added (`m` name pair, `d` address pair, `h` house number with address word). The dense multilingual channel (E) is still open and will be added only if the lexical reachability diagnosis shows true pairs that share no token.
+- Phases 2 to 4: not started.
+- One design change since approval: the pool-side token index is cached in a persistent DuckDB file keyed by an index-parameter hash, so `cap_df`, per-type limits and K can be tuned in seconds instead of rebuilding for about 3 minutes.
+
 ## 0. Review of the earlier plan: what holds and what changes
 
 | Earlier idea | Verdict | Change |

@@ -1,6 +1,6 @@
 # Amazon ML Challenge 2026: implementation context
 
-Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Update the "Status" section as work proceeds.
+Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Companion documents: `plan.md` (approved baseline, evaluation and MLOps design), `research.md` (literature and findings), `code/business_entity_resolution/README.md` (how to run). Update the "Status" section as work proceeds.
 
 ## 1. Challenge
 
@@ -40,7 +40,7 @@ Observed from header peeks:
 - Ground truth rows often list 3 to 5 matches across S2 and S3.
 - Row counts (lines incl. header): train S1 2.21M, S2 5.03M, S3 5.29M, ground truth 2.21M rows (one per S1); test S1 1.73M, S2 4.89M, S3 5.08M. See section 2b for the measured structure.
 
-## 2b. Measured data structure (stats3 job, train unless noted)
+## 2b. Measured data structure (stats3 job, train unless noted; full numbers, do not re-derive)
 
 - Countries: train US 60%, India 40%. Test S1: India 810k, US 663k, **France 259k (15%)**; France is also 14% of test S2 and S3.
 - **Match structure:** 5.6% of S1 are singletons (same in US and India). Mean 3.46 matches per S1 (max 11). 80.5% of S1 have both an S2 and an S3 match. S2 per S1 up to 5, S3 per S1 up to 6.
@@ -78,14 +78,15 @@ Laptop is on a slow network. **Do not move big data through the laptop**; run ev
 
 ### How code runs on the g5 (no SSH needed)
 
-1. Code lives in `code/business_entity_resolution/` in the repo. Sync it to S3:
-   `aws s3 sync code/business_entity_resolution s3://sagemaker-us-east-1-567503593043/ber/code --exclude '*__pycache__*' --exclude 'models/*'`
-   The notebook pulls it to `/home/ec2-user/SageMaker/ber` on boot.
-2. The on-start script builds conda env `ber` (python 3.11, `requirements.txt`) in the background (marker file `ber/.env_ready`) and starts `aws/notebook/jobrunner.sh`.
-3. **Job queue:** put a bash script at `s3://sagemaker-us-east-1-567503593043/jobs/pending/<name>.sh`. The runner picks it up (polls every 10 s), runs it inside the `ber` env from `/home/ec2-user/SageMaker` with `PYTHONPATH=.../ber/src`, and uploads the log to `jobs/done/<name>.log` (ends with `exit=<code>`). Create `/tmp/job.lock` while a job runs so idle auto-stop does not kill it.
-4. Data on the notebook: `/home/ec2-user/SageMaker/dataset/{train,test}` (synced from the data bucket by the stats job).
-5. Code changes after boot: sync to S3, then a job script can `aws s3 sync s3://.../ber/code /home/ec2-user/SageMaker/ber` before running.
+1. Code lives in `code/business_entity_resolution/` in the repo. Sync it to S3 (always exclude `work/`, it is the data directory):
+   `aws s3 sync code/business_entity_resolution s3://sagemaker-us-east-1-567503593043/ber/code --delete --exclude '*__pycache__*' --exclude '.pytest_cache/*' --exclude 'models/*' --exclude 'work/*'`
+2. On boot the lifecycle script (`aws/notebook/onstart.sh`) installs a job-aware idle auto-stop and starts `aws/notebook/bootstrap.sh` in the background as `ec2-user`: it syncs the code to `/home/ec2-user/SageMaker/ber`, builds conda env `ber` (**Python 3.12**; 3.11 fails the pinned requirements), installs `requirements.txt`, writes `ber/.env_ready` only after imports succeed, and starts `jobrunner.sh`. (An earlier version wrapped a multi-line script in `sudo -i bash -c`, which collapsed the newlines into one command and silently did nothing.)
+3. **Job queue:** put a bash script at `s3://sagemaker-us-east-1-567503593043/jobs/pending/<name>.sh`. The runner polls every 10 s, runs jobs one at a time in alphabetical order inside env `ber` from `/home/ec2-user/SageMaker` with `PYTHONPATH` set, **streams the log to `jobs/live/<name>.log` every 30 s**, and uploads the final log to `jobs/done/<name>.log` (last line `exit=<code>`). It holds `/tmp/job.lock` while a job runs so idle auto-stop does not kill it. Jobs must begin with `set -ex`, source conda, `conda activate ber`, and sync the code from S3 (they do not inherit the newest code otherwise).
+4. Directories on the notebook: raw data `/home/ec2-user/SageMaker/dataset/{train,test}`; pipeline outputs `/home/ec2-user/SageMaker/work` (`BER_WORK`); code `/home/ec2-user/SageMaker/ber`. Never sync code with `--delete` without `--exclude 'work/*'`.
+5. Watching a job from the laptop:
+   `aws s3 cp s3://sagemaker-us-east-1-567503593043/jobs/live/<name>.log - --profile hxman-26` (running) or `.../jobs/done/<name>.log` (finished).
 6. The job queue only trusts the account-A working bucket. Do not point the runner at the shared team bucket (other accounts could then run code on the instance).
+7. Commands typed with `!`/`tail` in the desktop app terminal pane run on the laptop, not on the g5. To inspect the g5 directly, open Jupyter (presigned URL) and use its terminal.
 
 ### SSH Helper path (optional, from `remote-setup.md`)
 
@@ -93,49 +94,40 @@ Sai's SageMaker SSH Helper setup (local-mode container, `sm-ssh connect`). Lapto
 
 ## 4. Code: `code/business_entity_resolution/` (package `ber`)
 
-Baseline v0, tested only on synthetic data (`pytest` passes 2 tests). Env for local dev: `.venv-ber/` (git-ignored).
+Local dev env: `.venv-ber/` (Python 3.12, git-ignored). 14 tests pass (`make test`). The pipeline is a set of stages driven by a Makefile with hash-based caching (`make prepare sample block_eval`); every tunable lives in `configs/params.yaml`; runs are logged to MLflow (sqlite `work/mlflow.db`) and `work/runs/runs.jsonl`. Plan and design rationale: `plan.md`.
+
+New pipeline (phase 0 and 1):
 
 | Module | Role |
 |---|---|
-| `normalize.py` | lowercase, punctuation, abbreviation expansion (Corp/Ltd/Pvt, Rd/St), legal-suffix removal (US/India/France forms), country aliases |
-| `data.py` | TSV loading, normalised columns, ground-truth dict |
-| `blocking.py` | top-K TF-IDF char n-gram kNN per country (core-name view and name+address view, unioned); `recall()` reports candidate recall |
-| `features.py` | `Encoder` (4 TF-IDF spaces) and `pair_features` (49 features: rapidfuzz ratios, Jaro-Winkler, Levenshtein, Jaccard, number/PIN overlap, acronym match, TF-IDF cosines, per-S1 and per-candidate rank/gap) |
-| `model.py` | LightGBM, 5-fold OOF grouped by S1 entity |
-| `decide.py` | threshold and one-to-one selection tuned on OOF macro F0.5 |
-| `metrics.py` | `f05_entity`, `macro_f05`, singleton/matched breakdown (verified against the 0.714 worked example) |
-| `validate.py` | local format checker (the official script is authoritative) |
-| `run.py` | `python -m ber.run train|predict` |
-| `synth.py` | synthetic dataset generator for tests |
+| `text.py` | deterministic normaliser: `html.unescape`, Latin-only accent stripping (Indic scripts kept), ASCII fast path (about 10 us per row), leetspeak repair in mixed letter/digit tokens, DBA/alias and domain-name splitting (`X dba Y`, `X | www.x.com`, `[www.x.com]`), legal forms into their own field, abbreviation expansion, `st`/`street`/`saint` share one token, glued `CDP` suffix, script fractions |
+| `config.py`, `stamp.py`, `tracking.py` | params loader, Makefile stage stamps (hash of params sections and source files), MLflow + `runs.jsonl` logging |
+| `stages/prepare.py` | TSV to Parquet per split and source (`rid`, raw and normalised columns) plus `labels.parquet` (`s1_rid`, `src`, `other_rid`); 24M records in about 6 to 9 minutes on 4 cores |
+| `stages/sample.py` | 250k S1 training queries (seeded, folds 0..4), full S2/S3 pool kept |
+| `stages/block.py` | DuckDB weighted token index. Token types: `n` name word, `a` address word/number, `p` 5-char prefix, `c` name-word x address-word, `m` name-word pair, `d` address-word pair, `h` house-number x address-word. IDF scoring, document-frequency cap, per-type rarest-token limits, top-K per S1, Parquet shards with resume, persistent pool-index cache |
+| `stages/block_eval.py` | recall per configuration on a 20k-S1 subset: pair recall, S1 with all matches found, candidates per S1, recall by country, channel coverage, and a miss breakdown (unreachable / over df cap / lost to per-type limits and top-K) plus a no-cap lexical reachability diagnosis |
+| `scripts/qa_prepare.py` | side-by-side raw vs normalised samples and empty/alias/domain rates |
 
-Run: `PYTHONPATH=src python -m ber.run train --data dataset --model models/v0` then `predict --data dataset --model models/v0 --out output`.
+Legacy v0 (`normalize.py`, `data.py`, `blocking.py`, `features.py`, `model.py`, `decide.py`, `run.py`, `validate.py`, `synth.py`, `metrics.py`) is kept for reference and its tests; `metrics.py` and `synth.py` are still used, the rest will be replaced by scalable stages (features, train, calibrate, decide, predict) in phase 2 per `plan.md`.
 
-### Known problems with v0 at real scale (must fix before real numbers)
+Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
-1. **Blocking does not scale.** It densifies chunks of a sparse matmul (`xa[chunk] @ xb.T`). With millions of S2/S3 rows on a 16 GB, 4 vCPU box this blows memory and time. Needs inverted-index/token or key blocking, and/or GPU dense kNN (torch or FAISS on the A10G, chunked top-k).
-2. **`normalize.strip_accents` destroys Devanagari.** NFKD followed by dropping combining marks removes the matras. Only strip accents on Latin script; Devanagari needs transliteration or a multilingual embedding.
-3. **Cross-script matching:** Devanagari S2 names versus Latin S1 names. Options: a multilingual embedding model (multilingual-e5 or bge-m3, both MIT) on the GPU, or an offline rule-based transliteration library (allowed: no external lookup). Embedding all records may take on the order of an hour on the A10G; measure first.
-4. **Memory:** pandas plus per-row Python sets (`nums`) for millions of rows is too heavy. Use polars/arrow and compact columns, or process in country/region shards.
-5. **Pair-feature loops:** Jaccard and acronym features use Python loops. Vectorise or move to shards.
-6. Only 4 vCPUs on g5.xlarge; CPU-bound stages (rapidfuzz, LightGBM) will be slower than on the laptop's 24 cores. Weigh GPU-side work accordingly.
-7. One-to-one selection is switched on only if it wins on OOF. Verify from the stats job how many S2/S3 records are claimed by more than one S1.
-
-## 5. Status
+## 5. Status (2026-09-25 about 02:00 IST)
 
 Done:
-- AWS account A set up for this task (role, notebook, lifecycle, working bucket, job queue). Old instances: none existed.
-- Laptop SSH-helper client ready (optional path).
-- Baseline v0 written and tested on synthetic data; code synced to `s3://sagemaker-us-east-1-567503593043/ber/code`.
-- Notebook restarted with the new lifecycle config (was Pending at last check).
-- Stats jobs done (`stats1`, `stats3`; `stats2` failed on a broken env). Env `ber` rebuilt on Python 3.12 (3.11 failed the pinned requirements). Dataset is on the g5 at `/home/ec2-user/SageMaker/dataset`. Findings in section 2b.
+- AWS account A set up for this task; notebook `test-notebook` InService; env `ber` on Python 3.12; job queue with live logs.
+- Data profiled (section 2b). Stats jobs `stats1`, `stats3` done.
+- Plan v1 written and approved (`plan.md`): Makefile + MLflow, baseline first, single account.
+- Phase 0 done: normaliser, `prepare`, `sample`, Makefile scaffold, tests. Parquet at `/home/ec2-user/SageMaker/work/parquet` (2 GB), 7,638,365 true pairs, 250k-S1 sample (US 150k / India 100k, singleton rate 5.55% vs 5.58% population).
+- Phase 1 started. First blocking measurement on 20k train S1 (pool 10.3M records, `cap_df` 800): recall 0.85 at 29.2 candidates per S1 with token types n+a+p+c; US 0.90, India 0.78; composites `c` alone reach 0.78. **Gate 1 (recall at least 0.98 at at most 30 candidates) is not met.** Cause: `cap_df` 800 is far too low for a 10M pool, only about 8 tokens per query survive and half of S1 have no name token; composite keys carry most of the recall.
+- Code since then (uncommitted at the time of writing, then committed): more composite types (`m`, `d`, `h`), pool-index cache, miss breakdown and reachability diagnosis. Job `blockeval2` (cap 800 / 5000 / 20000, K 30 and 100, composites only) was running; its output decides the next blocking change.
 
 Not done:
-- Redesign blocking and normalisation for scale and Devanagari (section 4).
-- First real numbers on the g5: blocking recall ceiling, OOF F0.5.
-- First submission early (ties go to the earlier submitter). Validate with the official script.
-- Decide v1: dense embeddings (multilingual, MIT/Apache, at most 8B) for blocking and a cross-encoder or feature.
+- Read `blockeval2` and tune blocking to gate 1; decide whether a dense channel is needed (about 9% of India S2 names are non-Latin, and some true pairs share no token at all).
+- Block all S1 for train (competitor statistics) and test; write `candidate_pairs`.
+- Phase 2: vectorised features, LightGBM with grouped CV, isotonic calibration, exclusive assignment, expected-F0.5 per-entity decision, country hold-out and collision stress validation.
+- First submission (target: about 16 hours from the start, validate with the official `utils/validate_submission.py`).
 - Methodology doc from `Documentation_template.md`; final zip.
-- Uncommitted on `sai`: `.gitignore`, `remote-ssh.remote.ipynb`, `code/`, `aws/notebook/`, `iam/hxman/`, this file.
 
 ## 6. Rules of the road
 

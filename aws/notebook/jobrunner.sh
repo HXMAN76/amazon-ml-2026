@@ -1,6 +1,7 @@
 #!/bin/bash
-# Polls s3://$B/jobs/pending/*.sh, runs each in the `ber` conda env, uploads log to jobs/done/.
-# Keeps /tmp/job.lock while a job runs so the idle auto-stop does not kill long jobs.
+# Polls s3://$B/jobs/pending/*.sh, runs each in the `ber` conda env, streams the log to jobs/live/
+# every 30 s while it runs, and uploads the final log to jobs/done/. Keeps /tmp/job.lock while a job
+# runs so the idle auto-stop does not kill long jobs.
 B=sagemaker-us-east-1-567503593043
 source /home/ec2-user/anaconda3/etc/profile.d/conda.sh
 while true; do
@@ -8,9 +9,15 @@ while true; do
     n=${k%.sh}
     aws s3 mv s3://$B/jobs/pending/$k /tmp/$k --only-show-errors || continue
     touch /tmp/job.lock
-    ( conda activate ber 2>/dev/null; cd /home/ec2-user/SageMaker; export PYTHONPATH=/home/ec2-user/SageMaker/ber/src; bash /tmp/$k ) > /tmp/$n.log 2>&1
-    echo "exit=$?" >> /tmp/$n.log
+    ( conda activate ber 2>/dev/null; cd /home/ec2-user/SageMaker; export PYTHONPATH=/home/ec2-user/SageMaker/ber/src; bash /tmp/$k ) > /tmp/$n.log 2>&1 &
+    pid=$!
+    while kill -0 $pid 2>/dev/null; do
+      aws s3 cp /tmp/$n.log s3://$B/jobs/live/$n.log --only-show-errors 2>/dev/null
+      sleep 30
+    done
+    wait $pid; echo "exit=$?" >> /tmp/$n.log
     aws s3 cp /tmp/$n.log s3://$B/jobs/done/$n.log --only-show-errors
+    aws s3 rm s3://$B/jobs/live/$n.log --only-show-errors 2>/dev/null
     rm -f /tmp/job.lock
   done
   sleep 10

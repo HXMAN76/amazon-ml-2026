@@ -1,0 +1,33 @@
+# Every tunable lives here. Stages read only their own section; `ber.stamp` hashes that section
+# (plus the stage source files) so `make` reruns a stage exactly when its params or code change.
+prepare:
+  workers: 4
+  chunk_rows: 100000
+sample:
+  seed: 13
+  n_s1: 250000
+  folds: 5
+block:
+  k: 30                # candidates kept per S1
+  cap_df: 800          # tokens more frequent than this in the S2+S3 pool are ignored
+  per_type: {n: 4, a: 4, p: 3, c: 6, m: 3, d: 3, h: 3}   # rarest tokens kept per query and token type
+  prefix_len: 5
+  min_prefix_len: 7
+  comp:                # composite keys from the rarest words of each record
+    c: [2, 3]          # rarest 2 name words x rarest 3 address words
+    m: 3               # pairs among the rarest 3 name words
+    d: 3               # pairs among the rarest 3 address words
+    h: 3               # house/number token x rarest 3 non-numeric address words
+  types: [n, a, p, c, m, d, h]
+  batch_q: 100000
+  memory_limit: 10GB
+  threads: 4
+block_eval:
+  n_s1: 20000
+  seed: 7
+  runs:                # each run overrides block params; index for the pool is cached across runs
+    - {name: base_cap800,   types: [n, a, p, c, m, d, h], over: {}}
+    - {name: cap5000,       types: [n, a, p, c, m, d, h], over: {cap_df: 5000}}
+    - {name: cap20000,      types: [n, a, p, c, m, d, h], over: {cap_df: 20000}}
+    - {name: cap20000_k100, types: [n, a, p, c, m, d, h], over: {cap_df: 20000, k: 100}}
+    - {name: cap20000_comp, types: [c, m, d, h],          over: {cap_df: 20000}}

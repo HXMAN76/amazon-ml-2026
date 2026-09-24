@@ -140,3 +140,24 @@ Full numbers are in `context.md` section 2b. Consequences for the plan above:
 5. **Cheap normalisation wins first:** `html.unescape`, leetspeak/digit-for-letter repair, domain-name splitting (`ipower.com` to `ipower`), DBA/`doing business as` splitting into two names, city-suffix cleanup (`CDP`). Each is a deterministic rule with no external lookup.
 6. **Scale.** About 2.2M S1 vs about 10M S2+S3 in train; test 1.7M vs about 10M. With about 3.5 true matches per S1, blocking at K=20 to 30 gives 35M to 65M candidate pairs, too many for per-pair Python features on 4 vCPU. Plan: (a) train on a subsample of S1 (200k to 300k) with all their matches and the full distractor pool restricted to blocked candidates; (b) at inference, vectorised features only, stage-2 models only on an ambiguous band; (c) blocking through an inverted index over each record's rarest tokens (DuckDB or polars), not dense matmul; dense embeddings only for the non-Latin subset (about 1M records) and as an extra recall channel on names.
 7. **Test-time inference is the real budget.** Decide early how many candidate pairs per S1 the inference stage can afford (target under 25 M pairs total) and design blocking to fit it.
+
+## 11. Blocking measurements (2026-09-25)
+
+First recall measurement of the token-index blocker on 20k train S1 against the full 10.3M-record pool (`cap_df` 800, K 30, per-type rarest-token limits n4 a4 p3 c6):
+
+| Token types | Pair recall | S1 with all matches found | Candidates per S1 | S1 with no candidate |
+|---|---|---|---|---|
+| n (name words) | 0.210 | 0.112 | 13.2 | 0.528 |
+| a (address words) | 0.388 | 0.240 | 21.0 | 0.250 |
+| p (5-char prefixes) | 0.123 | 0.066 | 9.7 | 0.657 |
+| c (name word x address word) | 0.778 | 0.486 | 15.8 | 0.002 |
+| n+a | 0.559 | 0.386 | 24.9 | 0.136 |
+| n+a+p | 0.557 | 0.381 | 25.2 | 0.136 |
+| n+a+p+c | 0.850 (US 0.896, India 0.781) | 0.624 | 29.2 | 0.000 |
+
+Reading:
+- Single common words do not identify a business in a 10M pool. With a df cap of 800 only about 8 tokens per query survived (156k tokens for 20k queries), so half of all S1 had no usable name token. The lexical baseline needs either a higher cap or, better, more composite keys whose document frequency is naturally tiny.
+- Composite keys alone beat the union of the single-word channels by a wide margin, which matches the literature view that blocking keys should combine attributes.
+- Prefix tokens (`p`) add nothing on top of `n+a`, so they are candidates for removal once the new run confirms it.
+- India is weaker than US (0.78 vs 0.90), consistent with non-Latin names and addresses in about 9% of India records; some of those pairs may be unreachable lexically and need a dense multilingual channel.
+- Follow-up run (`blockeval2`) adds composite types `m` (name pair), `d` (address pair), `h` (house number with address word), sweeps `cap_df` at 800, 5000 and 20000, K at 30 and 100, and reports why true pairs are missing (no shared token, shared token above the cap, or lost to per-type limits and top-K). Its result decides whether the dense channel is required before gate 1.
