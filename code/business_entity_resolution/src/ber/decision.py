@@ -17,8 +17,8 @@ def assign_exclusive(df: pl.DataFrame) -> pl.DataFrame:
               .group_by("pid", maintain_order=True).first())
 
 
-def macro_f05(pred: pl.DataFrame, n_true: pl.DataFrame) -> float:
-    """pred: rows (q, label) of predicted pairs; n_true: (q, n_true) for EVERY evaluated S1 (0 for singletons).
+def per_entity_f05(pred: pl.DataFrame, n_true: pl.DataFrame) -> pl.DataFrame:
+    """Per-S1 F_0.5 as a table (q, f). pred: rows (q, label) of predicted pairs; n_true: (q, n_true) for EVERY S1.
 
     Per S1: no prediction and no truth = 1.0; prediction without truth or truth without prediction = 0.0.
     """
@@ -30,7 +30,20 @@ def macro_f05(pred: pl.DataFrame, n_true: pl.DataFrame) -> float:
     score = (pl.when((pl.col("n_pred") == 0) & (pl.col("n_true") == 0)).then(1.0)
                .when((pl.col("n_pred") == 0) | (pl.col("n_true") == 0) | (pl.col("tp") == 0)).then(0.0)
                .otherwise(f))
-    return float(d.select(score.mean()).item())
+    return d.select("q", score.alias("f"))
+
+
+def macro_f05(pred: pl.DataFrame, n_true: pl.DataFrame) -> float:
+    """Macro F_0.5 over the S1 entities in n_true (the competition metric)."""
+    return float(per_entity_f05(pred, n_true)["f"].mean())
+
+
+def bootstrap_ci(values: np.ndarray, n_boot: int = 1000, seed: int = 0) -> tuple[float, float, float]:
+    """Mean and 95% bootstrap interval of per-entity scores (resampling S1 entities with replacement)."""
+    rng = np.random.default_rng(seed)
+    v = np.asarray(values, dtype=np.float64)
+    means = np.array([v[rng.integers(0, len(v), len(v))].mean() for _ in range(n_boot)])
+    return float(v.mean()), float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
 def tune_threshold(df: pl.DataFrame, n_true: pl.DataFrame, exclusive: bool,

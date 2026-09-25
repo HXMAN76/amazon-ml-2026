@@ -163,14 +163,17 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", choices=["train", "test"], required=True)
     ap.add_argument("--chunk", type=int, default=1_500_000)
+    ap.add_argument("--rest", action="store_true", help="train: features for the S1 OUTSIDE the sample (unbiased scoring / holdout)")
     a = ap.parse_args(argv)
     P = config.paths()
     pq = P["parquet"] / a.split
     t0 = time.time()
     cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"))
-    if a.split == "train":  # only the sampled S1 need features; competition stats used the full candidate set
+    name = a.split
+    if a.split == "train":  # competition stats above used the full candidate set; features only for the wanted S1
         smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])
-        cand = cand.join(smp.rename({"rid": "q"}), on="q", how="semi")
+        cand = cand.join(smp.rename({"rid": "q"}), on="q", how="anti" if a.rest else "semi")
+        name = "train_rest" if a.rest else "train"
         lab = pl.read_parquet(pq / "labels.parquet").with_columns(
             (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"),
             pl.col("s1_rid").alias("q"), pl.lit(1, dtype=pl.Int8).alias("label")).select("q", "pid", "label")
@@ -188,7 +191,7 @@ def main(argv: list[str] | None = None) -> None:
     pool = pool.with_columns(pl.len().over("core1").alias("cnt_pool_b"))
     s1cnt = s1.group_by("core1").agg(pl.len().alias("cnt_s1_b"))
     pool = pool.join(s1cnt, on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0))
-    out = P["work"] / "features" / a.split
+    out = P["work"] / "features" / name
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("part_*.parquet"):
         old.unlink()
@@ -203,7 +206,7 @@ def main(argv: list[str] | None = None) -> None:
         part = cand[sl].with_columns([pl.Series(k, v) for k, v in f.items()])
         part.write_parquet(out / f"part_{i:04d}.parquet", compression="zstd")
         print(f"chunk {i}: {part.height} pairs, {part.width} columns in {time.time() - t:.0f}s", flush=True)
-    log_stage(f"pairs_{a.split}", {"chunk": a.chunk}, {"pairs": float(cand.height), "seconds": time.time() - t0})
+    log_stage(f"pairs_{name}", {"chunk": a.chunk}, {"pairs": float(cand.height), "seconds": time.time() - t0})
 
 
 if __name__ == "__main__":

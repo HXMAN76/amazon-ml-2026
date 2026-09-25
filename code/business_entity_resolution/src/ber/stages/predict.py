@@ -44,6 +44,8 @@ def main(argv: list[str] | None = None) -> None:
         res.append(d.select("q", "pid").with_columns(pl.Series("p", pp)))
     df = pl.concat(res)
     p = df["p"].to_numpy()
+    (P["work"] / "output" / a.name).mkdir(parents=True, exist_ok=True)
+    df.write_parquet(P["work"] / "output" / a.name / "pair_p.parquet", compression="zstd")  # p1 of every test candidate pair (q, pid, p)
     sel = decision.assign_exclusive(df) if cfg["exclusive"] else df
     sel = sel.filter(pl.col("p") >= cfg["threshold"])
     print(f"{df.height} candidate pairs scored, {sel.height} kept at threshold {cfg['threshold']:.2f} "
