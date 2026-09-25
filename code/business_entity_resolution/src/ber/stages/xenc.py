@@ -28,7 +28,16 @@ from ber.stages.block import PID_BASE
 
 MODEL = "intfloat/multilingual-e5-small"
 DATA_DIR = "xenc"  # WORK sub-folder of the pair lists and scores (`--dir xenc_v7` keeps a second set); the fitted model always lives in xenc/model
+MODEL_DIR = "xenc/model"  # WORK-relative folder of the fitted cross-encoder
+OVERRIDES: dict = {}   # parameter overrides from --set
 DIGITS = re.compile(r"\d+")
+
+
+def _prm() -> dict:
+    prm = dict(config.load()["xenc"])
+    for k, v in OVERRIDES.items():
+        prm[k] = type(prm[k])(v) if k in prm else float(v)
+    return prm
 
 
 def tag_digits(t: str) -> str:
@@ -47,7 +56,11 @@ def xenc_train_q(prm: dict) -> np.ndarray:
     smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])["rid"].to_numpy().astype(np.int64)
     ok = np.setdiff1d(s1, np.concatenate([smp, holdout_q().astype(np.int64), dense_train_q(cfg["dense"]), dense_all_train_q(cfg["dense_all"])]))
     rng = np.random.default_rng(prm["seed"])
-    return np.sort(rng.choice(ok, size=min(prm["fit_s1"], len(ok)), replace=False))
+    first = rng.choice(ok, size=min(prm["fit_s1"], len(ok)), replace=False)
+    if prm.get("fit_more"):  # a larger fit set that contains the first one (so earlier scores stay valid)
+        rest = np.setdiff1d(ok, first)
+        first = np.concatenate([first, np.random.default_rng(prm["seed"] + 1).choice(rest, size=min(int(prm["fit_more"]), len(rest)), replace=False)])
+    return np.sort(first)
 
 
 def _texts(split: str):
@@ -75,7 +88,7 @@ def _pairs(split: str, base: str, prm: dict) -> pl.DataFrame:
 
 def data(base: str) -> None:
     P = config.paths()
-    prm = config.load()["xenc"]
+    prm = _prm()
     out = P["work"] / DATA_DIR
     out.mkdir(parents=True, exist_ok=True)
     lo, hi = prm["band_lo"], prm["band_hi"]
@@ -111,7 +124,7 @@ def train() -> None:
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     P = config.paths()
-    prm = config.load()["xenc"]
+    prm = _prm()
     t0 = time.time()
     d = pl.read_parquet(P["work"] / DATA_DIR / "train_fit.parquet")
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
@@ -141,7 +154,7 @@ def train() -> None:
             step += 1
             if step % 200 == 0:
                 print(f"epoch {ep} step {step}/{steps} loss {loss.item():.4f} ({time.time() - t0:.0f}s)", flush=True)
-    out = P["work"] / "xenc" / "model"
+    out = P["work"] / MODEL_DIR
     model.save_pretrained(out)
     tok.save_pretrained(out)
     print(f"saved {out} after {time.time() - t0:.0f}s", flush=True)
@@ -152,11 +165,11 @@ def score(split: str) -> None:
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
     P = config.paths()
-    prm = config.load()["xenc"]
+    prm = _prm()
     t0 = time.time()
     d = pl.read_parquet(P["work"] / DATA_DIR / f"{split}.parquet")
-    tok = AutoTokenizer.from_pretrained(P["work"] / "xenc" / "model")
-    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / "xenc" / "model").cuda().half().eval()
+    tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR)
+    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().half().eval()
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)
@@ -180,9 +193,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--split", choices=["train", "test"], default="train")
     ap.add_argument("--base", default="v5")
     ap.add_argument("--dir", default="xenc", help="WORK sub-folder for pair lists and scores")
+    ap.add_argument("--base-model", default=MODEL, help="Hugging Face encoder to fine-tune (train)")
+    ap.add_argument("--model-dir", default="xenc/model", help="WORK-relative folder of the fitted model")
+    ap.add_argument("--set", default="", help="comma-separated xenc parameter overrides, e.g. epochs=3,band_lo=0.01")
     a = ap.parse_args(argv)
-    global DATA_DIR
-    DATA_DIR = a.dir
+    global DATA_DIR, MODEL, MODEL_DIR
+    DATA_DIR, MODEL, MODEL_DIR = a.dir, a.base_model, a.model_dir
+    for kv in filter(None, a.set.split(",")):
+        k, v = kv.split("=")
+        OVERRIDES[k] = v
     {"data": lambda: data(a.base), "train": train, "score": lambda: score(a.split)}[a.cmd]()
 
 

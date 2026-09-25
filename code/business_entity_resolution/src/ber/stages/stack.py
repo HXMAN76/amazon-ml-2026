@@ -333,7 +333,10 @@ def build(split: str, base: str, prm: dict) -> None:
         if prm.get("xenc"):  # S1 the cross-encoder was fitted on would carry optimistic xs features
             from ber.stages.xenc import xenc_train_q
 
-            pool = np.setdiff1d(pool, xenc_train_q(config.load()["xenc"]))
+            xp = dict(config.load()["xenc"])
+            if prm.get("xenc_fit_more"):
+                xp["fit_more"] = prm["xenc_fit_more"]
+            pool = np.setdiff1d(pool, xenc_train_q(xp))
         rng = np.random.default_rng(prm["seed"])
         sub = rng.choice(pool, size=min(prm["sub_q"], len(pool)), replace=False)
         keep = np.sort(np.concatenate([hold, sub]))
@@ -497,6 +500,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
+    ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
     ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
     a = ap.parse_args(argv)
@@ -507,6 +511,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
     prm["xenc"] = prm.get("xenc", False) or a.xenc
     prm["xenc_dir"] = a.xenc_dir
+    prm["xenc_fit_more"] = a.xenc_fit_more
     if a.sub_q:
         prm["sub_q"] = a.sub_q
     for kv in filter(None, a.set.split(",")):
