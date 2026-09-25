@@ -271,6 +271,11 @@ def build(split: str, base: str, prm: dict) -> None:
         hold = holdout_q()
         allq = d.select("q").unique()["q"].to_numpy()
         pool = np.setdiff1d(allq, hold)
+        dense_ft = config.load().get("dense")
+        if dense_ft:  # S1 the name encoder was fine-tuned on would carry optimistic emb_cos features: keep them out of stage two
+            from ber.stages.dense import dense_train_q
+
+            pool = np.setdiff1d(pool, dense_train_q(dense_ft))
         rng = np.random.default_rng(prm["seed"])
         sub = rng.choice(pool, size=min(prm["sub_q"], len(pool)), replace=False)
         keep = np.sort(np.concatenate([hold, sub]))
