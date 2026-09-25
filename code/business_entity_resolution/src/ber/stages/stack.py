@@ -350,7 +350,7 @@ def build(split: str, base: str, prm: dict) -> None:
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
     s1_name, pool_name = _name_arrays(split)
-    xs_df = pl.read_parquet(P["work"] / "xenc" / f"{split}_xs.parquet") if prm.get("xenc") else None
+    xs_df = pl.read_parquet(P["work"] / prm.get("xenc_dir", "xenc") / f"{split}_xs.parquet") if prm.get("xenc") else None
     have = set(scan.collect_schema().names())
     carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
     n = 0
@@ -497,6 +497,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
+    ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
     ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
     a = ap.parse_args(argv)
     global STACK_DIR
@@ -505,6 +506,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
     prm["xenc"] = prm.get("xenc", False) or a.xenc
+    prm["xenc_dir"] = a.xenc_dir
     if a.sub_q:
         prm["sub_q"] = a.sub_q
     for kv in filter(None, a.set.split(",")):

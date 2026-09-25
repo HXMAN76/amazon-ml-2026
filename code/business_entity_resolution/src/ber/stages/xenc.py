@@ -27,6 +27,7 @@ from ber.split import holdout_q
 from ber.stages.block import PID_BASE
 
 MODEL = "intfloat/multilingual-e5-small"
+DATA_DIR = "xenc"  # WORK sub-folder of the pair lists and scores (`--dir xenc_v7` keeps a second set); the fitted model always lives in xenc/model
 DIGITS = re.compile(r"\d+")
 
 
@@ -75,7 +76,7 @@ def _pairs(split: str, base: str, prm: dict) -> pl.DataFrame:
 def data(base: str) -> None:
     P = config.paths()
     prm = config.load()["xenc"]
-    out = P["work"] / "xenc"
+    out = P["work"] / DATA_DIR
     out.mkdir(parents=True, exist_ok=True)
     lo, hi = prm["band_lo"], prm["band_hi"]
     for split in ("train", "test"):
@@ -112,7 +113,7 @@ def train() -> None:
     P = config.paths()
     prm = config.load()["xenc"]
     t0 = time.time()
-    d = pl.read_parquet(P["work"] / "xenc" / "train_fit.parquet")
+    d = pl.read_parquet(P["work"] / DATA_DIR / "train_fit.parquet")
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
     tok = AutoTokenizer.from_pretrained(MODEL)
     model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1).cuda()
@@ -153,7 +154,7 @@ def score(split: str) -> None:
     P = config.paths()
     prm = config.load()["xenc"]
     t0 = time.time()
-    d = pl.read_parquet(P["work"] / "xenc" / f"{split}.parquet")
+    d = pl.read_parquet(P["work"] / DATA_DIR / f"{split}.parquet")
     tok = AutoTokenizer.from_pretrained(P["work"] / "xenc" / "model")
     model = AutoModelForSequenceClassification.from_pretrained(P["work"] / "xenc" / "model").cuda().half().eval()
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
@@ -169,7 +170,7 @@ def score(split: str) -> None:
     if "label" in d.columns:
         from sklearn.metrics import average_precision_score
         print(f"{split}: average precision of xs {average_precision_score(d['label'].to_numpy(), xs):.4f} versus p1 {average_precision_score(d['label'].to_numpy(), d['p'].to_numpy()):.4f} inside the band", flush=True)
-    out.write_parquet(P["work"] / "xenc" / f"{split}_xs.parquet", compression="zstd")
+    out.write_parquet(P["work"] / DATA_DIR / f"{split}_xs.parquet", compression="zstd")
     print(f"{split}: {out.height} pairs scored in {time.time() - t0:.0f}s", flush=True)
 
 
@@ -178,7 +179,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("cmd", choices=["data", "train", "score"])
     ap.add_argument("--split", choices=["train", "test"], default="train")
     ap.add_argument("--base", default="v5")
+    ap.add_argument("--dir", default="xenc", help="WORK sub-folder for pair lists and scores")
     a = ap.parse_args(argv)
+    global DATA_DIR
+    DATA_DIR = a.dir
     {"data": lambda: data(a.base), "train": train, "score": lambda: score(a.split)}[a.cmd]()
 
 

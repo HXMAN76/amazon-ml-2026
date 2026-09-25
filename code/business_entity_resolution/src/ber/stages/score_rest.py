@@ -41,8 +41,11 @@ def main(argv: list[str] | None = None) -> None:
     out = mdl / "p1_rest"
     out.mkdir(parents=True, exist_ok=True)
     res = []
+    extra = np.load(mdl / "extra_q.npy") if (mdl / "extra_q.npy").exists() else np.zeros(0, dtype=np.int64)
     for f in sorted((P["work"] / "features" / "train_rest").glob("part_*.parquet")):
         d = pl.read_parquet(f)
+        if len(extra):  # S1 the model was trained on have out-of-fold probabilities in oof.parquet instead
+            d = d.filter(~pl.col("q").is_in(extra))
         pp = model.predict(xgb.DMatrix(d.select(feats).to_numpy().astype(np.float32), feature_names=feats))
         r = d.select("q", "pid", "label").with_columns(pl.Series("p", pp))
         r.write_parquet(out / f.name, compression="zstd")
