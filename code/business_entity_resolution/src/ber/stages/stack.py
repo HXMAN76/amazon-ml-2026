@@ -91,6 +91,61 @@ def q_features(d: pl.DataFrame) -> pl.DataFrame:
     return d.drop("_src", "_hi", "_sum_hi")
 
 
+def _addr_arrays(split: str) -> tuple[np.ndarray, np.ndarray, int]:
+    """Normalised addresses of S1 (by rid) and of the pool (S2 then S3, rows in file order) plus the S2 row count."""
+    P = config.paths()
+    pq = P["parquet"] / split
+    s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "addr"]).sort("rid")["addr"].to_numpy()
+    s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", "addr"]).sort("rid")["addr"].to_numpy()
+    s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", "addr"]).sort("rid")["addr"].to_numpy()
+    return s1, np.concatenate([s2, s3]), len(s2)
+
+
+def digit_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarray, n2: int) -> pl.DataFrame:
+    """House-number relations and digit consensus. Look-alike distractors often differ from the S1 by a house number that
+    lost or gained a trailing digit, while true records carry other kinds of noise; agreement with the S1's other
+    confident records tells which number the S1 really has."""
+    q = rows["q"].to_numpy()
+    pid = rows["pid"].to_numpy()
+    pidx = np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
+    d = rows.select("q", "pid", "p").with_columns(pl.Series("aa", s1_addr[q]), pl.Series("ab", pool_addr[pidx]))
+    d = d.with_columns(
+        pl.col("aa").str.extract(r"(\d+)", 1).alias("ha"), pl.col("ab").str.extract(r"(\d+)", 1).alias("hb"),
+        pl.col("aa").str.replace_all(r"\D", "").alias("da"), pl.col("ab").str.replace_all(r"\D", "").alias("db"))
+    hasa, hasb = pl.col("ha").is_not_null(), pl.col("hb").is_not_null()
+    both = hasa & hasb
+    d = d.with_columns(
+        hasa.cast(pl.Float32).alias("has_h_a"), hasb.cast(pl.Float32).alias("has_h_b"),
+        (both & (pl.col("ha") == pl.col("hb"))).cast(pl.Float32).alias("h_eq"),
+        (both & pl.col("hb").str.starts_with(pl.col("ha")) & (pl.col("hb").str.len_chars() > pl.col("ha").str.len_chars())).cast(pl.Float32).alias("h_a_prefix_of_b"),
+        (both & pl.col("ha").str.starts_with(pl.col("hb")) & (pl.col("ha").str.len_chars() > pl.col("hb").str.len_chars())).cast(pl.Float32).alias("h_b_prefix_of_a"),
+        (pl.col("hb").str.len_chars() - pl.col("ha").str.len_chars()).cast(pl.Float32).alias("h_len_diff"),
+        (both & pl.col("db").str.starts_with(pl.col("da")) & (pl.col("db") != pl.col("da")) & (pl.col("da") != "")).cast(pl.Float32).alias("d_a_prefix_of_b"),
+        (both & pl.col("da").str.starts_with(pl.col("db")) & (pl.col("da") != pl.col("db")) & (pl.col("db") != "")).cast(pl.Float32).alias("d_b_prefix_of_a"),
+        (both & (pl.col("da") == pl.col("db"))).cast(pl.Float32).alias("d_eq"),
+        (pl.col("hb").cast(pl.Float64, strict=False) - pl.col("ha").cast(pl.Float64, strict=False)).abs().add(1).log().cast(pl.Float32).alias("h_logdiff"),
+        (both & pl.col("ab").str.contains(pl.col("ha"), literal=True)).cast(pl.Float32).alias("h_a_in_addr_b"),
+    )
+    # agreement with the S1's other confident records: which house number does the S1 really have?
+    d = d.with_columns(pl.col("p").rank("ordinal", descending=True).over("q").alias("_r"))
+    h0 = pl.col("hb").filter(pl.col("_r") == 1).first().over("q")
+    h1 = pl.col("hb").filter(pl.col("_r") == 2).first().over("q")
+    d = d.with_columns(pl.when(pl.col("_r") == 1).then(h1).otherwise(h0).alias("h_best_other"))
+    hbo = pl.col("h_best_other")
+    hi = (pl.col("p") > HI)
+    d = d.with_columns(
+        (hasb & hbo.is_not_null() & (pl.col("hb") == hbo)).cast(pl.Float32).alias("h_eq_best_other"),
+        (hasb & hbo.is_not_null() & (pl.col("hb") != hbo) & (hbo.str.starts_with(pl.col("hb")) | pl.col("hb").str.starts_with(hbo))).cast(pl.Float32).alias("h_prefix_best_other"),
+        (hasb & hi).cast(pl.Float32).sum().over(["q", "hb"]).alias("_same"))
+    d = d.with_columns(
+        pl.when(hasb).then(pl.col("_same") - hi.cast(pl.Float32)).otherwise(0.0).alias("n_conf_same_house"),
+        (hasb & hi & hasb).cast(pl.Float32).sum().over("q").alias("_conf_h"))
+    d = d.with_columns(pl.when(hasb).then(pl.col("_conf_h") - (hasb & hi).cast(pl.Float32) - pl.col("n_conf_same_house")).otherwise(0.0).clip(lower_bound=0.0).alias("n_conf_diff_house"))
+    keep = ["has_h_a", "has_h_b", "h_eq", "h_a_prefix_of_b", "h_b_prefix_of_a", "h_len_diff", "d_a_prefix_of_b", "d_b_prefix_of_a", "d_eq",
+            "h_logdiff", "h_a_in_addr_b", "h_eq_best_other", "h_prefix_best_other", "n_conf_same_house", "n_conf_diff_house"]
+    return d.select(["q", "pid", *keep])
+
+
 def build(split: str, base: str, prm: dict) -> None:
     """Write consensus-feature chunks for a split under WORK/stack/{split}."""
     P = config.paths()
@@ -115,6 +170,7 @@ def build(split: str, base: str, prm: dict) -> None:
         shutil.rmtree(out)
     out.mkdir(parents=True)
     scan = pl.scan_parquet(feat_files)
+    s1_addr, pool_addr, n2 = _addr_arrays(split)
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
         qs = keep[lo_i: lo_i + prm["chunk_q"]]
@@ -123,7 +179,7 @@ def build(split: str, base: str, prm: dict) -> None:
         rows = q_features(rows0)
         orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *ORIG])
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
-        rows = rows.join(orig, on=["q", "pid"], how="left")
+        rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
         if "label" in rows.columns:

@@ -65,3 +65,6 @@ expf:                  # calibration and per-S1 expected-F0.5 selection on the s
   mu_grid: [0.0, 0.1, 0.2, 0.3]     # expected true matches outside the candidate list, per S1 (blocking misses)
   shift_grid: [-0.4, -0.2, 0.0, 0.2]
   seed: 0
+dense:                 # multilingual name embeddings for non-Latin pool records (see stages/dense.py)
+  k: 10                # nearest S1 names retrieved per non-Latin pool record (report)
+  k_merge: 5           # of these, the pairs added to the candidate shards
