@@ -58,6 +58,8 @@ stack:                 # consensus stacking on top of the first-stage probabilit
   eta: 0.08
   device: auto
   seed: 0
+  extra_features: false  # carry more first-stage columns (dense channel columns, coverage, skeleton, length) into the stack
+  decoy: false         # edit-type features of the core names (substitution vs indel, Hamming ...)
   shortlist_k: 10      # candidate shortlist by first-stage p1: best K per S1 ...
   shortlist_pmin: 0.005  # ... with p1 at least this (the best pair of every S1 is always kept); see zo8 report
 expf:                  # calibration and per-S1 expected-F0.5 selection on the stacked probabilities

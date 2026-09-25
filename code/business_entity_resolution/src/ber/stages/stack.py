@@ -38,12 +38,29 @@ from ber.tracking import log_stage
 ORIG = ["score", "ns", "rank_q", "margin_p", "house_eq", "house_lev", "addr_b_empty", "core_eq", "name_tset", "addr_tset",
         "name_jw", "num_common_frac", "digits_ratio", "legal_conflict", "pin_conflict", "pin_match", "nl_name_b",
         "same_ctry", "log_cnt_s1_a", "log_cnt_s1_b", "log_cnt_pool_b", "name_cov_a", "name_cov_b", "rom_tset", "alias_tset"]
+# further first-stage columns carried when present (channel columns of the dense retrievers, coverage, skeleton and length features)
+EXTRA = ["dall_cos", "dall_rank", "emb_cos", "emb_rank", "addr_cov_a", "addr_cov_b", "skel_ratio", "addr_skel_ratio", "rom_partial",
+         "rom_jw", "nospace_partial", "nospace_jw", "len_core_a", "len_core_b", "len_addr_b", "digits_lev", "ntok_addr_a", "ntok_addr_b",
+         "legal_eq", "num_common"]
 HI = 0.5
+STACK_DIR = "stack"  # WORK sub-folder of the chunk files; `--tag X` uses stackX so that variants can be built side by side
 
 
 def load_p1(split: str, base: str) -> pl.DataFrame:
-    """First-stage probabilities of every candidate pair of a split: (q, pid, p[, label])."""
+    """Probabilities of every candidate pair of a split: (q, pid, p[, label]). `base` is a first-stage model, or a stacked model for
+    a second consensus round (then `p` is the stacked probability, out-of-fold for training S1, and `p_first` is the first-stage one)."""
     P = config.paths()
+    mdl0 = P["work"] / "models" / base
+    if (mdl0 / "oof_tune.parquet").exists():  # stacked base: iterate the consensus on its probabilities
+        first = json.loads((mdl0 / "config.json").read_text())["base"]
+        if split == "test":
+            d = pl.read_parquet(P["work"] / "output" / base / "pair_p.parquet")
+        else:
+            d = pl.concat([pl.read_parquet(mdl0 / "oof_tune.parquet").select("q", "pid", "p", "label"),
+                           pl.read_parquet(mdl0 / "holdout_pred.parquet").select("q", "pid", "p", "label")])
+        d = d.with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), pl.col("p").cast(pl.Float32))
+        pf = load_p1(split, first).select("q", "pid", pl.col("p").alias("p_first"))
+        return d.join(pf, on=["q", "pid"], how="left")
     if split == "test":
         d = pl.read_parquet(P["work"] / "output" / base / "pair_p.parquet")
     else:
@@ -150,6 +167,28 @@ def consensus_text_features(rows: pl.DataFrame, pool_name: np.ndarray, pool_addr
     return pl.DataFrame({"q": d["q"].to_numpy(), "pid": pid, **f})
 
 
+def decoy_features(rows: pl.DataFrame, s1_name: np.ndarray, pool_name: np.ndarray, n2: int) -> pl.DataFrame:
+    """Edit-type features of the core names. A true variant differs mostly by dropped or added characters and words, a look-alike
+    distractor keeps the length and swaps letters ("jarlent" and "jarleix"): Levenshtein, Indel, the substitution estimate
+    (Indel minus Levenshtein), Hamming distance for equal lengths, length difference, first-letter match, word symmetric difference."""
+    from rapidfuzz import process
+    from rapidfuzz.distance import Hamming, Indel, Levenshtein
+
+    q, pid = rows["q"].to_numpy(), rows["pid"].to_numpy()
+    pidx = np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
+    a, b = [x or "" for x in s1_name[q].tolist()], [x or "" for x in pool_name[pidx].tolist()]
+    lev = process.cpdist(a, b, scorer=Levenshtein.distance, dtype=np.float32, workers=-1)
+    ind = process.cpdist(a, b, scorer=Indel.distance, dtype=np.float32, workers=-1)
+    la, lb = np.fromiter((len(x) for x in a), dtype=np.float32, count=len(a)), np.fromiter((len(x) for x in b), dtype=np.float32, count=len(b))
+    same = la == lb
+    ham = process.cpdist(a, b, scorer=Hamming.distance, dtype=np.float32, workers=-1)
+    first = np.fromiter((bool(x) and bool(y) and x[0] == y[0] for x, y in zip(a, b)), dtype=np.float32, count=len(a))
+    sym = np.fromiter((len(set(x.split()) ^ set(y.split())) for x, y in zip(a, b)), dtype=np.float32, count=len(a))
+    return pl.DataFrame({"q": q, "pid": pid, "dc_lev": lev, "dc_indel": ind, "dc_sub": ind - lev, "dc_lendiff": np.abs(la - lb),
+                         "dc_same_len": same.astype(np.float32), "dc_ham": np.where(same, ham, np.nan).astype(np.float32),
+                         "dc_first": first, "dc_wordsym": sym})
+
+
 def digit_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarray, n2: int) -> pl.DataFrame:
     """House-number relations and digit consensus. Look-alike distractors often differ from the S1 by a house number that
     lost or gained a trailing digit, while true records carry other kinds of noise; agreement with the S1's other
@@ -251,7 +290,7 @@ def tfidf_pass(split: str) -> None:
 
     P = config.paths()
     pq = P["parquet"] / split
-    files = sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))
+    files = sorted((P["work"] / STACK_DIR / split).glob("chunk_*.parquet"))
     n2 = pl.read_parquet(pq / "source2.parquet", columns=["rid"]).height
     for kind, col in (("name", "core1"), ("addr", "addr")):
         t0 = time.time()
@@ -300,23 +339,27 @@ def build(split: str, base: str, prm: dict) -> None:
         keep = np.sort(d.select("q").unique()["q"].to_numpy())
         feat_files = [str(f) for f in sorted((P["work"] / "features" / "test").glob("part_*.parquet"))]
     d = d.sort("q", "pid")
-    out = P["work"] / "stack" / split
+    out = P["work"] / STACK_DIR / split
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
-    _, pool_name = _name_arrays(split)
+    s1_name, pool_name = _name_arrays(split)
+    have = set(scan.collect_schema().names())
+    carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
         qs = keep[lo_i: lo_i + prm["chunk_q"]]
         lo, hi = int(qs[0]), int(qs[-1])
         rows0 = d.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).join(pl.DataFrame({"q": qs}), on="q", how="semi")
         rows = q_features(rows0)
-        orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *ORIG])
+        orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *carried])
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
         rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
+        if prm.get("decoy", False):
+            rows = rows.join(decoy_features(rows0, s1_name, pool_name, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
         if "label" in rows.columns:
@@ -329,13 +372,13 @@ def build(split: str, base: str, prm: dict) -> None:
 
 def _read(split: str) -> pl.DataFrame:
     P = config.paths()
-    return pl.concat([pl.read_parquet(f) for f in sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))])
+    return pl.concat([pl.read_parquet(f) for f in sorted((P["work"] / STACK_DIR / split).glob("chunk_*.parquet"))])
 
 
 def _load_arrays(split: str, drop: tuple[str, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """Chunk files straight into one preallocated float32 matrix (no polars concat, no second copy)."""
     P = config.paths()
-    files = sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))
+    files = sorted((P["work"] / STACK_DIR / split).glob("chunk_*.parquet"))
     first = pl.read_parquet(files[0])
     feats = [c for c in first.columns if c not in {"q", "pid", "label"} and not c.startswith(drop)]
     n = sum(pl.scan_parquet(f).select(pl.len()).collect().item() for f in files)
@@ -402,7 +445,7 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     tune.write_parquet(out / "oof_tune.parquet", compression="zstd")   # out-of-fold p on the non-holdout S1 (calibration, tuning)
     b.write_parquet(out / "holdout_pred.parquet", compression="zstd")  # stacked p on the locked holdout
     model.save_model(str(out / "xgb.json"))
-    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base}, indent=2))
+    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):]}, indent=2))
     (out / "holdout.json").write_text(json.dumps(rep, indent=2))
     print("HOLDOUT paired comparison:", json.dumps(rep), flush=True)
     imp = model.get_score(importance_type="gain")
@@ -417,12 +460,14 @@ def predict(name: str) -> None:
     t0 = time.time()
     mdl = P["work"] / "models" / name
     cfg = json.loads((mdl / "config.json").read_text())
+    global STACK_DIR
+    STACK_DIR = "stack" + cfg.get("tag", "")
     model = xgb.Booster()
     model.load_model(str(mdl / "xgb.json"))
     if cfg.get("device_trained") == "cuda":
         model.set_param({"device": "cuda"})
     parts = []
-    for f in sorted((P["work"] / "stack" / "test").glob("chunk_*.parquet")):
+    for f in sorted((P["work"] / STACK_DIR / "test").glob("chunk_*.parquet")):
         d = pl.read_parquet(f)
         pp = model.predict(xgb.DMatrix(d.select(cfg["features"]).to_numpy().astype(np.float32), feature_names=cfg["features"]))
         parts.append(d.select("q", "pid").with_columns(pl.Series("p", pp)))
@@ -440,8 +485,15 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--name", default="s1")
     ap.add_argument("--base", default=None)
     ap.add_argument("--drop", default="", help="comma-separated feature-name prefixes to leave out of training (ablation)")
+    ap.add_argument("--tag", default="", help="separate chunk folder stack<tag> (parallel variants)")
+    ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
+    ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     a = ap.parse_args(argv)
-    prm = config.load()["stack"]
+    global STACK_DIR
+    STACK_DIR = "stack" + a.tag
+    prm = dict(config.load()["stack"])
+    prm["decoy"] = prm.get("decoy", False) or a.decoy
+    prm["extra_features"] = prm.get("extra_features", False) or a.extra
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)

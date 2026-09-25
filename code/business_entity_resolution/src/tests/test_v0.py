@@ -316,3 +316,17 @@ def test_dense_all_merge_gives_empty_address_records_more_neighbours(tmp_path, m
     got = set(zip(merged["q"].to_list(), merged["pid"].to_list()))
     assert (q, 20_000_000 + empty_rid) in got
     assert (q, 20_000_000 + full_rid) not in got or (q, 20_000_000 + full_rid) in have
+
+
+def test_decoy_features_separate_substitutions_from_drops():
+    import numpy as np
+
+    from ber.stages.stack import PID_BASE, decoy_features
+
+    s1 = np.array(["jarlent labs", "jarlent labs", "acme"], dtype=object)
+    pool = np.array(["jarleix labs", "jarlent lab", "acme corp"], dtype=object)
+    rows = pl.DataFrame({"q": [0, 1, 2], "pid": [2 * PID_BASE, 2 * PID_BASE + 1, 2 * PID_BASE + 2]})
+    f = decoy_features(rows, s1, pool, n2=3)
+    assert f["dc_sub"].to_list()[0] == 2.0 and f["dc_same_len"].to_list()[0] == 1.0 and f["dc_ham"].to_list()[0] == 2.0  # swapped letters
+    assert f["dc_sub"].to_list()[1] == 0.0 and f["dc_same_len"].to_list()[1] == 0.0  # a dropped character is no substitution
+    assert f["dc_wordsym"].to_list()[2] == 1.0
