@@ -21,6 +21,7 @@ import polars as pl
 
 from ber import config
 from ber.stages.train_xenc import _pool_text
+from ber.stages.train_xenc2 import _tag_numbers
 from ber.tracking import log_stage
 
 
@@ -53,6 +54,9 @@ def main(argv: list[str] | None = None) -> None:
     pid = band["pid"].to_numpy()
     a_text = (s1[q]["core1"] + " " + s1[q]["addr"]).to_list()
     b_text = _pool_text(pool, pid, s2.height)
+    if cfg.get("numeric_tagging"):
+        a_text = [_tag_numbers(t) for t in a_text]
+        b_text = [_tag_numbers(t) for t in b_text]
 
     from sentence_transformers import CrossEncoder
 
