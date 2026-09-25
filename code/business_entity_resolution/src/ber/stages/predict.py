@@ -46,6 +46,12 @@ def main(argv: list[str] | None = None) -> None:
     p = df["p"].to_numpy()
     (P["work"] / "output" / a.name).mkdir(parents=True, exist_ok=True)
     df.write_parquet(P["work"] / "output" / a.name / "pair_p.parquet", compression="zstd")  # p1 of every test candidate pair (q, pid, p)
+    emit(a.name, P, df, cfg, t0)
+
+
+def emit(name: str, P: dict, df: pl.DataFrame, cfg: dict, t0: float) -> None:
+    """Apply the decision rule to scored pairs (q, pid, p), write both TSVs and validate them."""
+    p = df["p"].to_numpy()
     sel = decision.assign_exclusive(df) if cfg["exclusive"] else df
     sel = sel.filter(pl.col("p") >= cfg["threshold"])
     print(f"{df.height} candidate pairs scored, {sel.height} kept at threshold {cfg['threshold']:.2f} "
@@ -70,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
         return (s1.rename({"rid": "q", "entity_id": "source1_entity_id"}).join(g, on="q", how="left")
                   .with_columns(pl.col(col).fill_null("")).select("source1_entity_id", col))
 
-    out = P["work"] / "output" / a.name
+    out = P["work"] / "output" / name
     out.mkdir(parents=True, exist_ok=True)
     m = lists(sel, "matched_entity_ids")
     c = lists(df, "candidate_entity_ids")
@@ -89,7 +95,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         issues = validate(out / "matching_results.tsv", out / "candidate_pairs.tsv", P["data"] / "test")
         print("LOCAL VALIDATOR:", "PASS" if not issues else issues[:10], flush=True)
-    log_stage("predict", {"name": a.name}, {"pairs": float(df.height), "kept": float(sel.height),
+    log_stage("predict", {"name": name}, {"pairs": float(df.height), "kept": float(sel.height),
                                              "matched_s1_frac": n_match / m.height, "seconds": time.time() - t0})
 
 

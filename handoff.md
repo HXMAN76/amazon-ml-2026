@@ -1,6 +1,6 @@
 # Handoff: Amazon ML Challenge 2026 (Business Entity Resolution)
 
-Written 2026-09-25, refreshed about 05:15 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
+Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
 
 ## 1. State in brief
 
@@ -8,6 +8,7 @@ Task: link each Source 1 (S1) business record to its S2/S3 records (entity resol
 
 - **v0** (42 features, XGBoost on GPU): out-of-fold macro F0.5 **0.9377**. Output at `s3://sagemaker-us-east-1-567503593043/runs/v0/output/`.
 - **v1** (63 features: name rarity, exact-name, token coverage, glued-name, digit alignment, romanised names via anyascii, consonant skeletons): out-of-fold macro F0.5 **0.9551** (India 0.935, US 0.968, singleton entities 0.959, precision 0.989, recall 0.906). Output at `runs/v1/output/`. **Both v0 and v1 passed** the official validator (including `--check-ids` on both v1 files) and the bundled rule checker; on test, France is matched at 94.8% of S1 (US 94.3%, India 92.9%). The human uploads to the portal; leaderboard scores are not yet known to the agent. v1 is the recommended upload.
+- **v2** (v1 features plus cascade blocking, K 100 raw candidates pruned to 30 by a learned first-stage ranker): out-of-fold macro F0.5 **0.9568**; locked holdout (150k train S1 never seen by the model, seed 2026) **0.9565, 95% CI [0.9559, 0.9572]**, precision 0.990, recall 0.909. Test output at `runs/v2/output/`, passes the official validator and the rule checker (France 94.9% matched). **Leaderboard: v2 scored 0.944** (public subset, first portal submission, 25 Sep 1:46 PM IST). The gap to the holdout (0.0125) is the cost of France having no training labels plus the public-subset difference.
 - **Remaining loss (4.5 points on the train sample):** blocking recall 2.19 (pair recall 0.941) and matcher 2.30.
 - **Blocking upgrade result:** the token-type experiment (`g`, `x`, `k`) gave no gain and was reverted (`research.md` section 14). Truncation by the top-30 rule is the real limit (misses: 1.8% over the df cap, 3.4 to 4.5% truncated; K 60 gives recall 0.9473). The fix being run is **cascade blocking**: K 100 raw candidates, then a learned first-stage ranker (`stages/prune.py`) keeps the best 30. Jobs `zc1a`, `zc1b`, `zc1c` run the chain and produce model `v2` under `runs/v2/`.
 - **Code zip for the portal:** `dist/business_entity_resolution_code.zip` (local, git-ignored), all source under `src/`, README with run steps, pinned requirements. Rebuild from the final code at freeze (commands in section 9).
@@ -144,6 +145,8 @@ Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c`
 Local tests: `make test` or `pytest -q tests` in `code/business_entity_resolution` (16 tests including an end-to-end synthetic run of the whole v0 chain; xgboost falls back to CPU when no GPU).
 
 ## 6. What is running or pending right now
+
+As of 25 Sep 14:00 IST: `zc1a`, `zc1b`, `zc1c` (cascade chain, model v2) and `zd1` (holdout scoring) are done. `zs1a` and `zs1b` (consensus stacking: build train/test consensus features, train the stacked model `s1`, paired comparison against v2 on the locked holdout, predict, publish to `runs/s1/`) are queued or running. The older rows below are kept for history.
 
 | Job | State | Notes |
 |---|---|---|

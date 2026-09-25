@@ -46,6 +46,12 @@ def bootstrap_ci(values: np.ndarray, n_boot: int = 1000, seed: int = 0) -> tuple
     return float(v.mean()), float(np.percentile(means, 2.5)), float(np.percentile(means, 97.5))
 
 
+def paired_bootstrap_delta(a: np.ndarray, b: np.ndarray, n_boot: int = 1000, seed: int = 0) -> tuple[float, float, float]:
+    """Mean difference b - a of per-entity scores on the same S1 and its 95% paired bootstrap interval."""
+    d = np.asarray(b, dtype=np.float64) - np.asarray(a, dtype=np.float64)
+    return bootstrap_ci(d, n_boot=n_boot, seed=seed)
+
+
 def tune_threshold(df: pl.DataFrame, n_true: pl.DataFrame, exclusive: bool,
                    grid: np.ndarray | None = None) -> tuple[float, float, list[tuple[float, float]]]:
     """df: q, pid, p, label. Returns (best threshold, best macro F0.5, curve)."""

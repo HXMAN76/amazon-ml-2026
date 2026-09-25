@@ -21,6 +21,16 @@ from ber import config, decision
 from ber.tracking import log_stage
 
 
+def holdout_q(n: int = 150_000, seed: int = 2026) -> np.ndarray:
+    """The locked holdout: n train S1 drawn once with a fixed seed from those outside the training sample."""
+    P = config.paths()
+    sample_q = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"]).rename({"rid": "q"})
+    s1 = pl.read_parquet(P["parquet"] / "train" / "source1.parquet", columns=["rid"]).rename({"rid": "q"})
+    rest = s1.join(sample_q, on="q", how="anti")
+    rng = np.random.default_rng(seed)
+    return rest["q"].to_numpy()[np.sort(rng.choice(rest.height, size=min(n, rest.height), replace=False))]
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI: predict the rest of the train S1, report holdout macro F_0.5 with a 95% bootstrap interval."""
     ap = argparse.ArgumentParser()
@@ -48,12 +58,7 @@ def main(argv: list[str] | None = None) -> None:
         res.append(r)
     df = pl.concat(res)
 
-    sample_q = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"]).rename({"rid": "q"})
-    s1 = pl.read_parquet(P["parquet"] / "train" / "source1.parquet", columns=["rid"]).rename({"rid": "q"})
-    rest = s1.join(sample_q, on="q", how="anti")
-    rng = np.random.default_rng(a.seed)
-    hold_q = rest["q"].to_numpy()[np.sort(rng.choice(rest.height, size=min(a.holdout, rest.height), replace=False))]
-    hold = pl.DataFrame({"q": hold_q})
+    hold = pl.DataFrame({"q": holdout_q(a.holdout, a.seed)})
     n_true = (pl.read_parquet(P["parquet"] / "train" / "labels.parquet").group_by("s1_rid").len()
                 .rename({"s1_rid": "q", "len": "n_true"}))
     nt = hold.join(n_true, on="q", how="left").with_columns(pl.col("n_true").fill_null(0))

@@ -47,3 +47,14 @@ prune:                 # cascade blocking: block with k_raw candidates, keep the
   max_depth: 6
   eta: 0.1
   seed: 0
+stack:                 # consensus stacking on top of the first-stage probabilities p1
+  base: v2             # first-stage model whose p1 (oof + p1_rest + pair_p) feed the consensus features
+  sub_q: 400000        # training S1 drawn from the non-holdout S1 (holdout = 150k S1, seed 2026, see score_rest)
+  chunk_q: 200000
+  folds: 5
+  rounds: 500
+  early_stop: 30
+  max_depth: 7
+  eta: 0.08
+  device: auto
+  seed: 0

@@ -253,3 +253,10 @@ The plan (layers L0 data and text views, L1 candidates, L2a pair model, L2b cros
 Realistic remaining headroom on train-like data is about 1.5 to 2.5 points (blocking about 1 to 1.5, stacking about 0.5 to 1, decision about 0.3).
 
 Result checks of the v1 test output: rows 1,732,544; matched S1 share France 0.948, US 0.943, India 0.929; mean matches per S1 France 3.37, US 3.33, India 3.07; share of matched ids from S2 0.489, from S3 0.511; no rule violated.
+
+## 16. Cascade result, holdout and the first leaderboard score (2026-09-25)
+
+- Pruner (fold 0 held out): pair recall of the best 30 is 0.9471 with the learned ranker versus 0.9415 by the blocking score; the raw K 100 ceiling is 0.9553. Out-of-fold macro F0.5 of v2 is 0.9568 (v1 0.9551); blocking loss fell from 2.19 to 1.97 points, matcher loss 2.35.
+- Locked holdout (150k train S1 outside the training sample, seed 2026): v2 macro F0.5 **0.9565**, 95% bootstrap CI [0.9559, 0.9572]; precision 0.990, recall 0.909. It agrees with the out-of-fold estimate within 0.0003, so the training estimate is not inflated by leakage.
+- **Leaderboard: 0.944** on the public subset for v2. The gap to the holdout, 0.0125, is the combined cost of France (15% of test S1, no training labels, crowded addresses) and the difference between the public subset and train. The test output looks healthy (France matched at 94.9% of S1 like the US at 94.3%), so the loss is more likely quality on France than a gross failure; a per-country score is not available from the portal.
+- Error taxonomy of v2: false positives are 84% look-alike distractors (many with an empty address and a near-identical name that belong to another S1 or to no S1), so consensus and capacity evidence is the next lever; remaining blocking misses are non-Latin names with a short Latin address and empty-address records that lose to better-scoring candidates.

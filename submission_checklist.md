@@ -62,7 +62,7 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 ## E. Open items to close now
 
 1. Team name, team member names and submission date for the zip name and the template (human).
-2. Upload v1 `matching_results.tsv` (or v0) in the portal from one device and tell the agent the leaderboard score (human).
+2. Portal: v2 uploaded and scored **0.944** on the public leaderboard (25 Sep 1:46 PM IST). Upload only files that beat v2 on the locked holdout by more than the paired bootstrap interval; tell the agent every score (human).
 3. Ask the organisers, if unsure, whether the portal limits upload size (matching 95 MB, candidates 691 MB raw, about 290 MB gzipped) (human).
 4. Draft the methodology document with real numbers (agent): out-of-fold macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, 51,892,359 test candidate pairs, error analysis; update after the holdout run and the final model.
 5. Rebuild the code zip from the final code, rerun the full reproduction once from scratch, and rerun the official validator on the final files (agent).
