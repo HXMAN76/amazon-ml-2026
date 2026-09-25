@@ -50,7 +50,7 @@ prune:                 # cascade blocking: block with k_raw candidates, keep the
 stack:                 # consensus stacking on top of the first-stage probabilities p1
   base: v2             # first-stage model whose p1 (oof + p1_rest + pair_p) feed the consensus features
   sub_q: 400000        # training S1 drawn from the non-holdout S1 (holdout = 150k S1, seed 2026, see score_rest)
-  chunk_q: 200000
+  chunk_q: 100000
   folds: 5
   rounds: 500
   early_stop: 30

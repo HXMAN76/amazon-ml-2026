@@ -118,6 +118,9 @@ def test_consensus_stacking_end_to_end(tmp_path, monkeypatch):
     predict.main(["--name", "t"])
     stack.main(["build", "--split", "train"])
     stack.main(["build", "--split", "test"])
+    stack.main(["tfidf", "--split", "train"])
+    stack.main(["tfidf", "--split", "test"])
+    assert "tf_name_cos" in pl.read_parquet(next((work / "stack" / "train").glob("chunk_*.parquet"))).columns
     stack.main(["train", "--name", "s"])
     stack.main(["predict", "--name", "s"])
     rep = json.loads((work / "models" / "s" / "holdout.json").read_text())

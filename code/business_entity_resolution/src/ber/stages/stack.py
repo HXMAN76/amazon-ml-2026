@@ -10,6 +10,7 @@ are computed at the same density as at test time.
 
 Usage (base = the first-stage model name, e.g. v2; name = the stacked model, e.g. s1):
   python -m ber.stages.stack build   --split train|test   -> WORK/stack/{split}/chunk_*.parquet
+  python -m ber.stages.stack tfidf   --split train|test   -> adds tf_name_cos / tf_addr_cos to those chunks (own pass: memory)
   python -m ber.stages.stack train   --name s1              -> WORK/models/s1/{xgb.json,config.json,holdout.json}
   python -m ber.stages.stack predict --name s1              -> WORK/output/s1/{matching_results.tsv,candidate_pairs.tsv}
 """
@@ -208,43 +209,56 @@ def _hash_part(args):
     return v.transform(texts)
 
 
-def tfidf_mats(split: str) -> dict:
-    """TF-IDF (IDF from the pool) L2-normalised hashed matrices for S1 and pool names (core name) and addresses."""
-    import scipy.sparse as sp
+def tfidf_mats(kind: str, s1_texts: list[str], pool_texts: list[str]) -> tuple:
+    """TF-IDF (IDF from the pool), L2-normalised in place, for S1 and pool strings of one kind ("name" or "addr")."""
+    from sklearn.preprocessing import normalize
 
-    P = config.paths()
-    pq = P["parquet"] / split
-    out = {}
-    for kind, col in (("name", "core1"), ("addr", "addr")):
-        s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", col]).sort("rid")[col].to_list()
-        s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", col]).sort("rid")[col].to_list()
-        s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", col]).sort("rid")[col].to_list()
-        pool = _hash_docs(s2 + s3, kind)
-        df = np.bincount(pool.indices, minlength=pool.shape[1]).astype(np.float32)
-        idf = (np.log((pool.shape[0] + 1.0) / (df + 1.0)) + 1.0).astype(np.float32)
-        for name, m in (("pool", pool), ("s1", _hash_docs(s1, kind))):
-            m = m.tocsr()
-            m.data *= idf[m.indices]
-            norm = np.sqrt(np.asarray(m.multiply(m).sum(axis=1)).ravel()).astype(np.float32)
-            norm[norm == 0] = 1.0
-            m = sp.diags(1.0 / norm) @ m
-            out[f"{kind}_{name}"] = m.tocsr()
-    return out
+    pool = _hash_docs(pool_texts, kind).tocsr()
+    df = np.bincount(pool.indices, minlength=pool.shape[1]).astype(np.float32)
+    idf = (np.log((pool.shape[0] + 1.0) / (df + 1.0)) + 1.0).astype(np.float32)
+    pool.data *= idf[pool.indices]
+    normalize(pool, norm="l2", copy=False)
+    s1 = _hash_docs(s1_texts, kind).tocsr()
+    s1.data *= idf[s1.indices]
+    normalize(s1, norm="l2", copy=False)
+    return s1, pool
 
 
-def tfidf_features(rows: pl.DataFrame, mats: dict, n2: int, step: int = 500_000) -> pl.DataFrame:
-    """TF-IDF cosine of S1 and pool name and address for every pair (q, pid)."""
+def tfidf_cos(rows: pl.DataFrame, s1m, poolm, n2: int, step: int = 500_000) -> np.ndarray:
+    """TF-IDF cosine of the S1 and pool string for every pair (q, pid) of `rows`."""
     q = rows["q"].to_numpy()
     pid = rows["pid"].to_numpy()
     pidx = np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
-    res = {}
-    for kind in ("name", "addr"):
-        A, B = mats[f"{kind}_s1"], mats[f"{kind}_pool"]
-        v = np.empty(len(q), dtype=np.float32)
-        for a in range(0, len(q), step):
-            v[a: a + step] = np.asarray(A[q[a: a + step]].multiply(B[pidx[a: a + step]]).sum(axis=1)).ravel()
-        res[f"tf_{kind}_cos"] = v
-    return pl.DataFrame({"q": q, "pid": pid, **res})
+    v = np.empty(len(q), dtype=np.float32)
+    for a in range(0, len(q), step):
+        v[a: a + step] = np.asarray(s1m[q[a: a + step]].multiply(poolm[pidx[a: a + step]]).sum(axis=1)).ravel()
+    return v
+
+
+def tfidf_pass(split: str) -> None:
+    """Add tf_name_cos and tf_addr_cos to the chunk files of a split, one feature kind at a time (bounded memory)."""
+    import gc
+
+    P = config.paths()
+    pq = P["parquet"] / split
+    files = sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))
+    n2 = pl.read_parquet(pq / "source2.parquet", columns=["rid"]).height
+    for kind, col in (("name", "core1"), ("addr", "addr")):
+        t0 = time.time()
+        get = lambda src: pl.read_parquet(pq / f"source{src}.parquet", columns=["rid", col]).sort("rid")[col].to_list()  # noqa: E731
+        pool_texts = get(2) + get(3)
+        s1_texts = get(1)
+        s1m, poolm = tfidf_mats(kind, s1_texts, pool_texts)
+        del pool_texts, s1_texts
+        gc.collect()
+        print(f"{split} {kind}: matrices built in {time.time() - t0:.0f}s ({poolm.nnz} nonzeros in the pool)", flush=True)
+        for f in files:
+            d = pl.read_parquet(f)
+            d = d.with_columns(pl.Series(f"tf_{kind}_cos", tfidf_cos(d, s1m, poolm, n2)))
+            d.write_parquet(f, compression="zstd")
+        del s1m, poolm
+        gc.collect()
+        print(f"{split} {kind}: cosines added to {len(files)} chunk files in {time.time() - t0:.0f}s", flush=True)
 
 
 def build(split: str, base: str, prm: dict) -> None:
@@ -273,7 +287,6 @@ def build(split: str, base: str, prm: dict) -> None:
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
     _, pool_name = _name_arrays(split)
-    mats = tfidf_mats(split)
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
         qs = keep[lo_i: lo_i + prm["chunk_q"]]
@@ -283,7 +296,6 @@ def build(split: str, base: str, prm: dict) -> None:
         orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *ORIG])
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
-        rows = rows.join(tfidf_features(rows0, mats, n2), on=["q", "pid"], how="left")
         rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
@@ -383,7 +395,7 @@ def predict(name: str) -> None:
 def main(argv: list[str] | None = None) -> None:
     """CLI: build | train | predict (see module docstring)."""
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["build", "train", "predict"])
+    ap.add_argument("cmd", choices=["build", "tfidf", "train", "predict"])
     ap.add_argument("--split", choices=["train", "test"], default="train")
     ap.add_argument("--name", default="s1")
     ap.add_argument("--base", default=None)
@@ -393,6 +405,8 @@ def main(argv: list[str] | None = None) -> None:
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)
+    elif a.cmd == "tfidf":
+        tfidf_pass(a.split)
     elif a.cmd == "train":
         train(a.name, base, prm, tuple(x for x in a.drop.split(",") if x))
     else:
