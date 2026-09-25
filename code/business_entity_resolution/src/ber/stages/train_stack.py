@@ -17,6 +17,7 @@ Outputs: WORK/models/<name>/{xgb.json,config.json,report.json,oof.parquet}
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import time
 
@@ -75,6 +76,8 @@ def main(argv: list[str] | None = None) -> None:
         oof[va] = m.predict(dva, iteration_range=(0, m.best_iteration + 1))
         best_iters.append(m.best_iteration + 1)
         print(f"fold {k}: {best_iters[-1]} rounds, aucpr {m.best_score:.4f} in {time.time() - t:.0f}s", flush=True)
+        del dtr, dva, m
+        gc.collect()
 
     df = df.with_columns(pl.Series("p", oof))
     n_true = pl.read_parquet(P["parquet"] / "train" / "labels.parquet").group_by("s1_rid").len().rename(
