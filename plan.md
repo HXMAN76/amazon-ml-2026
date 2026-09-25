@@ -2,6 +2,10 @@
 
 Written 2026-09-25. Supersedes the informal plan in `research.md` section 4 and section 10. Facts about the data are in `context.md` section 2b. Nothing below is implemented yet except v0 (`code/business_entity_resolution/`), which this plan replaces at scale.
 
+## Update 2026-09-25 evening
+
+The plan below is the original v1 baseline design. What was built since: cascade blocking (v2), consensus stacking with digit and TF-IDF features (`s1` to `s3all`), a name-only dense channel (`v3`, `s4`, portal 0.953), a name plus address dense channel `dense_all` (`v5`, `s5` pending), and the calibration / expected-F0.5 stage, which was a null result. New constraint from the organisers: the candidate set counts in the final ranking (smaller ranks higher), so a per-S1 shortlist stage is planned. Current state and next steps: `handoff.md` section 0.
+
 ## Status (2026-09-25 about 05:15 IST)
 
 - Phase 0 (foundation): done.

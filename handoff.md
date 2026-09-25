@@ -2,6 +2,59 @@
 
 Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
 
+## 0. Latest status (25 Sep 2026, about 23:20 IST; where this differs from sections 1 and 6, this section wins)
+
+**Leaderboard (public subset), in order of submission**
+
+| File | Submitted | Portal score | Locked-holdout F0.5 (150k train S1) |
+|---|---|---|---|
+| `v2` | 25 Sep 13:46 | 0.944 | 0.9565 |
+| `s4` | 25 Sep 22:21 | **0.953** | **0.9708** |
+| `s3all` | 25 Sep 22:53 | 0.949 | 0.9677 |
+
+`s2` was never uploaded. Both `s4` and `s3all` are at `runs/<name>/output/` and passed the official validator (`s4`: without `--check-ids` on the notebook, plus `check_submission.py`, which does the ID checks). Version history for the methodology document: v2, s4, s3all, then whatever is uploaded on 26 and 27 Sep.
+
+**Model lineage (all numbers on the locked holdout unless stated)**
+
+| Model | What changed | Holdout F0.5 | Paired gain |
+|---|---|---|---|
+| `v2` | 63 features, cascade blocking (K 100 raw, best 30 by a learned ranker) | 0.9565 [0.9559, 0.9572] | reference |
+| `s1` / `s2` | consensus stacking; `s2` adds house-number relation and digit-consensus features | 0.9617 / 0.9671 | +0.0051 / +0.0106 over v2 |
+| `s3all` | adds TF-IDF cosine and name/address consensus features; ablations: no consensus 0.9676, no TF-IDF 0.9672 | 0.9677 | +0.0111 [0.0108, 0.0115] over v2 |
+| `v3` | first stage with the name-only dense channel (multilingual-e5-small fine-tuned on 92k India S1; top-5 non-Latin candidates added); France address rules; index version 4 | 0.9598 [0.9592, 0.9604] (out-of-fold 0.9602 vs 0.9568) | +0.0033 over v2 |
+| `s4` | stack on `v3` (S1 used to fine-tune the encoder excluded from stack training) | **0.9708** | +0.0031 [0.0028, 0.0034] over `s3all`; +0.0037 [0.0034, 0.0040] over `s2` (`src/scripts/paired_models.py`) |
+| `e1` | calibration plus expected-F0.5 selection | null result (+0.0001, CI includes 0), not shipped | |
+
+Portal gaps: v2 0.0125, s3all 0.0187, s4 0.0178 (holdout minus portal). Dense plus France rules moved the portal +0.004 (holdout +0.0031), so those changes are real. The stacking layers transferred only about half (holdout +0.011, portal +0.005).
+
+**What is still lost (error analysis of `s4`, `src/scripts/error_analysis.py`, `miss_analysis.py`)**
+- Holdout loss versus the oracle on the candidates: blocking 0.0166 (was 0.0195), matcher 0.0126 (was 0.0188). India 0.9569, US 0.9802.
+- 24,230 of 518,468 true holdout pairs (4.67%) are never proposed: pool record with empty address 7,991 (33%), typos or scrambled names 5,749 (24%), non-Latin pool name 5,585 (23%), glued or domain-style name 4,905 (20%). Of the non-Latin misses only 17.8% appear in the first dense channel's top-10.
+- Remaining false positives are look-alike distractors; false negatives are mostly empty-address or suffix-noise pairs.
+
+**New candidate channel `dense_all` (stages/dense_all.py, params section `dense_all`)**
+- Encodes "name | address" of every S1 and every S2/S3 record with multilingual-e5-small fine-tuned on 250k S1 (all countries, one mined hard negative per pair, 756 s), retrieves for every pool record its nearest S1 records (pool to S1, because a record has one owner).
+- Holdout report (`zn2`): the top-1 neighbour with no cosine cut-off adds 1.09M pairs (0.5 per S1) and recovers 16,025 of 24,230 missed pairs (66%, 3.1% of all true pairs); top-3 adds 19.6M pairs, top-5 39M for little more; any cosine cut-off discards most of the gain. Setting: `k_merge 1`, `tau 0`.
+- Merged into the shards: test +1,452,586 pairs, train +1,094,973. New feature columns `dall_cos`, `dall_rank`. Merge is idempotent (backup `blocks/{split}_predall`).
+- `v5` (first stage on these candidates, 67 features): out-of-fold F0.5 **0.9757** (v3 0.9602), top feature `dall_cos`. Holdout (jobs `zp3`) and the stack `s5` (`zp4`) are pending: ship only if the paired interval against `s4` excludes 0. Caution: test top-1 cosine is lower (0.795 test, 0.825 train) and test has more unowned pool records (about 40% against 26%), so the new feature may shift on the test set.
+
+**Country mix and France (nothing is labelled for France)**
+- Test S1: US 663,106 (38.3%), India 809,986 (46.8%), France 259,452 (15.0%); train is 60% US and 40% India. Re-weighting the holdout to the test mix lowers `s4` by about 0.0035 (US 0.9802, India 0.9569).
+- `src/scripts/country_expected.py` estimates F0.5 from the model probabilities (bias measured on the labelled holdout: US +0.0068, India +0.0279). Test estimates for `s4`: France 0.9801, US 0.9824, India 0.9795; the test is harder than train for every country (US estimate 0.9871 on holdout, 0.9824 on test; test has 5.8 pool records per S1 against 4.7). Corrected for that and for the mix, `s4` lands near 0.965 against the portal 0.953; about 0.012 stays unexplained (France miscalibration, public-subset noise, or unmodelled misses).
+- France output looks healthy: matched 94.8% (US 94.3%, India 93.4%), mean matches 3.45 (US 3.42), 62% of France pool records owned (US 59%, India 55%), mean name similarity of predicted pairs 90.5 (US 91.2) but twice the share of very weak names (3.6% below 40 against 1.9%); S1 sharing an address with 5 or more others (6,900 in France) average about 3.0 matches instead of 3.46.
+
+**New organiser rule (email, 25 Sep evening): `candidate_pairs.tsv` counts toward the final ranking and a smaller candidate set per S1 ranks higher.** Our sets average about 32 per S1 (35 for India). Plan: a shortlist stage by first-stage probability inside the pipeline, so the stack trains and scores only the shortlist and `candidate_pairs.tsv` lists exactly what the final model scored (never trim the file after scoring). Job `zo8` (`src/scripts/shortlist_eval.py s4 v3`) measures the F0.5 cost of K = 3 to 20 by first-stage rank. Also pending: cap of at most 5 S2 and 6 S3 matches per S1 (343 and 96 S1 of the `s3all` output exceed it, worth at most +0.0002).
+
+**Jobs now (one notebook, sequential, alphabetical)**: `zp3` (v5 holdout, test features and predict, checker, publish `runs/v5/`), `zo8` (shortlist evaluation), `zp4` (stack `s5`, checker, paired test against `s4`, publish `runs/s5/`). Expected finished about 01:30 to 02:30 IST on 26 Sep. Disk 26 GB free. The AWS login expires periodically: `aws login --profile hxman-26`.
+
+**Plans for 26 and 27 Sep (window closes Sun 23:59 IST, 5 submissions per day)**
+1. Read `zo8` and choose K; implement the shortlist in the stack build and predict, retrain.
+2. Gate `s5`; upload the best holdout model. If the test distractor rate shifts the optimum, try the same model at two or three thresholds (a single parameter) with the portal.
+3. If time: decoy edit features (substitution versus indel, Hamming distance, length change) in the stack and US/Indian state-name normalisation (`Tennessee` and `TN`; teammate's v5 proposal), each behind its own paired gate; cap 5 S2 and 6 S3.
+4. Freeze: rebuild the code zip, one clean reproduction, final validator (`--check-ids` needs test_source2/3 and is slow from the laptop: run it on the notebook), methodology document (`submission/Documentation_template.md`), refresh these documents.
+
+**Teammates:** the v4 plan (cross-encoder on the uncertain band, dense blocking with an English-only encoder) and a v5 branch built on `sai` at `1688d18` (state names, exact keys, sibling expansion, cross-encoder, decoy features, per-country thresholds, cap) are reviewed in `research.md` section 19. The user decided to leave the teammate's work separate. Warning: the v5 plan reuses our model names `v5` and `s5`; on the shared notebook or S3 code prefix that would overwrite our runs, so they must use other names and prefixes.
+
 ## 1. State in brief
 
 Task: link each Source 1 (S1) business record to its S2/S3 records (entity resolution), scored by macro F0.5 per S1 entity; submissions are `matching_results.tsv` plus `candidate_pairs.tsv`. Window closes **Sun 27 Sep 2026 23:59 IST**, 5 submissions per day. Everything runs on one AWS SageMaker notebook (`test-notebook`, ml.g5.xlarge with an A10G, 4 vCPU, 15 GB RAM) driven from the laptop through an S3 job queue (no SSH needed).
@@ -145,6 +198,8 @@ Token types in blocking: `n` name word, `a` address word, `p` 5-char prefix, `c`
 Local tests: `make test` or `pytest -q tests` in `code/business_entity_resolution` (16 tests including an end-to-end synthetic run of the whole v0 chain; xgboost falls back to CPU when no GPU).
 
 ## 6. What is running or pending right now
+
+(Superseded by section 0 for the 25 Sep evening state; the table below records the earlier cascade chain.)
 
 As of 25 Sep about 14:30 IST: **the best file is the stacked model `s1`** (`runs/s1/output/matching_results.tsv`; locked-holdout macro F0.5 0.9617, paired gain over v2 +0.0051 with 95% CI [+0.0048, +0.0055]). Calibration plus expected-F0.5 selection (`stages/expf.py`, model `e1`) was implemented exactly and gave no gain (+0.0001, CI includes 0); do not upload `e1`. Earlier this session: `zc1a`, `zc1b`, `zc1c` (cascade chain, model v2) and `zd1` (holdout scoring) are done. `zs1a` and `zs1b` (consensus stacking: build train/test consensus features, train the stacked model `s1`, paired comparison against v2 on the locked holdout, predict, publish to `runs/s1/`) are queued or running. The older rows below are kept for history.
 

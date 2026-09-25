@@ -62,8 +62,15 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 ## E. Open items to close now
 
 1. Team name Nooglers; members Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj (given; names only, no contact details in the package). Final zip name `Nooglers_submission.zip`; submission date to be set at the final freeze (human).
-2. Portal: v2 uploaded and scored **0.944** on the public leaderboard (25 Sep 1:46 PM IST). Upload only files that beat v2 on the locked holdout by more than the paired bootstrap interval; tell the agent every score (human).
+2. Portal: v2 **0.944** (25 Sep 1:46 PM IST), s4 **0.953** (10:21 PM), s3all **0.949** (10:53 PM). Upload only files that beat v2 on the locked holdout by more than the paired bootstrap interval; tell the agent every score (human).
 3. Ask the organisers, if unsure, whether the portal limits upload size (matching 95 MB, candidates 691 MB raw, about 290 MB gzipped) (human).
 4. Draft the methodology document with real numbers (agent): out-of-fold macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, 51,892,359 test candidate pairs, error analysis; update after the holdout run and the final model.
 5. Rebuild the code zip from the final code, rerun the full reproduction once from scratch, and rerun the official validator on the final files (agent).
 6. Confirm each team member has a single registration (humans).
+
+## F. Added 25 Sep evening
+
+- Organisers' email: `candidate_pairs.tsv` and the code that generates it count toward the final ranking; a smaller candidate set per Source 1 entity ranks higher. Current sets average 32 per S1. The shortlist stage is being evaluated (`handoff.md` section 0); the file must list exactly the pairs the final model scored, and every matched id must be inside it (checked by `check_submission.py`).
+- Portal log for the methodology document (version history): v2 0.944 (25 Sep 13:46 IST), s4 0.953 (22:21), s3all 0.949 (22:53). Record every later upload here with time and score.
+- Cap of at most 5 S2 and 6 S3 matches per S1 (the training maximum): apply at the freeze if it does not lose on the holdout.
+- Run the official validator with `--check-ids` on the final files on the notebook (from the laptop the test sources download at about 1 MiB/s).

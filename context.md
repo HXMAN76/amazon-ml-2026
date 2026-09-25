@@ -115,6 +115,10 @@ The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed f
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
+## 5a. Update 2026-09-25 about 23:20 IST
+
+Portal (public subset): v2 0.944, s4 **0.953**, s3all 0.949 (s2 not uploaded). Best validated model `s4` (dense name channel + stacking): locked-holdout F0.5 0.9708, +0.0031 [0.0028, 0.0034] over `s3all`. A second dense channel (`dense_all`, name + address of every record, top-1 owner candidate per pool record) recovers 66% of the blocking misses for 1.09M extra pairs; first stage `v5` out-of-fold 0.9757 (v3 0.9602); holdout and stack `s5` are running (jobs `zp3`, `zp4`). Organisers now rank `candidate_pairs.tsv` too, with smaller sets ranked higher (ours average 32 per S1): a shortlist stage is being evaluated (`zo8`). France output checks and the country-mix analysis are in `handoff.md` section 0 and `research.md` section 19. Everything in section 5 below is older.
+
 ## 5. Status (2026-09-25 about 14:00 IST)
 
 Read `handoff.md` for access, commands, pitfalls and next steps. Summary:
