@@ -214,7 +214,17 @@ def merge(split: str) -> None:
     """Add dense-all pairs (rank < k_merge, cos >= tau) to the candidate shards; every pair gets dall_cos and dall_rank."""
     P = config.paths()
     prm = config.load()["dense_all"]
-    pairs = pl.read_parquet(P["work"] / "dense_all" / split / "pairs.parquet").filter((pl.col("rank") < prm["k_merge"]) & (pl.col("cos") >= prm["tau"]))
+    pairs = pl.read_parquet(P["work"] / "dense_all" / split / "pairs.parquet")
+    k_empty = prm.get("k_merge_empty", prm["k_merge"])
+    if k_empty > prm["k_merge"]:  # pool records without an address carry only a name: give them more neighbours (zr1 report)
+        pq = P["parquet"] / split
+        empty = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "addr"]).filter(pl.col("addr").str.len_chars() == 0)
+                           .select((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid")) for s in (2, 3)]).with_columns(pl.lit(True).alias("_empty"))
+        pairs = pairs.join(empty, on="pid", how="left").with_columns(pl.col("_empty").fill_null(False))
+        keep = (pl.col("rank") < prm["k_merge"]) | (pl.col("_empty") & (pl.col("rank") < k_empty))
+        pairs = pairs.filter(keep & (pl.col("cos") >= prm["tau"])).drop("_empty")
+    else:
+        pairs = pairs.filter((pl.col("rank") < prm["k_merge"]) & (pl.col("cos") >= prm["tau"]))
     src = P["work"] / "blocks" / split
     bak = P["work"] / "blocks" / f"{split}_predall"
     if bak.exists():

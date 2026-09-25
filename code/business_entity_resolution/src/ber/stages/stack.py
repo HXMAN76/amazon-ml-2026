@@ -54,6 +54,16 @@ def load_p1(split: str, base: str) -> pl.DataFrame:
     return d.with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), pl.col("p").cast(pl.Float32))
 
 
+def shortlist(d: pl.DataFrame, prm: dict) -> pl.DataFrame:
+    """Candidate shortlist by first-stage probability: per S1 the best `shortlist_k` pairs with p1 >= `shortlist_pmin`, and always the
+    best pair (so no S1 has an empty candidate list). Used for training, scoring and the reported candidate_pairs.tsv alike."""
+    k, pmin = prm.get("shortlist_k"), prm.get("shortlist_pmin", 0.0)
+    if not k:
+        return d
+    r = pl.col("p").rank("ordinal", descending=True).over("q")
+    return d.filter((r == 1) | ((r <= k) & (pl.col("p") >= pmin)))
+
+
 def pid_features(d: pl.DataFrame) -> pl.DataFrame:
     """Record-level consensus: competition of S1 entities for the same S2/S3 record (needs all S1)."""
     g = d.group_by("pid").agg(
@@ -265,7 +275,8 @@ def build(split: str, base: str, prm: dict) -> None:
     """Write consensus-feature chunks for a split under WORK/stack/{split}."""
     P = config.paths()
     t0 = time.time()
-    d = load_p1(split, base)
+    d = shortlist(load_p1(split, base), prm)
+    print(f"{split}: shortlist keeps {d.height} pairs, {d.height / d['q'].n_unique():.2f} per S1", flush=True)
     d = pid_features(d)
     if split == "train":  # keep the locked holdout plus a seeded subsample of the other S1 for training
         hold = holdout_q()

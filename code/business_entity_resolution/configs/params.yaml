@@ -58,6 +58,8 @@ stack:                 # consensus stacking on top of the first-stage probabilit
   eta: 0.08
   device: auto
   seed: 0
+  shortlist_k: 10      # candidate shortlist by first-stage p1: best K per S1 ...
+  shortlist_pmin: 0.005  # ... with p1 at least this (the best pair of every S1 is always kept); see zo8 report
 expf:                  # calibration and per-S1 expected-F0.5 selection on the stacked probabilities
   base: s1
   J: 12                # candidates per S1 modelled exactly; the rest enter as a Poisson term
@@ -83,5 +85,6 @@ dense_all:             # name + address embeddings for EVERY pool record (see st
   max_len: 48
   k: 5                 # S1 neighbours retrieved per pool record
   k_merge: 1           # of these, pairs that may be added (top-1 owner candidate of each pool record: zn2 report)
+  k_merge_empty: 3     # neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
   tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
   seed: 11
