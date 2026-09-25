@@ -188,6 +188,7 @@ def score(split: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    global DATA_DIR, MODEL, MODEL_DIR
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["data", "train", "score"])
     ap.add_argument("--split", choices=["train", "test"], default="train")
@@ -197,7 +198,6 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--model-dir", default="xenc/model", help="WORK-relative folder of the fitted model")
     ap.add_argument("--set", default="", help="comma-separated xenc parameter overrides, e.g. epochs=3,band_lo=0.01")
     a = ap.parse_args(argv)
-    global DATA_DIR, MODEL, MODEL_DIR
     DATA_DIR, MODEL, MODEL_DIR = a.dir, a.base_model, a.model_dir
     for kv in filter(None, a.set.split(",")):
         k, v = kv.split("=")
