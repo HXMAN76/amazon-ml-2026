@@ -101,7 +101,7 @@ def _texts(split: str) -> tuple[np.ndarray, list[str], np.ndarray, list[str]]:
 
 def dense_train_q(prm: dict) -> np.ndarray:
     """India S1 used to fine-tune the encoder: drawn from those outside BOTH the stage-1 sample and the locked holdout."""
-    from ber.stages.score_rest import holdout_q
+    from ber.split import holdout_q
 
     P = config.paths()
     s1 = pl.read_parquet(P["parquet"] / "train" / "source1.parquet", columns=["rid", "ctry"]).filter(pl.col("ctry") == "india")
@@ -223,7 +223,7 @@ def report(prm: dict | None = None) -> dict:
         (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"), pl.col("s1_rid").alias("q")).select("q", "pid")
     _, _, p_ids, _ = _texts("train")
     truth = lab.join(pl.DataFrame({"pid": p_ids}), on="pid", how="semi")  # true pairs whose pool record is non-Latin (India)
-    from ber.stages.score_rest import holdout_q
+    from ber.split import holdout_q
 
     truth = truth.join(pl.DataFrame({"q": holdout_q()}), on="q", how="semi")  # only S1 the encoder never saw (locked holdout)
     cand = pl.concat([pl.read_parquet(f, columns=["q", "pid"]) for f in sorted((P["work"] / "blocks" / "train").glob("cand_*.parquet"))])

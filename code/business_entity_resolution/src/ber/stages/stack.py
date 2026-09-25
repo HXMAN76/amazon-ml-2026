@@ -30,7 +30,7 @@ import xgboost as xgb
 from ber import config, decision
 from ber.stages.block import PID_BASE
 from ber.stages.predict import emit
-from ber.stages.score_rest import holdout_q
+from ber.split import holdout_q
 from ber.stages.train_gpu import pick_device
 from ber.tracking import log_stage
 
@@ -312,17 +312,33 @@ def _read(split: str) -> pl.DataFrame:
     return pl.concat([pl.read_parquet(f) for f in sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))])
 
 
+def _load_arrays(split: str, drop: tuple[str, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+    """Chunk files straight into one preallocated float32 matrix (no polars concat, no second copy)."""
+    P = config.paths()
+    files = sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))
+    first = pl.read_parquet(files[0])
+    feats = [c for c in first.columns if c not in {"q", "pid", "label"} and not c.startswith(drop)]
+    n = sum(pl.scan_parquet(f).select(pl.len()).collect().item() for f in files)
+    x = np.empty((n, len(feats)), dtype=np.float32)
+    qa, pida, y = np.empty(n, dtype=np.int64), np.empty(n, dtype=np.int64), np.empty(n, dtype=np.int8)
+    a = 0
+    for f in files:
+        d = pl.read_parquet(f)
+        m = d.height
+        x[a: a + m] = d.select(feats).to_numpy()
+        qa[a: a + m], pida[a: a + m] = d["q"].to_numpy(), d["pid"].to_numpy()
+        y[a: a + m] = d["label"].to_numpy() if "label" in d.columns else 0
+        a += m
+    return x, qa, pida, y, feats
+
+
 def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     """Fit the stacked model on the non-holdout S1, tune the threshold, and score the locked holdout with a paired CI."""
     P = config.paths()
     t0 = time.time()
-    df = _read("train")
     hold = pl.DataFrame({"q": holdout_q()})
-    is_hold = df.join(hold.with_columns(pl.lit(True).alias("_h")), on="q", how="left")["_h"].fill_null(False).to_numpy()
-    feats = [c for c in df.columns if c not in {"q", "pid", "label"} and not c.startswith(drop)]  # `drop`: feature prefixes left out (ablations)
-    qa, pida, y = df["q"].to_numpy(), df["pid"].to_numpy(), df["label"].to_numpy()
-    x = df.select(feats).to_numpy()  # all Float32: no upcast, one copy
-    del df
+    x, qa, pida, y, feats = _load_arrays("train", drop)  # `drop`: feature prefixes left out (ablations)
+    is_hold = np.isin(qa, hold["q"].to_numpy())
     q = qa.astype(np.uint64)
     fold = ((q * np.uint64(2654435761)) % np.uint64(2 ** 32) % np.uint64(prm["folds"])).astype(np.int64)
     device = pick_device(prm["device"])
@@ -333,8 +349,10 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     iters = []
     for k in range(prm["folds"]):
         tr, va = tr_mask & (fold != k), tr_mask & (fold == k)
-        m = xgb.train(p, xgb.DMatrix(x[tr], label=y[tr], feature_names=feats), prm["rounds"],
-                      evals=[(xgb.DMatrix(x[va], label=y[va], feature_names=feats), "val")], early_stopping_rounds=prm["early_stop"], verbose_eval=False)
+        dtr = xgb.QuantileDMatrix(x[tr], label=y[tr], feature_names=feats)
+        m = xgb.train(p, dtr, prm["rounds"],
+                      evals=[(xgb.QuantileDMatrix(x[va], label=y[va], feature_names=feats, ref=dtr), "val")], early_stopping_rounds=prm["early_stop"], verbose_eval=False)
+        del dtr
         oof[va] = m.predict(xgb.DMatrix(x[va], feature_names=feats), iteration_range=(0, m.best_iteration + 1))
         iters.append(m.best_iteration + 1)
         print(f"fold {k}: {iters[-1]} rounds, aucpr {m.best_score:.4f}", flush=True)
@@ -343,7 +361,9 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     nt_tune = tune.select("q").unique().join(labels, on="q", how="left").with_columns(pl.col("n_true").fill_null(0))
     thr, score_oof, _ = decision.tune_threshold(tune, nt_tune, True)
     print(f"stacked OOF macro F0.5 on the non-holdout subsample: {score_oof:.4f} at threshold {thr:.2f}", flush=True)
-    model = xgb.train(p, xgb.DMatrix(x[tr_mask], label=y[tr_mask], feature_names=feats), int(np.mean(iters) * 1.1) + 1)
+    dfinal = xgb.QuantileDMatrix(x[tr_mask], label=y[tr_mask], feature_names=feats)
+    model = xgb.train(p, dfinal, int(np.mean(iters) * 1.1) + 1)
+    del dfinal
 
     # locked holdout: baseline (first-stage p1 with its own threshold) versus stacked, on the same S1
     hq, hp, hy = qa[is_hold], pida[is_hold], y[is_hold]
