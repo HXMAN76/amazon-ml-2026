@@ -1,6 +1,6 @@
 # Team guide: how we train, what the best model is, what is left to do
 
-Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 02:00 IST. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
+Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 02:15 IST. Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
 
@@ -71,7 +71,7 @@ Everything runs on one SageMaker notebook instance, driven through an S3 job que
 
 | # | Item | Status | Expected gain | Owner |
 |---|---|---|---|---|
-| 1 | Extra dense neighbours for name-only pool records (empty address) | `v6` first stage 0.9758 (no gain); stack `s7` running | +0.000 to +0.003 | pipeline |
+| 1 | Extra dense neighbours for name-only pool records (empty address) | done, no gain (`v6` 0.97557, `s7` 0.98309, same as `s6`); dropped | 0 | pipeline |
 | 2 | Bigger box (16xlarge) and parallel job lanes | after `s7`, about 02:30 | speed only | pipeline |
 | 3 | Iterated consensus (stack on the stack's probabilities) | to do | +0.001 to +0.003 | pipeline |
 | 4 | Decoy edit features (substitution vs indel, Hamming distance, length difference) | to do | about +0.001 | pipeline or teammate |
