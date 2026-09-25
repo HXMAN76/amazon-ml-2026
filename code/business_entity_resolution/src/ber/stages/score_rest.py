@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--name", default="v2")
     ap.add_argument("--holdout", type=int, default=150_000)
     ap.add_argument("--seed", type=int, default=2026)
+    ap.add_argument("--consensus", action="store_true", help="drop numeric look-alike distractors after selection (decision.consensus_prune)")
     a = ap.parse_args(argv)
     P = config.paths()
     t0 = time.time()
@@ -37,14 +38,15 @@ def main(argv: list[str] | None = None) -> None:
     if cfg.get("device_trained") == "cuda":
         model.set_param({"device": "cuda"})
     feats = cfg["features"]
+    extra = ["pin_match", "pin_conflict", "house_eq"] if a.consensus else []
     out = mdl / "p1_rest"
     out.mkdir(parents=True, exist_ok=True)
     res = []
     for f in sorted((P["work"] / "features" / "train_rest").glob("part_*.parquet")):
         d = pl.read_parquet(f)
         pp = model.predict(xgb.DMatrix(d.select(feats).to_numpy().astype(np.float32), feature_names=feats))
-        r = d.select("q", "pid", "label").with_columns(pl.Series("p", pp))
-        r.write_parquet(out / f.name, compression="zstd")
+        r = d.select("q", "pid", "label", *extra).with_columns(pl.Series("p", pp))
+        r.select("q", "pid", "label", "p").write_parquet(out / f.name, compression="zstd")
         res.append(r)
     df = pl.concat(res)
 
@@ -60,9 +62,14 @@ def main(argv: list[str] | None = None) -> None:
     d = df.join(hold, on="q", how="semi")
     sel = decision.assign_exclusive(d) if cfg["exclusive"] else d
     pred = sel.filter(pl.col("p") >= cfg["threshold"])
+    if a.consensus:
+        before = pred.height
+        pred = decision.consensus_prune(pred)
+        print(f"consensus_prune: {before} -> {pred.height} kept on holdout", flush=True)
     pe = decision.per_entity_f05(pred, nt)
     mean, lo, hi = decision.bootstrap_ci(pe["f"].to_numpy())
     rep = {"model": a.name, "holdout_s1": hold.height, "macro_f05": mean, "ci95": [lo, hi], "threshold": cfg["threshold"],
+           "consensus": a.consensus,
            "precision": float(pred["label"].mean()) if pred.height else None,
            "recall": float(pred["label"].sum() / max(int(nt["n_true"].sum()), 1))}
     (mdl / "holdout.json").write_text(json.dumps(rep, indent=2))

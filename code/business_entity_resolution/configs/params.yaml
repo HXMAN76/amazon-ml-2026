@@ -47,3 +47,16 @@ prune:                 # cascade blocking: block with k_raw candidates, keep the
   max_depth: 6
   eta: 0.1
   seed: 0
+train_rank:            # listwise LTR alternative to train_gpu: same features/folds, group-aware objective (qid=q)
+  device: auto
+  folds: 5
+  rounds: 600
+  early_stop: 30
+  max_depth: 8
+  eta: 0.1
+  subsample: 0.8
+  colsample: 0.8
+  min_child_weight: 1
+  eval_metric: ndcg@10
+  num_pair_per_sample: 8
+  seed: 0

@@ -28,6 +28,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI: score test candidates, apply the decision rule, write both TSV outputs and validate them."""
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="v0")
+    ap.add_argument("--consensus", action="store_true", help="drop numeric look-alike distractors after selection (decision.consensus_prune)")
     a = ap.parse_args(argv)
     P = config.paths()
     t0 = time.time()
@@ -37,17 +38,22 @@ def main(argv: list[str] | None = None) -> None:
     model.load_model(str(mdl / "xgb.json"))
     model.set_param({"device": "cuda"} if cfg.get("device_trained") == "cuda" else {})
     feats = cfg["features"]
+    keep_cols = ["q", "pid", "pin_match", "pin_conflict", "house_eq"] if a.consensus else ["q", "pid"]
     res = []
     for f in sorted((P["work"] / "features" / "test").glob("part_*.parquet")):  # score part by part: 52M rows do not fit RAM at once
         d = pl.read_parquet(f)
         pp = model.predict(xgb.DMatrix(d.select(feats).to_numpy().astype(np.float32), feature_names=feats))
-        res.append(d.select("q", "pid").with_columns(pl.Series("p", pp)))
+        res.append(d.select(keep_cols).with_columns(pl.Series("p", pp)))
     df = pl.concat(res)
     p = df["p"].to_numpy()
     (P["work"] / "output" / a.name).mkdir(parents=True, exist_ok=True)
-    df.write_parquet(P["work"] / "output" / a.name / "pair_p.parquet", compression="zstd")  # p1 of every test candidate pair (q, pid, p)
+    df.select("q", "pid", "p").write_parquet(P["work"] / "output" / a.name / "pair_p.parquet", compression="zstd")  # p1 of every test candidate pair (q, pid, p)
     sel = decision.assign_exclusive(df) if cfg["exclusive"] else df
     sel = sel.filter(pl.col("p") >= cfg["threshold"])
+    if a.consensus:
+        before = sel.height
+        sel = decision.consensus_prune(sel)
+        print(f"consensus_prune: {before} -> {sel.height} kept ({before - sel.height} look-alike distractors dropped)", flush=True)
     print(f"{df.height} candidate pairs scored, {sel.height} kept at threshold {cfg['threshold']:.2f} "
           f"(exclusive={cfg['exclusive']}), mean p {float(p.mean()):.4f}", flush=True)
 
