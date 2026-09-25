@@ -58,3 +58,10 @@ stack:                 # consensus stacking on top of the first-stage probabilit
   eta: 0.08
   device: auto
   seed: 0
+expf:                  # calibration and per-S1 expected-F0.5 selection on the stacked probabilities
+  base: s1
+  J: 12                # candidates per S1 modelled exactly; the rest enter as a Poisson term
+  tune_q: 100000
+  mu_grid: [0.0, 0.1, 0.2, 0.3]     # expected true matches outside the candidate list, per S1 (blocking misses)
+  shift_grid: [-0.4, -0.2, 0.0, 0.2]
+  seed: 0

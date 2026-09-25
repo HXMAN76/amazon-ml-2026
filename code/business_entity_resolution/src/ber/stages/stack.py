@@ -186,6 +186,8 @@ def train(name: str, base: str, prm: dict) -> None:
            "delta_ci95": [lo, hi], "ship": bool(lo > 0), "stack_threshold": thr, "oof_subsample_f05": score_oof, "holdout_s1": hold.height}
     out = P["work"] / "models" / name
     out.mkdir(parents=True, exist_ok=True)
+    tune.write_parquet(out / "oof_tune.parquet", compression="zstd")   # out-of-fold p on the non-holdout S1 (calibration, tuning)
+    b.write_parquet(out / "holdout_pred.parquet", compression="zstd")  # stacked p on the locked holdout
     model.save_model(str(out / "xgb.json"))
     (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base}, indent=2))
     (out / "holdout.json").write_text(json.dumps(rep, indent=2))

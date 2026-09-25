@@ -122,7 +122,59 @@ def test_consensus_stacking_end_to_end(tmp_path, monkeypatch):
     stack.main(["predict", "--name", "s"])
     rep = json.loads((work / "models" / "s" / "holdout.json").read_text())
     assert rep["delta_ci95"][0] <= rep["delta"] <= rep["delta_ci95"][1] and rep["stack_holdout_f05"] > 0.5
+    prm["expf"].update({"base": "s", "tune_q": 100, "mu_grid": [0.0, 0.2], "shift_grid": [0.0], "J": 6})
+    (tmp_path / "params.yaml").write_text(yaml.safe_dump(prm))
+    from ber.stages import expf
+
+    expf.main(["fit", "--base", "s", "--name", "e"])
+    expf.main(["predict", "--base", "s", "--name", "e"])
+    erep = json.loads((work / "models" / "e" / "holdout.json").read_text())
+    assert erep["delta_ci95"][0] <= erep["delta"] <= erep["delta_ci95"][1] and erep["expf_holdout_f05"] > 0.5
+    from scripts import check_submission as _chk
+
+    assert _chk.check(work / "output" / "e", data / "test", verbose=False)["issues"] == []
     out = work / "output" / "s"
     from scripts import check_submission
 
     assert check_submission.check(out, data / "test", verbose=False)["issues"] == []
+
+
+def test_expected_f05_matches_brute_force():
+    import itertools
+    import math
+
+    import numpy as np
+
+    from ber.stages import expf
+
+    rng = np.random.default_rng(0)
+    P = np.sort(rng.uniform(0.02, 0.98, size=(6, 4)), axis=1)[:, ::-1].copy()
+    lam = np.array([0.0, 0.0, 0.3, 0.3, 0.6, 1.0])
+    got = expf.expected_f05_all(P, lam)
+    for r in range(P.shape[0]):
+        for k in range(5):
+            exp = 0.0
+            for out in itertools.product([0, 1], repeat=4):
+                pr = np.prod([P[r, i] if o else 1 - P[r, i] for i, o in enumerate(out)])
+                tp = sum(out[:k])
+                m_in = sum(out[k:])
+                for extra in range(40):
+                    pm = math.exp(-lam[r]) * lam[r] ** extra / math.factorial(extra)
+                    t_all = tp + m_in + extra
+                    f = 1.0 if (k == 0 and t_all == 0) else (0.0 if k == 0 else 1.25 * tp / (0.25 * t_all + k))
+                    exp += pr * pm * f
+            assert abs(exp - got[r, k]) < 1e-6, (r, k, exp, got[r, k])
+
+
+def test_isotonic_is_monotone_and_reduces_calibration_error():
+    import numpy as np
+
+    from ber.stages import expf
+
+    rng = np.random.default_rng(1)
+    true_p = rng.uniform(0, 1, 20000)
+    y = (rng.uniform(0, 1, 20000) < true_p).astype(int)
+    over = np.clip(true_p * 1.3, 0, 1)  # an over-confident score
+    knots = expf.fit_isotonic(over, y)
+    assert np.all(np.diff(knots[1]) >= -1e-12)
+    assert expf.ece(expf.apply_isotonic(over, knots), y) < expf.ece(over, y)
