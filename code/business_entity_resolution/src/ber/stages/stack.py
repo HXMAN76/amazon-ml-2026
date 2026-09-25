@@ -330,6 +330,10 @@ def build(split: str, base: str, prm: dict) -> None:
                 from ber.stages.dense_all import dense_all_train_q
 
                 pool = np.setdiff1d(pool, dense_all_train_q(config.load()["dense_all"]))
+        if prm.get("xenc"):  # S1 the cross-encoder was fitted on would carry optimistic xs features
+            from ber.stages.xenc import xenc_train_q
+
+            pool = np.setdiff1d(pool, xenc_train_q(config.load()["xenc"]))
         rng = np.random.default_rng(prm["seed"])
         sub = rng.choice(pool, size=min(prm["sub_q"], len(pool)), replace=False)
         keep = np.sort(np.concatenate([hold, sub]))
@@ -346,6 +350,7 @@ def build(split: str, base: str, prm: dict) -> None:
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
     s1_name, pool_name = _name_arrays(split)
+    xs_df = pl.read_parquet(P["work"] / "xenc" / f"{split}_xs.parquet") if prm.get("xenc") else None
     have = set(scan.collect_schema().names())
     carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
     n = 0
@@ -358,6 +363,8 @@ def build(split: str, base: str, prm: dict) -> None:
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
         rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
+        if xs_df is not None:
+            rows = rows.join(xs_df.with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)), on=["q", "pid"], how="left")
         if prm.get("decoy", False):
             rows = rows.join(decoy_features(rows0, s1_name, pool_name, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
@@ -489,6 +496,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
+    ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
     ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
     a = ap.parse_args(argv)
     global STACK_DIR
@@ -496,6 +504,7 @@ def main(argv: list[str] | None = None) -> None:
     prm = dict(config.load()["stack"])
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
+    prm["xenc"] = prm.get("xenc", False) or a.xenc
     if a.sub_q:
         prm["sub_q"] = a.sub_q
     for kv in filter(None, a.set.split(",")):

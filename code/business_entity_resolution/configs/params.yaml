@@ -90,3 +90,14 @@ dense_all:             # name + address embeddings for EVERY pool record (see st
   k_merge_empty: 3     # neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
   tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
   seed: 11
+xenc:                  # cross-encoder on the uncertain band (see stages/xenc.py)
+  seed: 21
+  fit_s1: 400000       # S1 used to fit it (outside the sample, the holdout and the dense-encoder fitting sets)
+  band_lo: 0.02        # uncertain band of the first-stage probability p1
+  band_hi: 0.98
+  easy_pos_frac: 0.1   # share of confident positives added to the fit set
+  lr: 0.00003
+  batch: 128
+  epochs: 3
+  max_len: 128
+  score_batch: 512
