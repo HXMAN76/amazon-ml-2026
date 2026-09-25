@@ -39,9 +39,25 @@ def main(argv: list[str] | None = None) -> None:
     model.set_param({"device": "cuda"} if cfg.get("device_trained") == "cuda" else {})
     feats = cfg["features"]
     keep_cols = ["q", "pid", "pin_match", "pin_conflict", "house_eq"] if a.consensus else ["q", "pid"]
+
+    stacked = "baseline" in cfg  # train_stack models need p1 (baseline) and xs (cross-encoder) joined in
+    if stacked:
+        p1 = pl.read_parquet(P["work"] / "output" / cfg["baseline"] / "pair_p.parquet").select(
+            "q", "pid", pl.col("p").alias("p1"))
+        xs_path = P["work"] / "v2" / cfg["xenc_name"] / "xenc_test.parquet"
+        xs = (pl.read_parquet(xs_path).select("q", "pid", "xs") if xs_path.exists()
+              else pl.DataFrame({"q": [], "pid": [], "xs": []}, schema={"q": pl.Int64, "pid": pl.Int64, "xs": pl.Float32}))
+
     res = []
     for f in sorted((P["work"] / "features" / "test").glob("part_*.parquet")):  # score part by part: 52M rows do not fit RAM at once
         d = pl.read_parquet(f)
+        if stacked:
+            d = d.join(p1, on=["q", "pid"], how="left").join(xs, on=["q", "pid"], how="left")
+            d = d.with_columns(
+                pl.col("p1").fill_null(0.0),
+                pl.col("xs").is_not_null().cast(pl.Float32).alias("has_xs"),
+                pl.col("xs").fill_null(0.0),
+            )
         pp = model.predict(xgb.DMatrix(d.select(feats).to_numpy().astype(np.float32), feature_names=feats))
         res.append(d.select(keep_cols).with_columns(pl.Series("p", pp)))
     df = pl.concat(res)
