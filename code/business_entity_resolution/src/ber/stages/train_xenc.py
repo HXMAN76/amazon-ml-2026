@@ -90,6 +90,9 @@ def main(argv: list[str] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     model.fit(train_dataloader=loader, epochs=a.epochs, warmup_steps=int(0.1 * len(loader)),
               output_path=str(out), show_progress_bar=False)
+    # sentence-transformers 5.x's CrossEncoder.fit() runs on an internal HF Trainer and does not reliably
+    # persist final weights to output_path on its own; save explicitly so score_xenc can load them.
+    model.save(str(out))
 
     cfg = {"base_model": a.base_model, "base_model_license": BASE_MODEL_LICENSE,
            "base_model_params_approx": BASE_MODEL_PARAMS_APPROX, "baseline": a.baseline,
