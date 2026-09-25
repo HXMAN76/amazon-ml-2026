@@ -236,3 +236,36 @@ def test_dense_topk_and_merge_add_missing_pairs(tmp_path, monkeypatch):
     assert merged.filter(pl.col("emb_cos").is_not_null()).height == 7
     dense.merge("train")  # idempotent: always merges from the untouched shards
     assert pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))]).height == before + 6
+
+
+def test_dense_all_merge_adds_pairs_above_threshold_and_is_idempotent(tmp_path, monkeypatch):
+    from ber.stages import dense, dense_all
+
+    data, work = tmp_path / "dataset", tmp_path / "work"
+    synth.make(data, "train", n=200, seed=1)
+    synth.make(data, "test", n=40, seed=2)
+    monkeypatch.setenv("BER_DATA", str(data))
+    monkeypatch.setenv("BER_WORK", str(work))
+    prepare.main([])
+    sample.main()
+    block.main(["--split", "train", "--all-train"])
+    cand = pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))])
+    qs = cand["q"].unique().to_list()[:5]
+    dp0 = pl.DataFrame({"q": [int(qs[0])], "pid": [30_000_000 + 4000], "cos": [0.9], "rank": [0]}).with_columns(pl.col("rank").cast(pl.Int16))
+    (work / "dense" / "train").mkdir(parents=True)
+    dp0.write_parquet(work / "dense" / "train" / "pairs.parquet")
+    dense.merge("train")
+    before = pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))]).height
+    # rows: kept (cos 0.9, rank 0), dropped by tau (0.5), dropped by rank (rank 3), already a candidate (must not be duplicated)
+    rows = [(int(qs[1]), 30_000_000 + 5001, 0.9, 0), (int(qs[2]), 30_000_000 + 5002, 0.5, 0), (int(qs[3]), 30_000_000 + 5003, 0.95, 3),
+            (int(cand["q"][0]), int(cand["pid"][0]), 0.99, 0)]
+    dp = pl.DataFrame({"q": [r[0] for r in rows], "pid": [r[1] for r in rows], "cos": [r[2] for r in rows], "rank": [r[3] for r in rows]}).with_columns(
+        pl.col("rank").cast(pl.Int16))
+    (work / "dense_all" / "train").mkdir(parents=True)
+    dp.write_parquet(work / "dense_all" / "train" / "pairs.parquet")
+    dense_all.merge("train")
+    merged = pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))])
+    assert merged.height == before + 1 and {"dall_cos", "dall_rank", "emb_cos"} <= set(merged.columns)
+    assert merged.filter(pl.col("dall_cos").is_not_null()).height == 2
+    dense_all.merge("train")
+    assert pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))]).height == before + 1

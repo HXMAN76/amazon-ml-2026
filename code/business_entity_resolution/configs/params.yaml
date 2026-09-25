@@ -74,3 +74,14 @@ dense:                 # multilingual name embeddings for non-Latin pool records
   ft_lr: 0.00003
   ft_temp: 0.05
   seed: 5
+dense_all:             # name + address embeddings for EVERY pool record (see stages/dense_all.py)
+  ft_s1: 250000        # S1 (all countries with labels) used to fine-tune; outside the stage-1 sample and the locked holdout
+  ft_epochs: 3
+  ft_batch: 384
+  ft_lr: 0.00003
+  ft_temp: 0.05
+  max_len: 48
+  k: 5                 # S1 neighbours retrieved per pool record
+  k_merge: 3           # of these, pairs that may be added to the candidate shards
+  tau: 0.85            # minimum cosine of an added pair
+  seed: 11

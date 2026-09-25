@@ -276,6 +276,10 @@ def build(split: str, base: str, prm: dict) -> None:
             from ber.stages.dense import dense_train_q
 
             pool = np.setdiff1d(pool, dense_train_q(dense_ft))
+            if config.load().get("dense_all"):
+                from ber.stages.dense_all import dense_all_train_q
+
+                pool = np.setdiff1d(pool, dense_all_train_q(config.load()["dense_all"]))
         rng = np.random.default_rng(prm["seed"])
         sub = rng.choice(pool, size=min(prm["sub_q"], len(pool)), replace=False)
         keep = np.sort(np.concatenate([hold, sub]))
