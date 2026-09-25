@@ -47,6 +47,14 @@ prune:                 # cascade blocking: block with k_raw candidates, keep the
   max_depth: 6
   eta: 0.1
   seed: 0
+xenc:                  # stage 2b cross-encoder (v2.md): Alibaba-NLP/gte-multilingual-reranker-base, Apache-2.0
+  base_model: Alibaba-NLP/gte-multilingual-reranker-base
+  lo: 0.15              # uncertain band: pair-model p in [lo, hi] gets cross-encoder attention
+  hi: 0.85
+  epochs: 1
+  batch_size: 64
+  max_pairs: 200000      # fine-tune time budget (~30-60 min on one GPU)
+  seed: 0
 train_rank:            # listwise LTR alternative to train_gpu: same features/folds, group-aware objective (qid=q)
   device: auto
   folds: 5

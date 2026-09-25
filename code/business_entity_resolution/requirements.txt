@@ -9,3 +9,8 @@ pyyaml==6.0.3
 mlflow==3.16.1
 pytest==9.1.1
 anyascii==0.3.3
+# stage 2b cross-encoder (v2.md): Alibaba-NLP/gte-multilingual-reranker-base, Apache-2.0, ~305M params,
+# offline inference only, fine-tuned only on the provided train pairs.
+torch==2.7.1
+transformers==4.57.1
+sentence-transformers==5.1.1
