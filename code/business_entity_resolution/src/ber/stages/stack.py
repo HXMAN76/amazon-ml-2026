@@ -101,6 +101,44 @@ def _addr_arrays(split: str) -> tuple[np.ndarray, np.ndarray, int]:
     return s1, np.concatenate([s2, s3]), len(s2)
 
 
+def _name_arrays(split: str) -> tuple[np.ndarray, np.ndarray]:
+    """Core names of S1 (by rid) and of the pool (S2 then S3)."""
+    P = config.paths()
+    pq = P["parquet"] / split
+    s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1"]).sort("rid")["core1"].to_numpy()
+    s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", "core1"]).sort("rid")["core1"].to_numpy()
+    s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", "core1"]).sort("rid")["core1"].to_numpy()
+    return s1, np.concatenate([s2, s3])
+
+
+def consensus_text_features(rows: pl.DataFrame, pool_name: np.ndarray, pool_addr: np.ndarray, n2: int) -> pl.DataFrame:
+    """Similarity of each candidate to the S1's best OTHER record (highest p1): a look-alike distractor tends to be the odd
+    one out among the S1's confident records, while true records resemble each other."""
+    from rapidfuzz import fuzz, process
+
+    d = rows.select("q", "pid", "p").with_columns(pl.col("p").rank("ordinal", descending=True).over("q").alias("_r"))
+    t1 = pl.col("pid").filter(pl.col("_r") == 1).first().over("q")
+    t2 = pl.col("pid").filter(pl.col("_r") == 2).first().over("q")
+    p1 = pl.col("p").filter(pl.col("_r") == 1).first().over("q")
+    p2 = pl.col("p").filter(pl.col("_r") == 2).first().over("q")
+    d = d.with_columns(pl.when(pl.col("_r") == 1).then(t2).otherwise(t1).alias("bo_pid"),
+                       pl.when(pl.col("_r") == 1).then(p2).otherwise(p1).alias("bo_p"))
+    pid = d["pid"].to_numpy()
+    bo = d["bo_pid"].fill_null(0).to_numpy()
+    idx = lambda x: np.where(x < 3 * PID_BASE, x - 2 * PID_BASE, n2 + x - 3 * PID_BASE)  # noqa: E731
+    ok = (d["bo_p"].fill_null(0.0).to_numpy() > 0.3) & (bo > 0)
+    ci, bi = idx(pid), idx(np.where(ok, bo, pid))
+    cn, bn = pool_name[ci].tolist(), pool_name[bi].tolist()
+    ca, ba = pool_addr[ci].tolist(), pool_addr[bi].tolist()
+    f = {}
+    for nm, (x, y, sc) in {"cons_name_ratio": (cn, bn, fuzz.ratio), "cons_name_tset": (cn, bn, fuzz.token_set_ratio),
+                           "cons_addr_ratio": (ca, ba, fuzz.ratio), "cons_addr_tset": (ca, ba, fuzz.token_set_ratio)}.items():
+        v = process.cpdist(x, y, scorer=sc, dtype=np.float32, workers=-1)
+        f[nm] = np.where(ok, v, np.nan).astype(np.float32)
+    f["bo_p"] = np.where(ok, d["bo_p"].fill_null(0.0).to_numpy(), np.nan).astype(np.float32)
+    return pl.DataFrame({"q": d["q"].to_numpy(), "pid": pid, **f})
+
+
 def digit_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarray, n2: int) -> pl.DataFrame:
     """House-number relations and digit consensus. Look-alike distractors often differ from the S1 by a house number that
     lost or gained a trailing digit, while true records carry other kinds of noise; agreement with the S1's other
@@ -234,6 +272,7 @@ def build(split: str, base: str, prm: dict) -> None:
     out.mkdir(parents=True)
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
+    _, pool_name = _name_arrays(split)
     mats = tfidf_mats(split)
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
@@ -245,6 +284,7 @@ def build(split: str, base: str, prm: dict) -> None:
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
         rows = rows.join(tfidf_features(rows0, mats, n2), on=["q", "pid"], how="left")
+        rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
         if "label" in rows.columns:
@@ -260,14 +300,14 @@ def _read(split: str) -> pl.DataFrame:
     return pl.concat([pl.read_parquet(f) for f in sorted((P["work"] / "stack" / split).glob("chunk_*.parquet"))])
 
 
-def train(name: str, base: str, prm: dict) -> None:
+def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     """Fit the stacked model on the non-holdout S1, tune the threshold, and score the locked holdout with a paired CI."""
     P = config.paths()
     t0 = time.time()
     df = _read("train")
     hold = pl.DataFrame({"q": holdout_q()})
     is_hold = df.join(hold.with_columns(pl.lit(True).alias("_h")), on="q", how="left")["_h"].fill_null(False).to_numpy()
-    feats = [c for c in df.columns if c not in {"q", "pid", "label"}]
+    feats = [c for c in df.columns if c not in {"q", "pid", "label"} and not c.startswith(drop)]  # `drop`: feature prefixes left out (ablations)
     qa, pida, y = df["q"].to_numpy(), df["pid"].to_numpy(), df["label"].to_numpy()
     x = df.select(feats).to_numpy()  # all Float32: no upcast, one copy
     del df
@@ -347,13 +387,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--split", choices=["train", "test"], default="train")
     ap.add_argument("--name", default="s1")
     ap.add_argument("--base", default=None)
+    ap.add_argument("--drop", default="", help="comma-separated feature-name prefixes to leave out of training (ablation)")
     a = ap.parse_args(argv)
     prm = config.load()["stack"]
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)
     elif a.cmd == "train":
-        train(a.name, base, prm)
+        train(a.name, base, prm, tuple(x for x in a.drop.split(",") if x))
     else:
         predict(a.name)
 
