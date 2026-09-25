@@ -1,5 +1,7 @@
 # Pinned versions used for the submitted run (Python 3.12). All are permissively licensed (see README.md).
 numpy==2.5.3
+scipy==1.18.1
+scikit-learn==1.9.1
 pandas==3.0.6
 polars==1.44.2
 duckdb==1.5.5

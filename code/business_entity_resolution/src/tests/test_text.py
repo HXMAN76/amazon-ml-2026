@@ -80,3 +80,14 @@ def test_romanisation_bridges_scripts():
     assert text.romanize("Ram Media") == "Ram Media"  # ASCII passes through unchanged
     row = text.normalise_row("रियल फाउंडेशन", "महाराष्ट्र", "India")
     assert row[text.COLUMNS.index("core_rom")] == "riyl phaumdesn" and row[text.COLUMNS.index("addr_rom")] == "mharastr"
+
+
+def test_french_address_rules_apply_only_to_france():
+    fr = text.norm_address("63 R. DE DIEPPE, 59000 LILLE CEDEX", "France")
+    assert fr == "63 rue de dieppe 59000 lille"
+    assert text.norm_address("63 R. DE DIEPPE, 59000 LILLE CEDEX", "US") == "63 r de dieppe 59000 lille cedex"  # unchanged elsewhere
+    assert text.norm_address("12 Av. Victor Hugo, Bd Foch", "france") == "12 avenue victor hugo boulevard foch"
+    row = text.normalise_row("Marina Ecole France Sarl", "63 R. DE DIEPPE", "France")
+    assert row[text.COLUMNS.index("addr")] == "63 rue de dieppe"
+    row_us = text.normalise_row("Marina Ecole", "63 R. DE DIEPPE", "US")
+    assert row_us[text.COLUMNS.index("addr")] == "63 r de dieppe"

@@ -38,6 +38,11 @@ ADDR_ABBR = {
     "bd": "boulevard", "chem": "chemin", "saint": "st", "sainte": "st",
 }
 ADDR_FILLER = {"door", "no", "number", "hno", "cdp"}
+# French street-type abbreviations and fillers, applied only when the record's country is France (no French training
+# data exists, so these rules cannot change any training artifact and are unvalidated beyond unit tests)
+FR_ADDR_ABBR = {"r": "rue", "bd": "boulevard", "bld": "boulevard", "bvd": "boulevard", "ch": "chemin", "imp": "impasse",
+                "rte": "route", "all": "allee", "sq": "square", "qu": "quai", "fg": "faubourg", "pas": "passage", "crs": "cours"}
+FR_FILLER = {"cedex"}
 COUNTRY_ALIASES = {
     "usa": "us", "united states": "us", "united states of america": "us", "america": "us",
     "in": "india", "ind": "india", "bharat": "india", "fr": "france", "fra": "france",
@@ -137,17 +142,19 @@ def parse_name(raw: object) -> NameParts:
     return NameParts(" ".join(t1), t2, " ".join(core), " ".join(legal), is_domain, bool(alias))
 
 
-def norm_address(raw: object) -> str:
-    """Normalise an address: decode entities, tokenise, drop filler words, expand abbreviations."""
+def norm_address(raw: object, country: object = "") -> str:
+    """Normalise an address: decode entities, tokenise, drop filler words, expand abbreviations (French rules only for France)."""
     if not isinstance(raw, str) or not raw.strip():
         return ""
+    fr = norm_country(country) == "france"
+    abbr = {**ADDR_ABBR, **FR_ADDR_ABBR} if fr else ADDR_ABBR
     toks: list[str] = []
     for t in _tokens(unicodedata.normalize("NFC", html.unescape(raw))):
         if len(t) > 5 and t.endswith("cdp"):
             t = t[:-3]  # `chicagocdp` -> `chicago`
-        if t in ADDR_FILLER:
+        if t in ADDR_FILLER or (fr and t in FR_FILLER):
             continue
-        toks.append(ADDR_ABBR.get(t, t))
+        toks.append(abbr.get(t, t))
     return " ".join(toks)
 
 
@@ -180,7 +187,7 @@ def romanize(s: str) -> str:
 def normalise_row(name: str, addr: str, country: str) -> tuple:
     """Row-level entry point used by the prepare stage. Returns a tuple in COLUMNS order."""
     p = parse_name(name)
-    a = norm_address(addr)
+    a = norm_address(addr, country)
     return (
         p.name1, p.name2, p.core1, p.legal, p.is_domain, p.has_alias,
         a, norm_country(country), nonlatin_frac(name), nonlatin_frac(addr), romanize(p.core1), romanize(a),

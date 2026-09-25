@@ -146,6 +146,69 @@ def digit_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarra
     return d.select(["q", "pid", *keep])
 
 
+def _hash_docs(texts: list[str], kind: str, workers: int = 4, chunk: int = 400_000):
+    """Hashed count vectors (CSR) of a list of strings: character 3-grams for names, word 1-2-grams for addresses."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    import scipy.sparse as sp
+
+    parts = [(texts[i: i + chunk], kind) for i in range(0, len(texts), chunk)]
+    with ProcessPoolExecutor(workers) as ex:
+        mats = list(ex.map(_hash_part, parts))
+    return sp.vstack(mats, format="csr")
+
+
+def _hash_part(args):
+    """Worker: vectorise one chunk of strings."""
+    from sklearn.feature_extraction.text import HashingVectorizer
+
+    texts, kind = args
+    if kind == "name":
+        v = HashingVectorizer(analyzer="char_wb", ngram_range=(3, 3), n_features=2 ** 20, alternate_sign=False, norm=None, dtype=np.float32)
+    else:
+        v = HashingVectorizer(analyzer="word", ngram_range=(1, 2), token_pattern=r"\S+", n_features=2 ** 20, alternate_sign=False, norm=None, dtype=np.float32)
+    return v.transform(texts)
+
+
+def tfidf_mats(split: str) -> dict:
+    """TF-IDF (IDF from the pool) L2-normalised hashed matrices for S1 and pool names (core name) and addresses."""
+    import scipy.sparse as sp
+
+    P = config.paths()
+    pq = P["parquet"] / split
+    out = {}
+    for kind, col in (("name", "core1"), ("addr", "addr")):
+        s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", col]).sort("rid")[col].to_list()
+        s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", col]).sort("rid")[col].to_list()
+        s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", col]).sort("rid")[col].to_list()
+        pool = _hash_docs(s2 + s3, kind)
+        df = np.bincount(pool.indices, minlength=pool.shape[1]).astype(np.float32)
+        idf = (np.log((pool.shape[0] + 1.0) / (df + 1.0)) + 1.0).astype(np.float32)
+        for name, m in (("pool", pool), ("s1", _hash_docs(s1, kind))):
+            m = m.tocsr()
+            m.data *= idf[m.indices]
+            norm = np.sqrt(np.asarray(m.multiply(m).sum(axis=1)).ravel()).astype(np.float32)
+            norm[norm == 0] = 1.0
+            m = sp.diags(1.0 / norm) @ m
+            out[f"{kind}_{name}"] = m.tocsr()
+    return out
+
+
+def tfidf_features(rows: pl.DataFrame, mats: dict, n2: int, step: int = 500_000) -> pl.DataFrame:
+    """TF-IDF cosine of S1 and pool name and address for every pair (q, pid)."""
+    q = rows["q"].to_numpy()
+    pid = rows["pid"].to_numpy()
+    pidx = np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
+    res = {}
+    for kind in ("name", "addr"):
+        A, B = mats[f"{kind}_s1"], mats[f"{kind}_pool"]
+        v = np.empty(len(q), dtype=np.float32)
+        for a in range(0, len(q), step):
+            v[a: a + step] = np.asarray(A[q[a: a + step]].multiply(B[pidx[a: a + step]]).sum(axis=1)).ravel()
+        res[f"tf_{kind}_cos"] = v
+    return pl.DataFrame({"q": q, "pid": pid, **res})
+
+
 def build(split: str, base: str, prm: dict) -> None:
     """Write consensus-feature chunks for a split under WORK/stack/{split}."""
     P = config.paths()
@@ -171,6 +234,7 @@ def build(split: str, base: str, prm: dict) -> None:
     out.mkdir(parents=True)
     scan = pl.scan_parquet(feat_files)
     s1_addr, pool_addr, n2 = _addr_arrays(split)
+    mats = tfidf_mats(split)
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
         qs = keep[lo_i: lo_i + prm["chunk_q"]]
@@ -180,6 +244,7 @@ def build(split: str, base: str, prm: dict) -> None:
         orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *ORIG])
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
+        rows = rows.join(tfidf_features(rows0, mats, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
         if "label" in rows.columns:
