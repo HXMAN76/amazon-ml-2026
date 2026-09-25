@@ -14,6 +14,8 @@ Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN7
 
 `s2` was never uploaded. Both `s4` and `s3all` are at `runs/<name>/output/` and passed the official validator (`s4`: without `--check-ids` on the notebook, plus `check_submission.py`, which does the ID checks). Version history for the methodology document: v2, s4, s3all, then whatever is uploaded on 26 and 27 Sep.
 
+**Update 26 Sep 2026 about 02:00 IST.** New best files: `s5` (holdout 0.9832, India 0.9812, US 0.9845; stack on `v5` with the name+address dense channel `dense_all`, `runs/s5/`) and `s6` (same score, candidate shortlist keeps 4.9 per S1, 126 MB candidate file, `runs/s6/`). `s5`/`s6` portal scores are not known yet. Running: `zt3` and `zt4` (`v6`, `s7`: extra dense neighbours for empty-address pool records). Planned: notebook to `ml.g5.16xlarge` ($5.12/h, 64 vCPU) after `zt4`, credit budget 270, stop the notebook after the last heavy job. The teammate-facing summary of the architecture, the AWS how-to and the optimization list is **`TEAM_GUIDE.md`** in the repo root; read that first.
+
 **Model lineage (all numbers on the locked holdout unless stated)**
 
 | Model | What changed | Holdout F0.5 | Paired gain |
