@@ -77,7 +77,10 @@ def consensus_prune(sel: pl.DataFrame) -> pl.DataFrame:
     missing = need - set(sel.columns)
     if missing:
         raise ValueError(f"consensus_prune needs columns {sorted(missing)}")
-    g = sel.with_columns((pl.col("pin_match") | pl.col("house_eq")).alias("_confirms")).with_columns(
+    # pairs.string_features stores these as float32 0.0/1.0 (rapidfuzz/numpy output), not bool: cast before
+    # boolean ops, `pl.col > 0` works for either representation so this is safe if a caller passes real bools too.
+    bools = [pl.col(c).cast(pl.Float64).gt(0).alias(c) for c in ("pin_match", "pin_conflict", "house_eq")]
+    g = sel.with_columns(bools).with_columns((pl.col("pin_match") | pl.col("house_eq")).alias("_confirms")).with_columns(
         pl.len().over("q").alias("_n_sel"),
         pl.col("_confirms").sum().over("q").alias("_n_confirm"),
     )
