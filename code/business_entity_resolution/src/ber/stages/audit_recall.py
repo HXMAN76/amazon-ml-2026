@@ -42,8 +42,39 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  src={src}: {sub_hit.height}/{sub.height} = {sub_hit.height / sub.height:.4%}", flush=True)
 
     missed = lab.join(cand, on=["q", "pid"], how="anti")
-    print(f"missed true pairs: {missed.height} ({time.time() - t0:.0f}s)", flush=True)
-    log_stage("audit_recall", {}, {"recall": recall, "missed": float(missed.height), "seconds": time.time() - t0})
+    print(f"missed true pairs: {missed.height}", flush=True)
+
+    # Distribution of missed cases: did token blocking's top-K cutoff drop this pair (some token
+    # overlap exists, just not enough to rank in the top-K), or is there no token overlap at all
+    # (only a semantic/dense method could ever find it)? This is what tells us whether raising
+    # block.py's k would already fix the gap vs. whether dense blocking is actually necessary.
+    if missed.height > 0:
+        pq = P["parquet"] / "train"
+        s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1", "addr"]).sort("rid")
+        s2 = pl.read_parquet(pq / "source2.parquet", columns=["rid", "core1", "addr"])
+        s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", "core1", "addr"])
+        pool = pl.concat([
+            s2.with_columns((pl.col("rid").cast(pl.Int64) + 2 * PID_BASE).alias("pid")),
+            s3.with_columns((pl.col("rid").cast(pl.Int64) + 3 * PID_BASE).alias("pid"))]).select("pid", "core1", "addr")
+        m = missed.join(s1.rename({"rid": "q", "core1": "a_core1", "addr": "a_addr"}), on="q", how="left") \
+                   .join(pool.rename({"core1": "b_core1", "addr": "b_addr"}), on="pid", how="left")
+        m = m.with_columns(
+            (pl.col("a_core1") + " " + pl.col("a_addr")).str.to_lowercase().str.split(" ").alias("a_tok"),
+            (pl.col("b_core1") + " " + pl.col("b_addr")).str.to_lowercase().str.split(" ").alias("b_tok"),
+        ).with_columns(
+            pl.col("a_tok").list.set_intersection(pl.col("b_tok")).list.len().alias("shared")
+        )
+        zero_overlap = int((m["shared"] == 0).sum())
+        truncated = missed.height - zero_overlap
+        print(f"  missed breakdown (approximate, raw word overlap not block.py's exact tokenizer): "
+              f"{truncated} likely top-K truncation (some shared tokens), "
+              f"{zero_overlap} zero token overlap (no shared tokens -- dense retrieval's actual target)", flush=True)
+    else:
+        zero_overlap = truncated = 0
+
+    log_stage("audit_recall", {}, {"recall": recall, "missed": float(missed.height),
+                                    "missed_zero_overlap": float(zero_overlap), "seconds": time.time() - t0})
+    print(f"done in {time.time() - t0:.0f}s", flush=True)
 
 
 if __name__ == "__main__":

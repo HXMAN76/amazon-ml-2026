@@ -24,9 +24,9 @@ from ber import config
 from ber.stages.block import PID_BASE
 from ber.tracking import log_stage
 
-BASE_MODEL = "intfloat/multilingual-e5-small"
+BASE_MODEL = "BAAI/bge-small-en-v1.5"
 BASE_MODEL_LICENSE = "MIT"
-BASE_MODEL_PARAMS_APPROX = "118M"
+BASE_MODEL_PARAMS_APPROX = "33M"
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -59,10 +59,11 @@ def main(argv: list[str] | None = None) -> None:
                        s3.with_columns((pl.col("rid").cast(pl.Int64) + 3 * PID_BASE).alias("pid"))])
 
     q = lab["q"].to_numpy()
-    a_text = ["query: " + t for t in (s1[q]["core1"] + " " + s1[q]["addr"]).to_list()]
-    b_text = ["passage: " + t for t in (lab.join(pool, on="pid", how="left")["core1"].fill_null("")
-                                         + " " + lab.join(pool, on="pid", how="left")["addr"].fill_null("")).to_list()]
-    # e5 models expect "query: "/"passage: " prefixes -- part of the model's documented usage, not a free choice
+    joined = lab.join(pool, on="pid", how="left")
+    a_text = ("query: " + (s1[q]["core1"] + " " + s1[q]["addr"])).to_list()
+    b_text = (joined["core1"].fill_null("") + " " + joined["addr"].fill_null("")).to_list()
+    # bge models expect the "query: " instruction prefix on the query side only, not on passages
+    # (BAAI's documented usage for retrieval) -- not a free styling choice
 
     from datasets import Dataset
     from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments

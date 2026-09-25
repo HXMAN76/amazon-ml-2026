@@ -36,8 +36,15 @@ _NUM_RE = re.compile(r"\d+")
 
 
 def _tag_numbers(text: str) -> str:
-    """Wrap digit runs in [NUM]...[/NUM] so house numbers/postcodes get an explicit signal."""
-    return _NUM_RE.sub(lambda m: f"[NUM]{m.group()}[/NUM]", text)
+    """Wrap digit runs in [NUM]/[POSTCODE] markers so house numbers and postcodes get explicit signal.
+
+    Same length heuristic pairs.py uses for its pin/house features: runs of 5+ digits are
+    postcode-like ("pin" in pairs.py), shorter runs are house numbers or other digit tokens.
+    """
+    def _tag(m: re.Match) -> str:
+        d = m.group()
+        return f"[POSTCODE]{d}[/POSTCODE]" if len(d) >= 5 else f"[NUM]{d}[/NUM]"
+    return _NUM_RE.sub(_tag, text)
 
 
 def main(argv: list[str] | None = None) -> None:
