@@ -80,19 +80,30 @@ def main(argv: list[str] | None = None) -> None:
     b_text = _pool_text(pool, pid, s2.height)
     labels = band["label"].to_numpy().astype(np.float32)
 
-    from sentence_transformers import CrossEncoder, InputExample
-    from torch.utils.data import DataLoader
+    from datasets import Dataset
+    from sentence_transformers import CrossEncoder
+    from sentence_transformers.cross_encoder import CrossEncoderTrainer, CrossEncoderTrainingArguments
+    from sentence_transformers.cross_encoder.losses import BinaryCrossEntropyLoss
 
     model = CrossEncoder(a.base_model, num_labels=1, trust_remote_code=True, max_length=128)
-    examples = [InputExample(texts=[x, y], label=float(lab)) for x, y, lab in zip(a_text, b_text, labels)]
-    loader = DataLoader(examples, shuffle=True, batch_size=a.batch_size)
+    train_dataset = Dataset.from_dict({"sentence1": a_text, "sentence2": b_text, "label": labels.tolist()})
+    loss = BinaryCrossEntropyLoss(model)
     out = P["work"] / "models" / a.name / "xenc"
     out.mkdir(parents=True, exist_ok=True)
-    model.fit(train_dataloader=loader, epochs=a.epochs, warmup_steps=int(0.1 * len(loader)),
-              output_path=str(out), show_progress_bar=False)
-    # sentence-transformers 5.x's CrossEncoder.fit() runs on an internal HF Trainer and does not reliably
-    # persist final weights to output_path on its own; save explicitly so score_xenc can load them.
-    model.save(str(out))
+    args = CrossEncoderTrainingArguments(
+        output_dir=str(out),
+        num_train_epochs=a.epochs,
+        per_device_train_batch_size=a.batch_size,
+        warmup_ratio=0.1,
+        logging_steps=50,
+        save_strategy="no",
+        report_to=[],
+        dataloader_num_workers=0,  # avoid multiprocess DataLoader hang under nohup/no-tty
+        seed=a.seed,
+    )
+    trainer = CrossEncoderTrainer(model=model, args=args, train_dataset=train_dataset, loss=loss)
+    trainer.train()
+    model.save_pretrained(str(out))
 
     cfg = {"base_model": a.base_model, "base_model_license": BASE_MODEL_LICENSE,
            "base_model_params_approx": BASE_MODEL_PARAMS_APPROX, "baseline": a.baseline,
