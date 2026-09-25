@@ -131,7 +131,7 @@ Done:
 - Documents: `handoff.md`, `plan.md`, `research.md`, `submission_checklist.md`, code `README.md` updated.
 - A teammate's plan (layers L0 to L5, harness, cross-encoder) was reviewed; agreed order and data contracts are in `handoff.md` section 9.
 
-**Leaderboard (public subset): v2 = 0.944** (first portal submission, 25 Sep 1:46 PM IST). v2 holdout on 150k unseen train S1: 0.9565 (95% CI [0.9559, 0.9572]); out-of-fold 0.9568. v2 = v1 features plus cascade blocking (K 100 to 30 by a learned ranker); pruner recall 0.9471 versus 0.9415 for the plain top 30. Consensus stacking (`stages/stack.py`: S1-level and record-level consensus features from p1, XGBoost re-score, paired bootstrap against v2 on the locked holdout) is built and tested; jobs `zs1a`/`zs1b` run it.
+**Leaderboard (public subset): v2 = 0.944** (first portal submission, 25 Sep 1:46 PM IST). v2 holdout on 150k unseen train S1: 0.9565 (95% CI [0.9559, 0.9572]); out-of-fold 0.9568. v2 = v1 features plus cascade blocking (K 100 to 30 by a learned ranker); pruner recall 0.9471 versus 0.9415 for the plain top 30. Consensus stacking (`stages/stack.py`) shipped: locked-holdout macro F0.5 0.9617 versus v2 0.9565, paired difference +0.0051, 95% CI [+0.0048, +0.0055]; best file so far is `runs/s1/output/matching_results.tsv` (validator and checker pass). Calibration and per-S1 expected-F0.5 selection (`stages/expf.py`) is a null result (+0.0001, CI includes 0) and is not shipped.
 
 Previously running: job chain `zc1a` (block test and all train at K 100, index rebuilt), `zc1b` (prune, train features, retrain as `v2`, error analysis), `zc1c` (test features, predict, checker, publish to `runs/v2/`). See `handoff.md` section 6.
 

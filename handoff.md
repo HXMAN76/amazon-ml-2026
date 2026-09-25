@@ -146,7 +146,7 @@ Local tests: `make test` or `pytest -q tests` in `code/business_entity_resolutio
 
 ## 6. What is running or pending right now
 
-As of 25 Sep 14:00 IST: `zc1a`, `zc1b`, `zc1c` (cascade chain, model v2) and `zd1` (holdout scoring) are done. `zs1a` and `zs1b` (consensus stacking: build train/test consensus features, train the stacked model `s1`, paired comparison against v2 on the locked holdout, predict, publish to `runs/s1/`) are queued or running. The older rows below are kept for history.
+As of 25 Sep about 14:30 IST: **the best file is the stacked model `s1`** (`runs/s1/output/matching_results.tsv`; locked-holdout macro F0.5 0.9617, paired gain over v2 +0.0051 with 95% CI [+0.0048, +0.0055]). Calibration plus expected-F0.5 selection (`stages/expf.py`, model `e1`) was implemented exactly and gave no gain (+0.0001, CI includes 0); do not upload `e1`. Earlier this session: `zc1a`, `zc1b`, `zc1c` (cascade chain, model v2) and `zd1` (holdout scoring) are done. `zs1a` and `zs1b` (consensus stacking: build train/test consensus features, train the stacked model `s1`, paired comparison against v2 on the locked holdout, predict, publish to `runs/s1/`) are queued or running. The older rows below are kept for history.
 
 | Job | State | Notes |
 |---|---|---|

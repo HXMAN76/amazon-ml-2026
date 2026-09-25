@@ -17,6 +17,7 @@ from ber import decision  # noqa: E402
 
 W = os.environ.get("BER_WORK", "work")
 name = sys.argv[1] if len(sys.argv) > 1 else "v0"
+HOLD = len(sys.argv) > 2 and sys.argv[2] == "holdout"  # analyse the locked holdout predictions of a stacked model
 pq = f"{W}/parquet/train/"
 pl.Config.set_tbl_rows(40)
 pl.Config.set_fmt_str_lengths(60)
@@ -25,10 +26,15 @@ BASE = 10_000_000
 
 cfg = json.load(open(f"{W}/models/{name}/config.json"))
 thr = cfg["threshold"]
-oof = pl.read_parquet(f"{W}/models/{name}/oof.parquet")
+oof = pl.read_parquet(f"{W}/models/{name}/" + ("holdout_pred.parquet" if HOLD else "oof.parquet"))
 lab = pl.read_parquet(pq + "labels.parquet").with_columns(
     (pl.col("src").cast(pl.Int64) * BASE + pl.col("other_rid")).alias("pid"), pl.col("s1_rid").alias("q"))
-smp = pl.read_parquet(f"{W}/sample/train_s1.parquet")
+if HOLD:
+    _s1 = pl.read_parquet(pq + "source1.parquet", columns=["rid", "ctry"]).rename({"rid": "q"})
+    _n = lab.group_by("q").len().rename({"len": "n_matches"})
+    smp = oof.select("q").unique().join(_s1, on="q", how="left").join(_n, on="q", how="left").with_columns(pl.col("n_matches").fill_null(0)).rename({"q": "rid"})
+else:
+    smp = pl.read_parquet(f"{W}/sample/train_s1.parquet")
 qs = smp.select("q" if "q" in smp.columns else pl.col("rid").alias("q"), "ctry", "n_matches")
 n_true = qs.select("q", pl.col("n_matches").alias("n_true"))
 s1 = pl.read_parquet(pq + "source1.parquet", columns=["rid", "business_name", "business_address", "ctry"]).rename({"rid": "q"})
