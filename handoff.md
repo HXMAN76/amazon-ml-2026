@@ -217,6 +217,8 @@ PY
 ```
 then unzip into an empty folder, create a venv from `requirements.txt` and run `pytest -q src/tests` before uploading.
 
+- Team **Nooglers**: Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj. Final package `Nooglers_submission.zip`. Contact details are deliberately not stored in the repo.
+
 ## 10. Rules
 
 - No secrets, keys, presigned URLs or login links in git or chat. `aws login` is run by the human in their own terminal.

@@ -36,7 +36,7 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 | Code zip for the portal | `dist/business_entity_resolution_code.zip` (top folder `business_entity_resolution/`): all source under `src/` (`ber`, `scripts`, `tests`), README with run steps, pinned requirements including `anyascii` (ISC), docstrings on every function, unzip and 17 tests verified. Built before the cascade and vectorised-feature changes, so **rebuild from the final code before the last upload** (commands in `handoff.md` section 9) | rebuild at freeze |
 | Methodology document filled from `Documentation_template.md` (template is in S3 `docs/`) | **Not done.** Sections needed: executive summary, problem analysis, solution strategy, blocking (keys, number of candidate pairs, how true matches were kept), matching model (features, model, threshold method), results and error analysis, conclusion, appendix (code structure and entry points) | agent drafts, team reviews |
 | Guidelines say a 1 to 2 page document; the statement says no page limit | Keep the main body about 2 pages and move detail to the appendix | agent |
-| Team name, members, date for the template and zip name | **Missing** | human |
+| Team name, members, date for the template and zip name | Team `Nooglers`, four members recorded; date set at freeze. Draft methodology document at `submission/Documentation_template.md` | agent refreshes at freeze |
 
 ## C. Rules that can disqualify
 
@@ -61,7 +61,7 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 
 ## E. Open items to close now
 
-1. Team name, team member names and submission date for the zip name and the template (human).
+1. Team name Nooglers; members Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj (given; names only, no contact details in the package). Final zip name `Nooglers_submission.zip`; submission date to be set at the final freeze (human).
 2. Portal: v2 uploaded and scored **0.944** on the public leaderboard (25 Sep 1:46 PM IST). Upload only files that beat v2 on the locked holdout by more than the paired bootstrap interval; tell the agent every score (human).
 3. Ask the organisers, if unsure, whether the portal limits upload size (matching 95 MB, candidates 691 MB raw, about 290 MB gzipped) (human).
 4. Draft the methodology document with real numbers (agent): out-of-fold macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, 51,892,359 test candidate pairs, error analysis; update after the holdout run and the final model.
