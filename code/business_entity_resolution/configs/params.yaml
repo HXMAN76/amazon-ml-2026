@@ -82,6 +82,6 @@ dense_all:             # name + address embeddings for EVERY pool record (see st
   ft_temp: 0.05
   max_len: 48
   k: 5                 # S1 neighbours retrieved per pool record
-  k_merge: 3           # of these, pairs that may be added to the candidate shards
-  tau: 0.85            # minimum cosine of an added pair
+  k_merge: 1           # of these, pairs that may be added (top-1 owner candidate of each pool record: zn2 report)
+  tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
   seed: 11
