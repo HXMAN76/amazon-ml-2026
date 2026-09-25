@@ -4,13 +4,13 @@
 **Team Members:** Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj  
 **Submission Date:** 25 September 2026 (draft; refreshed at the final freeze)
 
-> Draft status: numbers below are from the current best pipeline (stacked model, see section 5). Items marked *[update at freeze]* change if a later layer is adopted. The code in `code/business_entity_resolution/` reproduces every number.
+> Draft status (25 Sep 23:20 IST): numbers below are from the current best submitted pipeline `s4` (dense candidates plus stacked model, portal 0.953). A newer pipeline (`s5`, second dense channel) is being evaluated. Items marked *[update at freeze]* change if a later layer is adopted. The code in `code/business_entity_resolution/` reproduces every number.
 
 ---
 
 ## 1. Executive Summary
 
-We solve entity resolution as a cascade: a weighted token-index **blocker** proposes about 30 candidate S2/S3 records per Source 1 entity (recall of true pairs 0.947, versus a ceiling of 0.955 for 100 candidates), an **XGBoost pair model** with 63 string, rarity, competition and script-bridging features scores every pair, and a **second-stage XGBoost** re-scores pairs using consensus evidence (how strongly other S1 entities claim the same record, how many confident records an S1 already has, and whether the candidate's house number agrees with the S1's other confident records). Each S2/S3 record is finally assigned to at most one S1 and a threshold tuned for F0.5 decides the matches. On a locked holdout of 150,000 training S1 entities that no model saw, macro F0.5 is **0.9671** for the current best model (the first pair model alone scored 0.9565, and the first submitted file scored **0.944** on the public leaderboard).
+We solve entity resolution as a cascade: a weighted token-index **blocker** and two **dense retrieval channels** (a multilingual name encoder for non-Latin names, and, in the newest version, an encoder over name plus address) propose about 32 candidate S2/S3 records per Source 1 entity, an **XGBoost pair model** with 65 string, rarity, competition and script-bridging features scores every pair, and a **second-stage XGBoost** re-scores pairs using consensus evidence (how strongly other S1 entities claim the same record, how many confident records an S1 already has, whether the candidate's house number agrees with the S1's other confident records, and TF-IDF similarity). Each S2/S3 record is finally assigned to at most one S1 and a threshold tuned for F0.5 decides the matches. On a locked holdout of 150,000 training S1 entities that no model saw, macro F0.5 is **0.9708** for the current best submitted model (the first pair model alone scored 0.9565). Public leaderboard scores: 0.944 (first pair model), 0.949 (stack without dense channel), **0.953** (stack with dense channel).
 
 ---
 
@@ -33,7 +33,7 @@ Findings from exploratory analysis of the provided data (train 2.21M S1, 5.03M S
 - **Blocking keys used:** each record becomes tagged tokens, in a DuckDB inverted index over the 10.3M S2+S3 records: name words; address words and numbers; 5-character prefixes of long words; composite keys (a rare name word with a rare address word; two rare name words; two rare address words; a house number with a rare address word). A pool record's score for an S1 query is the sum of inverse document frequency over shared tokens; tokens with document frequency above 800 are ignored.
 - **Cascade:** blocking keeps 100 candidates per S1 (pair recall 0.955); a small XGBoost on S1-local blocking features (score, shared tokens, per-token-type scores, rank and gap) keeps the best 30 (recall 0.947, versus 0.942 for the top 30 by score alone).
 - **Candidate pairs generated:** 51,892,359 for the 1,732,544 test S1 (about 30 per S1); reduction ratio 0.99999.
-- **How true matches were not lost:** on training data 99.99% of true pairs share at least one token and 98% share a token with document frequency at most 800, so the recall limit is ranking and truncation, not missing tokens. Remaining misses are mostly non-Latin names with short Latin addresses. *[update at freeze if the fine-tuned name-embedding channel is adopted]*
+- **How true matches were not lost:** on training data 99.99% of true pairs share at least one token and 98% share a token with document frequency at most 800, so the recall limit is ranking and truncation, not missing tokens. Remaining misses are empty-address pool records (33%), typo-scrambled names (24%), non-Latin names (23%) and glued or domain-style names (20%). A fine-tuned multilingual name encoder (`intfloat/multilingual-e5-small`, MIT, 118M parameters, contrastive training on true training pairs only) adds the top-5 non-Latin candidates, raising recall of non-Latin pairs from 75.9% to 85.3%. A second encoder channel over name plus address, retrieving each pool record's nearest S1 records, recovers 66% of the remaining misses for 0.5 extra candidates per S1. *[update at freeze with the final version and the candidate-set size]*
 
 ---
 
@@ -59,7 +59,9 @@ Locked holdout: 150,000 training S1 entities drawn once with a fixed seed from t
 |---|---|---|
 | First-stage pair model with cascade blocking (v2) | 0.9565 [0.9559, 0.9572] | public leaderboard 0.944 |
 | + consensus stacking | 0.9617 | paired gain +0.0051, 95% CI [+0.0048, +0.0055] |
-| + house-number relation and digit-consensus features (current best) | **0.9671** | paired gain over v2 +0.0106, 95% CI [+0.0102, +0.0110] |
+| + house-number relation and digit-consensus features | 0.9671 | paired gain over v2 +0.0106, 95% CI [+0.0102, +0.0110] |
+| + TF-IDF cosine and name/address consensus features (`s3all`) | 0.9677 | public leaderboard 0.949 |
+| + name-only dense channel for non-Latin names, France address rules (first stage 0.9598) and the same stack (`s4`) | **0.9708** | +0.0031 [+0.0028, +0.0034] over `s3all`; public leaderboard **0.953** |
 
 The gap between the holdout and the leaderboard is what we expect from France (no training labels) and the public subset.
 - **Calibration and per-S1 expected-F0.5 selection** were implemented exactly (verified against brute force) and gave no gain (+0.0001, CI includes 0): the probabilities are already calibrated (expected calibration error 0.00013).
