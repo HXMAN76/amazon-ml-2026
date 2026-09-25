@@ -488,12 +488,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tag", default="", help="separate chunk folder stack<tag> (parallel variants)")
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
+    ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
+    ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
     a = ap.parse_args(argv)
     global STACK_DIR
     STACK_DIR = "stack" + a.tag
     prm = dict(config.load()["stack"])
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
+    if a.sub_q:
+        prm["sub_q"] = a.sub_q
+    for kv in filter(None, a.set.split(",")):
+        k, v = kv.split("=")
+        prm[k] = type(prm[k])(v) if k in prm else float(v)
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)
