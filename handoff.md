@@ -145,7 +145,7 @@ Standard job header (copy exactly; `set -ex` makes failures visible):
 ```bash
 set -ex
 source /home/ec2-user/anaconda3/etc/profile.d/conda.sh; conda activate ber
-aws s3 sync s3://sagemaker-us-east-1-567503593043/ber/code /home/ec2-user/SageMaker/ber --delete --exclude 'work/*' --only-show-errors
+aws s3 sync s3://sagemaker-us-east-1-567503593043/ber/code /home/ec2-user/SageMaker/ber --delete --exclude 'work/*' --only-show-errors --exact-timestamps
 cd /home/ec2-user/SageMaker/ber
 export BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work
 # ... your commands, e.g.  python -m ber.stages.block --split test
@@ -168,6 +168,8 @@ aws s3 ls s3://$B/jobs/ --recursive        # what is pending / live / done
 ```
 
 Notes that cost time before:
+- `aws s3 sync` skips a file when its size is unchanged and the timestamps look compatible, so a fix that keeps the file size (for example moving a line) is NOT delivered to the notebook and the job runs the old code. Keep `--exact-timestamps` in the job header (added 26 Sep after a syntax-error fix was silently not delivered).
+- A job that hangs never finishes, so a watcher that only waits for the done log never fires: also watch the age of `jobs*/live/*.log` (a 50-minute hang on 26 Sep 03:10 went unnoticed for that reason).
 - A job name that already has a log in `jobs/done/` is not overwritten until the new run finishes; use a fresh name for reruns (`v0c`, `v0c2`, ...).
 - The runner lists pending jobs once per loop; alphabetical order decides the order (`v0a` < `v0b` < `v0c`).
 - Killing a running job needs a shell **on the notebook** (Jupyter terminal): `pkill -f ber.stages.<name>`; the queue then proceeds.
