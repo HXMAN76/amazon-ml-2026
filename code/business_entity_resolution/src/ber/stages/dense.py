@@ -6,6 +6,7 @@ no word with its Latin S1 name and often has only a short, generic Latin address
 non-Latin pool names with a multilingual sentence encoder (intfloat/multilingual-e5-small, MIT, 118M parameters, weights
 downloaded once; no data is looked up) and adds, for every non-Latin pool record, its nearest S1 names as extra candidates.
 
+  python -m ber.stages.dense finetune                     -> WORK/dense/model_ft (contrastive fine-tuning on true pairs)
   python -m ber.stages.dense embed --split train|test     -> WORK/dense/{split}/{s1,pool}_emb.npy (+ ids)
   python -m ber.stages.dense retrieve --split train|test  -> WORK/dense/{split}/pairs.parquet (q, pid, cos, rank)
   python -m ber.stages.dense report                       -> recall of true non-Latin pairs: current candidates vs dense union
@@ -35,8 +36,10 @@ def encode(texts: list[str], batch: int = 512, max_len: int = 32, device: str = 
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    tok = AutoTokenizer.from_pretrained(MODEL)
-    model = AutoModel.from_pretrained(MODEL).to(device).half().eval()
+    path = config.paths()["work"] / "dense" / "model_ft"
+    src = str(path) if (path / "config.json").exists() else MODEL  # the fine-tuned encoder, when there is one
+    tok = AutoTokenizer.from_pretrained(src)
+    model = AutoModel.from_pretrained(src).to(device).half().eval()
     order = np.argsort([len(t) for t in texts])
     out = np.zeros((len(texts), model.config.hidden_size), dtype=np.float16)
     with torch.no_grad():
@@ -96,6 +99,95 @@ def _texts(split: str) -> tuple[np.ndarray, list[str], np.ndarray, list[str]]:
     return s1["rid"].to_numpy().astype(np.int64), s1["name1"].to_list(), pool["pid"].to_numpy(), pool["name1"].to_list()
 
 
+def dense_train_q(prm: dict) -> np.ndarray:
+    """India S1 used to fine-tune the encoder: drawn from those outside BOTH the stage-1 sample and the locked holdout."""
+    from ber.stages.score_rest import holdout_q
+
+    P = config.paths()
+    s1 = pl.read_parquet(P["parquet"] / "train" / "source1.parquet", columns=["rid", "ctry"]).filter(pl.col("ctry") == "india")
+    smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])
+    ok = np.setdiff1d(s1["rid"].to_numpy().astype(np.int64), np.concatenate([smp["rid"].to_numpy().astype(np.int64), holdout_q().astype(np.int64)]))
+    rng = np.random.default_rng(prm["seed"])
+    return np.sort(rng.choice(ok, size=min(prm["ft_s1"], len(ok)), replace=False))
+
+
+def _pool_texts_by_pid(pq, ids: np.ndarray) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for src in (2, 3):
+        d = pl.read_parquet(pq / f"source{src}.parquet", columns=["rid", "name1"])
+        for rid, nm in zip(d["rid"].to_list(), d["name1"].to_list()):
+            out[src * PID_BASE + rid] = nm
+    return {int(i): out[int(i)] for i in ids}
+
+
+def finetune() -> None:
+    """Supervised contrastive fine-tuning of the encoder on true (S1 name, non-Latin pool name) pairs of the dense-train S1.
+
+    Symmetric InfoNCE with in-batch negatives, one random true pair per S1 and epoch (so a batch never holds two positives of
+    the same S1). Weights are saved under WORK/dense/model_ft and picked up by `encode`.
+    """
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+
+    P = config.paths()
+    prm = config.load()["dense"]
+    t0 = time.time()
+    pq = P["parquet"] / "train"
+    D = dense_train_q(prm)
+    np.save(P["work"] / "dense" / "train_q.npy", D)
+    _, _, p_ids, _ = _texts("train")
+    lab = pl.read_parquet(pq / "labels.parquet").with_columns((pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"),
+                                                              pl.col("s1_rid").alias("q")).select("q", "pid")
+    pairs = lab.join(pl.DataFrame({"q": D}), on="q", how="semi").join(pl.DataFrame({"pid": p_ids}), on="pid", how="semi")
+    s1n = dict(zip(*[pl.read_parquet(pq / "source1.parquet", columns=["rid", "name1"])[c].to_list() for c in ("rid", "name1")]))
+    ptxt = _pool_texts_by_pid(pq, pairs["pid"].to_numpy())
+    groups = pairs.group_by("q").agg(pl.col("pid")).to_dict(as_series=False)
+    qs, plist = groups["q"], groups["pid"]
+    print(f"fine-tuning on {len(qs)} S1 with {pairs.height} true non-Latin pairs", flush=True)
+
+    dev = "cuda"
+    tok = AutoTokenizer.from_pretrained(MODEL)
+    model = AutoModel.from_pretrained(MODEL).to(dev)
+    opt = torch.optim.AdamW(model.parameters(), lr=prm["ft_lr"], weight_decay=0.01)
+    bs, epochs = prm["ft_batch"], prm["ft_epochs"]
+    steps = epochs * (len(qs) // bs)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / (0.05 * steps)) * max(0.0, 1 - i / steps))
+    scaler = torch.amp.GradScaler()
+    rng = np.random.default_rng(0)
+
+    def emb(texts):
+        enc = tok(["query: " + t for t in texts], padding=True, truncation=True, max_length=32, return_tensors="pt").to(dev)
+        with torch.autocast("cuda", dtype=torch.float16):
+            h = model(**enc).last_hidden_state
+        m = enc["attention_mask"].unsqueeze(-1).to(h.dtype)
+        return torch.nn.functional.normalize(((h * m).sum(1) / m.sum(1)).float(), dim=-1)
+
+    model.train()
+    step = 0
+    for ep in range(epochs):
+        order = rng.permutation(len(qs))
+        for a in range(0, len(order) - bs + 1, bs):
+            b = order[a: a + bs]
+            ta = [s1n[int(qs[i])] for i in b]
+            tb = [ptxt[int(plist[i][rng.integers(len(plist[i]))])] for i in b]
+            ea, eb = emb(ta), emb(tb)
+            logits = ea @ eb.T / prm["ft_temp"]
+            lab_t = torch.arange(len(b), device=dev)
+            loss = (torch.nn.functional.cross_entropy(logits, lab_t) + torch.nn.functional.cross_entropy(logits.T, lab_t)) / 2
+            opt.zero_grad()
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
+            sched.step()
+            step += 1
+            if step % 100 == 0:
+                print(f"epoch {ep} step {step}/{steps} loss {loss.item():.4f} ({time.time() - t0:.0f}s)", flush=True)
+    out = P["work"] / "dense" / "model_ft"
+    model.save_pretrained(out)
+    tok.save_pretrained(out)
+    print(f"saved {out} after {time.time() - t0:.0f}s", flush=True)
+
+
 def embed(split: str) -> None:
     """Encode S1 and pool names and cache them under WORK/dense/{split}."""
     P = config.paths()
@@ -131,7 +223,11 @@ def report(prm: dict | None = None) -> dict:
         (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"), pl.col("s1_rid").alias("q")).select("q", "pid")
     _, _, p_ids, _ = _texts("train")
     truth = lab.join(pl.DataFrame({"pid": p_ids}), on="pid", how="semi")  # true pairs whose pool record is non-Latin (India)
+    from ber.stages.score_rest import holdout_q
+
+    truth = truth.join(pl.DataFrame({"q": holdout_q()}), on="q", how="semi")  # only S1 the encoder never saw (locked holdout)
     cand = pl.concat([pl.read_parquet(f, columns=["q", "pid"]) for f in sorted((P["work"] / "blocks" / "train").glob("cand_*.parquet"))])
+    cand = cand.join(pl.DataFrame({"q": holdout_q()}), on="q", how="semi")
     inc = truth.join(cand.with_columns(pl.lit(1).alias("c")), on=["q", "pid"], how="left")["c"].is_not_null()
     rep = {"true_nonlatin_pairs": truth.height, "recall_current_candidates": float(inc.mean())}
     for k in (1, 3, 5, 10, 20):
@@ -178,10 +274,10 @@ def merge(split: str) -> None:
 def main(argv: list[str] | None = None) -> None:
     """CLI: embed | retrieve | report | merge (see module docstring)."""
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["embed", "retrieve", "report", "merge"])
+    ap.add_argument("cmd", choices=["finetune", "embed", "retrieve", "report", "merge"])
     ap.add_argument("--split", choices=["train", "test"], default="train")
     a = ap.parse_args(argv)
-    {"embed": lambda: embed(a.split), "retrieve": lambda: retrieve(a.split), "report": report, "merge": lambda: merge(a.split)}[a.cmd]()
+    {"finetune": finetune, "embed": lambda: embed(a.split), "retrieve": lambda: retrieve(a.split), "report": report, "merge": lambda: merge(a.split)}[a.cmd]()
 
 
 if __name__ == "__main__":

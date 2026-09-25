@@ -68,3 +68,9 @@ expf:                  # calibration and per-S1 expected-F0.5 selection on the s
 dense:                 # multilingual name embeddings for non-Latin pool records (see stages/dense.py)
   k: 10                # nearest S1 names retrieved per non-Latin pool record (report)
   k_merge: 5           # of these, the pairs added to the candidate shards
+  ft_s1: 300000        # India S1 used to fine-tune the encoder (outside the stage-1 sample and the locked holdout)
+  ft_epochs: 3
+  ft_batch: 512
+  ft_lr: 0.00003
+  ft_temp: 0.05
+  seed: 5
