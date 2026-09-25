@@ -16,3 +16,6 @@ transformers==4.57.1
 sentence-transformers==5.1.1
 datasets==3.6.0
 accelerate==1.6.0
+# v4 stage 1 (dense blocking, ARCHITECTURE_v4.md): intfloat/multilingual-e5-small, MIT, ~118M params,
+# offline, fine-tuned only on the provided train pairs. faiss (MIT) for nearest-neighbor retrieval.
+faiss-cpu==1.9.0
