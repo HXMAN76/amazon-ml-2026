@@ -60,6 +60,7 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `v10`, `s23` | test-like universe (21% of train S1 dropped, 41% of the pool unowned as on the test) | first stage 0.97721 (`v7` 0.97796), stack **0.98955** (-0.0007 against `s17`); the holdout itself sits in the test-like universe, so extra orphan distractors cost at most about 0.0007: distractor density alone is not the portal gap; portal effect unknown | `runs/s23` (`work10` on the second notebook) |
 | `s19` (`v8`) | joint name counts over train and test in the first stage | 0.99026, +0.00001 against `s17` (no gain) | second notebook |
 | `s25` | `s17` plus address multiplicity features | 0.99028, +0.00004 (no gain); France over-claiming unchanged (64.2% of the pool claimed, 3.53 matches per S1, 205 S1 above 5 S2): address sharing is not the France cause | `runs/s25` |
+| `s20` | e5-large (560M) cross-encoder as `xs`, e5-base as `xs2`, band pairs | 0.99030, +0.00005 against `s17` (no gain: a bigger cross-encoder is not the lever) | second notebook `work/output/s20` |
 | analysis `ra1` to `ra5` | recall attrition, name ambiguity, ambiguity profile, post-stratification | see `research.md` section 23 | `jobs2/done/ra*.log` |
 
 ### 6.2 Running or queued now (26 Sep 13:00)
@@ -69,7 +70,6 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `s18` | small cross-encoder on the base model's 966k pairs: size or data? | main, lane 2, GPU 0 (`ru2b`, then `ru3`) | decides whether to go bigger |
 | `s17f85`, `f90`, `f95`, `g85` | France and global thresholds on `s17` | main, lane 2 (`rv9`); `s17f85` ready | France behaviour on the portal |
 | `v8`, `s19` | joint name counts only | second notebook, lane B, GPU 0 | shift check |
-| `s20` | `multilingual-e5-large` (560M) cross-encoder, 1 epoch | second notebook, lane B2, GPU 1 | +0.0005 to +0.001 |
 | `s22` | cross-encoder on EVERY shortlisted pair (catch confident look-alike false positives) | second notebook, lane B3, GPUs 2 and 3 | +0.001 to +0.002 |
 | `v10`, `s23` | **test-like universe**: drop 21% of the train S1 (outside the sample and holdout) before the competition and count features so the training data has the test's S1 count and distractor rate (`pairs.drop_frac`); separate work directory `work10` | second notebook, lane B4, GPU 0 (`rq0` to `rq4`) | calibration for test conditions; portal gap |
 | `s24` | **third cross-encoder from another family**: `Qwen/Qwen3-0.6B` (Apache-2.0, 0.6B) with a one-logit head, fitted on the same 966k pairs as the e5-base model (one epoch, bf16, gradient checkpointing, prompt "Same business? A: ... B: ..." closed by `<|im_end|>`), scored on the v7 band pairs as feature `xs3`; stack `s24` = `s22` + `xs3` | second notebook, lane B3, GPU 2 (train, about 4.6 h from 15:20 IST), then GPUs 2 and 3 (scoring, about 2.5 h), then the stack build (`rn1`, `rn2`, `rn3`) | +0.0003 to +0.0008 over `s22`; ready about 00:00 IST |
