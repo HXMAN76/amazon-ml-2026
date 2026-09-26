@@ -9,7 +9,8 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   legalhouse:pmax       legal-form conflict and a different house number, p < pmax
   thr:t                 p < t
   thrp:t                p < t unless the pair is protected: equal names after removing spaced legal forms, or a pool name of at most 3 letters that is a subsequence of the S1's initials
-  thrpn:t               thrp that also spares one-word swaps into France's noise words (fils, groupe, services, developpement)
+  thrpn:t               thrp that also spares France's noise-word copies: one word swapped into, or noise words added (fils, groupe, services,
+                        developpement, "and associes"), with at most one word dropped
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
@@ -18,7 +19,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   typeins:pmax[:R]      the pool name is the S1's core name plus one inserted word that is a type word (the typeswap vocabulary), p < pmax
   xfr:DIR:t[:pmax]      the France-aware cross-encoder score in WORK/DIR/test_xs.parquet (stages/xenc_fr.py) is below t, p < pmax (default 1.01)
   restore:KINDS:pmin    not a rule: add back shortlisted France pairs below the decision whose pool record nobody owns, whose name relation is one of KINDS
-                        (exact, spelled_legal, initials, glued, noise_swap; joined by +; france_recall.py), at the S1's address (same house number,
+                        (exact, spelled_legal, initials, glued, noise_swap, noise_extra; joined by +; france_recall.py), at the S1's address (same house number,
                         address similarity >= 90), p >= pmin, within the S1's free slots (5 S2 / 6 S3), best p first
   protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrpn, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
                         metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
@@ -137,8 +138,11 @@ def main() -> None:
                 own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok")).drop("_ini")
                 own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
             ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
-            own = own.with_columns(((ta.list.set_difference(tb).list.len() == 1) & (tb.list.set_difference(ta).list.len() == 1)
-                                    & tb.list.set_difference(ta).list.first().is_in(NOISE_FR)).alias("noise_swap"))
+            extra = tb.list.set_difference(ta)
+            own = own.with_columns((((ta.list.set_difference(tb).list.len() == 1) & (extra.list.len() == 1) & extra.list.first().is_in(NOISE_FR))
+                                    | ((ta.list.set_difference(tb).list.len() <= 1) & (extra.list.len() >= 1)
+                                       & extra.list.eval(pl.element().is_in(NOISE_FR + ["and", "et", "associes"])).list.all()
+                                       & extra.list.eval(pl.element().is_in(NOISE_FR + ["associes"])).list.any())).alias("noise_swap"))
             c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")

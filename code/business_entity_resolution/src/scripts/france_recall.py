@@ -2,7 +2,7 @@
 The generator gives an S1 about 3.46 matches (train); the model and the France rules keep about 3.2 to 3.3 per France S1, and 12% of France's
 unassigned pool records have a best probability of 0.1 to 0.72 (US 3%). This looks at the shortlisted pairs whose pool record nobody owns (a restore
 candidate: adding it cannot take a record from another S1) by the kind of name relation a true France copy shows (exact core, equal after spaced
-legal forms, initials of the S1's core, glued core, a swap into France's noise words) and by the address evidence (same house number, address
+legal forms, initials of the S1's core, glued core, a swap into France's noise words, noise words added with at most one word dropped) and by the address evidence (same house number, address
 similarity >= 90). For each cell: pairs, probability, the France-aware cross-encoder score if XDIR is given, and the S1's free slots. The same
 cells on the labelled holdout (US and India) give the true share of such restores where labels exist."""
 
@@ -18,6 +18,7 @@ from word_swap import strip_spaced
 
 PID_BASE = 10_000_000
 NOISE_FR = ["fils", "groupe", "services", "developpement"]
+NOISE_GLUE = ["and", "et", "associes"]  # joiners of an injected noise suffix ("and fils", "and associes")
 
 
 def feats(P, split: str, keys: pl.DataFrame) -> pl.DataFrame:
@@ -52,6 +53,9 @@ def restore_candidates(pp: pl.DataFrame, thr: float, s1: pl.DataFrame, pool: pl.
             .when(a.str.replace_all(" ", "") == b.str.replace_all(" ", "")).then(pl.lit("glued"))
             .when((ta.list.set_difference(tb).list.len() == 1) & (tb.list.set_difference(ta).list.len() == 1)
                   & tb.list.set_difference(ta).list.first().is_in(NOISE_FR)).then(pl.lit("noise_swap"))
+            .when((ta.list.set_difference(tb).list.len() <= 1) & (tb.list.set_difference(ta).list.len() >= 1)
+                  & tb.list.set_difference(ta).list.eval(pl.element().is_in(NOISE_FR + NOISE_GLUE)).list.all()
+                  & tb.list.set_difference(ta).list.eval(pl.element().is_in(NOISE_FR + ["associes"])).list.any()).then(pl.lit("noise_extra"))
             .otherwise(pl.lit("other")))
     return c.with_columns(kind.alias("kind"), pl.when(pl.col("src") == 2).then(5).otherwise(6).alias("cap")).with_columns((pl.col("used") < pl.col("cap")).alias("slot_free"))
 
