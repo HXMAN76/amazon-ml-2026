@@ -7,6 +7,9 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
                         shared with another S1 (a multi-tenant building)
   legal:pmax            legal-form conflict (both sides name a different form), p < pmax
   thr:t                 p < t
+  typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
+                        the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
+                        swaps from generic suffix words (services, groupe, france); p < pmax
   tiny:pmax             pool name of at most 3 letters that is not a subsequence of the initials of the S1's core name, p < pmax
 Prints the number of pairs each rule drops and the total, then writes WORK/output/NEWNAME like reemit.py."""
 
@@ -42,7 +45,7 @@ def main() -> None:
     pq = P["parquet"] / "test"
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1", "addr", "ctry"]).rename({"rid": "q", "core1": "a_core"}).with_columns(pl.col("q").cast(pl.Int64))
     s1 = s1.join(s1.group_by("addr").len().rename({"len": "addr_n"}), on="addr", how="left").drop("addr")
-    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core"})
+    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid"), pl.lit(s).alias("src")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core"})
     df = tok_df(s1.rename({"a_core": "core1"}))
     pp = pl.read_parquet(P["work"] / "output" / a.name / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     own = decision.assign_exclusive(pp).filter(pl.col("p") >= thr).join(s1, on="q", how="left").join(pool, on="pid", how="left")
@@ -53,6 +56,20 @@ def main() -> None:
     own = flag(own.join(feat, on=["q", "pid"], how="left"), df).with_columns((pl.col("a_core") == pl.col("b_core")).alias("core_eq"))
     exact = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q").len().rename({"len": "n_exact"})
     own = own.join(exact, on="q", how="left").with_columns(pl.col("n_exact").fill_null(0))
+    if any(s.startswith("typeswap") for s in a.rules.split(",")):
+        exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
+        slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
+        nA, nB = slots.filter(pl.col("k") >= 3).height, slots.filter(pl.col("k") == 0).height
+        sw = own.filter(pl.col("swap")).join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
+        sw = sw.with_columns(pl.col("a_core").str.split(" ").list.unique().alias("ta"), pl.col("b_core").str.split(" ").list.unique().alias("tb"))
+        sw = sw.with_columns(pl.col("tb").list.set_difference(pl.col("ta")).list.first().alias("xb"))
+        ra = sw.filter(pl.col("k") >= 3).group_by("xb").len().rename({"len": "nA"})
+        rb = sw.filter(pl.col("k") == 0).group_by("xb").len().rename({"len": "nB"})
+        rr = ra.join(rb, on="xb", how="full", coalesce=True).with_columns(pl.col("nA").fill_null(0), pl.col("nB").fill_null(0)).with_columns(((pl.col("nA") / nA) / (pl.col("nB") / nB + 1e-12)).alias("ratio"))
+        type_words = {}
+        rr_all = rr
+        own = own.with_columns(pl.col("b_core").alias("_b"))
+        print(f"typeswap: slots A {nA}, B {nB}; words with ratio >= 0.75 and at least 100 pairs: {rr.filter((pl.col('ratio') >= 0.75) & (pl.col('nA') + pl.col('nB') >= 100)).height}", flush=True)
     fired = []
     for spec in a.rules.split(","):
         k = spec.split(":")
@@ -68,6 +85,12 @@ def main() -> None:
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "thr":
             c = pl.col("p") < float(k[1])
+        elif k[0] == "typeswap":
+            rmin = float(k[2]) if len(k) > 2 else 0.75
+            words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()
+            own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
+            own = own.with_columns(pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().alias("_xb"))
+            c = pl.col("swap") & pl.col("_xb").is_in(words) & (pl.col("p") < float(k[1]))
         elif k[0] == "tiny":
             tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ") & (pl.col("p") < float(k[1]))).select("q", "pid", "a_core", "b_core")
             bad = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if not is_subseq(bc, "".join(t[0] for t in ac.split()))]

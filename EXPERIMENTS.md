@@ -150,3 +150,7 @@ Files `runs/<name>/output/matching_results.tsv`; a portal difference to `s22sx` 
 | `s22e` | tiny pool names that are not the initials of the S1 name, p < 0.9999 | see `runs/s22e` log |
 Order suggestion: `s22a`, `s22c`, `s22d`, then the combination of what won, then the final file. Realistic total gain of these categories: +0.001 to +0.003 (portal 0.9835 to 0.9855); +0.005 needs categories with more than 60% wrong pairs.
 
+### 10.2 Plan for the five slots of 27 Sep (revised after `research.md` section 26; portal `s17` 0.980502, `s22sx` 0.982477)
+Files (all on `s22`, `runs/<name>/output/matching_results.tsv`): `s22t1` = rule `typeswap` only (24.5k pairs, decoy share about 80%, expected about +0.0004 over `sx`), `s22t2` = `typeswap` + France threshold 0.985, `s22f1` = all swaps (53.5k), `s22f2`/`s22f3`/`s22f4` = all swaps + threshold 0.985 / 0.97 / 0.995. Shift-model tests (whole files, no France rule): `s23` (test-like universe), `s21` (shift-robust first stage).
+1. `s22t1`. 2. `s22t2` (or `s22f1` if `t1` disappoints). 3. `s23` alone: separates world A from world B (see section 26): compare with `s17` 0.980502; if it gains, rebuild the France rules on `s23` (`france_variants.py` needs `output/s23/pair_p.parquet` in `work10`). 4. Best France rule on the best base. 5. Final validated file (the last upload must be the best one if the portal counts the last).
+
