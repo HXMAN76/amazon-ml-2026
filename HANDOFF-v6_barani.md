@@ -1,6 +1,6 @@
 # Handoff: v6 (`bs` line) on the barani GPU notebook
 
-Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 05:20 IST**.
+Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 06:45 IST**.
 Window closes Sun 27 Sep 23:59 IST; planned freeze **Sun 12:00 IST**.
 
 ## 1. Goal and why
@@ -8,7 +8,9 @@ Window closes Sun 27 Sep 23:59 IST; planned freeze **Sun 12:00 IST**.
   the holdout every time (`s4` 0.9708 on the holdout, 0.953 on the portal).
 - Two levers, both needed:
   - raise the holdout to about 0.988 to 0.991 (stronger encoder, cross-encoder, set model);
-  - shrink the holdout-to-portal gap to about 0.008 (train the first stage and the stack at the test's pool density).
+  - shrink the holdout-to-portal gap to about 0.008. Density check (26 Sep): the test's extra ownerless records are look-alike
+    **decoys**, not orphans, so the lever is telling decoys apart (cross-encoder, set model, decoy features) plus a threshold
+    tuned for the test's decoy density (`test_weighted.py`). Thinning was tried and removed.
 - The best possible holdout on today's candidates is 0.9953, so the matcher alone cannot reach 0.98 on the portal.
 
 ## 2. Architecture (changes against `s6` in bold)
@@ -20,7 +22,7 @@ first XGBoost       67 features + **dall2_cos / dall2_rank**                    
 shortlist           best 10 per S1 by p1 (p1 >= 0.005)
 **cross-encoder**   gte-multilingual-reranker-base on 0.05 <= p1 <= 0.95; input "S1 [SIB] its most confident other
                     record" vs candidate; synthetic look-alikes as negatives -> feature xs
-stack               XGBoost + xs, **trained at test density (--thin)**                             (bs_s6 -> **bs_w2**)
+stack               XGBoost + xs + **decoy edit features + dall2 columns**                          (bs_s6 -> **bs_w2**)
 **set model**       3-layer transformer over each S1's shortlist, stacked on the stack's OOF p -> blended with the stack
 decision            one record -> one S1, threshold tuned out of fold, **cap 5 S2 + 6 S3 per S1**   (**bs_final**)
 ```
@@ -28,21 +30,21 @@ Evaluation:
 - Locked holdout: 150k S1, `split.holdout_q`. Every step must beat the previous one on a paired bootstrap interval.
 - **Final holdout** (`split.final_q`, 100k S1): never trained on and never looked at. Checked once, at the freeze, with
   `src/scripts/final_check.py`, to catch overfitting to the locked holdout after many versions.
-- Test-density thinning (`split.thin_q`, params `thin.frac`): drops a fraction of train S1 (never holdout, final or sample
-  S1), so their true records become ownerless, as the test's extra pool records are. `src/scripts/density_check.py` measures
-  whether the extra test records really are such orphans, and how many.
+- `src/scripts/density_check.py`: are the test's extra ownerless records orphans or look-alike decoys? (Answer: decoys.)
+- `src/scripts/test_weighted.py MODEL [--apply]`: holdout score post-stratified to the test's mix of country x look-alike
+  density (label-free cells), and the threshold re-tuned for that mix on out-of-fold S1 only; `--apply` writes `MODELtw`.
 
 ## 3. Code map (all in `code/business_entity_resolution/`)
 | Piece | Files |
 |---|---|
 | State names | `src/ber/text.py`, `stages/block.py` (INDEX_VERSION 5) |
 | Cap | `src/ber/decision.py` (`cap_per_source`), `stages/stack.py` (kept only if not worse on the holdout), `stages/predict.py` |
-| Final holdout, thinning | `src/ber/split.py` (`final_q`, `unscored_q`, `thin_q`), `stages/pairs.py --thin`, `stages/stack.py --thin` |
+| Final holdout | `src/ber/split.py` (`final_q`, `unscored_q`); stack and set model never train on it |
 | Second encoder | `stages/dense_all.py --tag 2` (params `dense_all2`), `src/ber/decoys.py` |
 | Cross-encoder | `stages/xenc.py` (params `xenc`), `stages/stack.py --xenc` |
 | Set model and blend | `stages/setmodel.py` (`train`, `blend`) |
-| Checks | `src/scripts/density_check.py`, `src/scripts/final_check.py` |
-| Pipeline targets | `Makefile`: `bs_prepare bs_block bs_dense bs_dense_all bs_first bs_stack` (baseline), then `bs_density bs_thin_stack bs_encoder bs_xenc bs_final_stack bs_set` (`THIN=--thin` from the environment) |
+| Checks | `src/scripts/density_check.py`, `src/scripts/test_weighted.py`, `src/scripts/final_check.py` |
+| Pipeline targets | `Makefile`: `bs_prepare bs_block bs_dense bs_dense_all bs_first bs_stack` (baseline), then `bs_density bs_tw bs_encoder bs_xenc bs_final_stack bs_set` |
 | Tests | `src/tests/test_v6.py`, `test_decoys.py` (run with `OMP_NUM_THREADS=1` on a Mac: torch and XGBoost clash there) |
 
 ## 4. AWS (account 645311222213, profile `barani`, us-east-1)
@@ -64,25 +66,27 @@ Evaluation:
   presigned URLs or Jupyter links in chat or git.
 
 ## 5. Status and results
-| Job | What | Status / result |
+| Job | What | Result |
 |---|---|---|
-| `a1_base` | baseline rebuild, stages 1 to 2 | prepare 6 min, block 25 min (test 170.7M raw pairs, train 216.6M); pruner top-30 pair recall **0.9479** (team 0.9471); then failed at `bs_dense`: `WORK/dense/` missing on a fresh box (fixed, commit 7d11e81) |
-| `a2_density` | density check | failed harmlessly (ran before the baseline existed); re-queued as `a2b_density` |
-| `a1b_resume` | baseline stages 3 to 6 | **running**. Name encoder fine-tuned in 104 s (91,969 S1, same as the team). Name+address encoder: 724 s fine-tune; holdout pairs missed by token search 23,865 (team 24,230), recovered 15,649 (team 16,025); added 1.44M test / 1.07M train pairs. First stage `bs_v5` **OOF F0.5 0.9763** (team `v5` 0.9757). Stack `bs_s6` expected about 06:30 IST |
-| `a2b_density` | density check + stack at test density (`bs_s6t`) | queued |
-| `b1_encoder`, `c1_xenc`, `d1_stack` | second encoder + `bs_w1`; cross-encoder; stack `bs_w2` + set model + blend `bs_final` | job files ready, queued after the density result (`THIN` set from it) |
+| `a1_base` + `a1b_resume` | baseline rebuild of `s6` | **`bs_s6` locked holdout 0.98299** (team `s6` 0.9831): reproduced. First stage `bs_v5` holdout 0.9763 [0.9758, 0.9767] (team 0.9757); pruner top-30 recall 0.9479 (team 0.9471); dense_all recovers 15,649 of 23,865 missed pairs. Stack gain over first stage +0.0067 [0.0064, 0.0071]. Cap 5+6: no change (0.98299 both). Official validator PASS. 134 min. One fix on the way (`WORK/dense` missing on a fresh box). |
+| `a2b_density` | orphans or decoys? | pool per S1 train 4.68, test 5.75; ownerless per S1 train 1.22, test unclaimed 2.32. Nearest-S1 cosine: train decoys 0.670, simulated orphans 0.562, **test unclaimed 0.671 -> orphan share 0: the extra test records are decoys**. Thinned stack `bs_s6t` 0.98294 (no change). Thinning removed. |
+| `b1_encoder` | dense_all2 (e5-small, 900k S1, 3 hard negatives + 1 synthetic decoy) + first stage `bs_w1` | running (7,030 fine-tuning steps, then embed / retrieve / features) |
+| `b2_tw` | test-weighted holdout and threshold for `bs_s6` | queued |
+| `c1_xenc`, `d1_stack` | cross-encoder; stack `bs_w2` (+ xs, decoy features, dall2 columns) + set model + blend `bs_final` | queued |
+
+Local checks: `pytest` 34 pass; a CPU smoke run of the whole v6 chain on synthetic data (scratch script, not in the repo) found
+and fixed a set-model bug (final-holdout rows were dropped).
 
 Expected (estimates, to be replaced by measurements):
 
 | Model | Locked holdout | Portal |
 |---|---|---|
-| `bs_s6` | about 0.983 | about 0.966 to 0.971 |
+| `bs_s6` | 0.98299 (measured) | about 0.966 to 0.971 |
 | `bs_final` | about 0.988 to 0.991 | about 0.973 to 0.982 (central 0.978) |
 
 ## 6. Next steps
-1. Read `bs_s6`'s holdout: it must reproduce about 0.983; otherwise fix the rebuild first.
-2. Read `density_check`: the orphan share and the thinning fraction. Set `THIN` for `b1` and `d1`, and `thin.frac` in params
-   if the measured fraction differs from 0.19.
+1. Done: `bs_s6` reproduces `s6` (0.98299).
+2. Read `b2_tw`: the test-weighted estimate of `bs_s6` and whether a re-tuned threshold helps under the test's decoy density.
 3. Queue `b1_encoder`, then `c1_xenc`, then `d1_stack`. After each one: paired result on the holdout, and an error analysis
    (`src/scripts/error_analysis.py`) to pick the next change.
 4. Backlog after `d1`, by expected gain:
