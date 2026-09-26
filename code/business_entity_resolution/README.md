@@ -49,6 +49,17 @@ businesses share a building, and the region in an address is often replaced by t
 - **A stricter probability cut-off for France** (0.985): the model's probabilities are over-confident there.
 - **Capacities**: at most 5 S2 and 6 S3 matches per S1 in every country.
 
+Version 8 of the decoding (rules `thrpn`, `protect`, `restore`; `src/scripts/france_recall.py`) keeps France's own kinds of true copies, which the
+training data never shows and the model therefore scores low:
+- **Protected cut-off `thrpn`** (0.995 instead of the plain 0.985): the cut-off drops only pairs that are not equal after spaced legal forms
+  (`s a r l`), not initials of the S1's name, and not a noise-word copy (a word swapped into or added from `fils`, `groupe`, `services`,
+  `developpement`, `and associes`: the words the true France copies inject, found without labels from their replacement rates and slot occupancy).
+- **`protect`**: an S1 that the cut-off would leave with an empty list keeps its best pair (p >= 0.9); the metric is per S1, and an S1 that has a
+  true match scores 0 with an empty list.
+- **`restore`**: shortlisted pairs below the decision whose pool record no S1 owns are added when they are one of those copy kinds at the S1's
+  own address (same house number, address similarity >= 90), within the S1's free slots. Exact names are not restored (on the labelled holdout
+  such restores are 0.4% true).
+
 ## Reproduce
 
 Requirements: two Python 3.12 environments (`requirements.txt`; and `requirements-gpu.txt` with a CUDA build of torch for the dense

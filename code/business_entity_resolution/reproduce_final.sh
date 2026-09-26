@@ -74,6 +74,8 @@ py ber.stages.stack predict --name s22
 #    (learned vocabulary, from slot occupancy), a stricter cut-off for France's over-confident probabilities, and the training maximum of 5 S2 and 6 S3 matches per S1.
 #    The candidate file is unchanged; only matches are removed.
 python src/scripts/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.985" --cap
+#    Version 8 of the decoding (README "Decoding (France)"), on the chosen stacked model BASE (s22, or s27 / s24 when those are built):
+#    python src/scripts/france_variants.py $BASE final --rules "typeswap:1.01,thrpn:0.995,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
 
 # 10. checks (the official validator is also run by `emit` when work/official/validate_submission.py exists)
 python src/scripts/check_submission.py "$BER_WORK/output/s22final" "$BER_DATA/test"
