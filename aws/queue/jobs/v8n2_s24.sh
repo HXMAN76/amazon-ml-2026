@@ -1,4 +1,4 @@
-# v8 (GPU lane jobs, right after the Qwen scoring): stack s24 = s22's recipe + the Qwen3-0.6B score as xs3, trained on the same 1.5M S1, paired
+# v8 (GPU lane jobs, right after the Qwen scoring retry): stack s24 = s22's recipe + the Qwen3-0.6B score as xs3, trained on the same 1.5M S1, paired
 # holdout tests against s22 and s27, then the France recipes on s24.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
 export BER_WORK=$SM/work_t
