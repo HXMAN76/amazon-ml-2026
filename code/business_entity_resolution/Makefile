@@ -85,9 +85,13 @@ bs_stack:
 	$(PY) -m ber.stages.stack predict --name $(BS_S)
 
 # v6 steps after the baseline.
-.PHONY: bs_density bs_encoder bs_xenc bs_final_stack bs_set
+.PHONY: bs_density bs_tw bs_errors bs_encoder bs_xenc bs_final_stack bs_set
 bs_density:
 	$(PY) src/scripts/density_check.py $(BS_S)
+bs_tw:  # holdout score and threshold re-weighted to the test's country and look-alike mix
+	$(PY) src/scripts/test_weighted.py $(BS_S)
+bs_errors:  # where the final stack still loses on the locked holdout (blocking vs matcher, error examples)
+	$(PY) src/scripts/error_analysis.py bs_w2 holdout
 bs_encoder:  # second name+address channel (dense_all2) and the first stage on it
 	$(PY) -m ber.stages.dense_all finetune --tag 2
 	for s in train test; do $(PY) -m ber.stages.dense_all embed --split $$s --tag 2 && $(PY) -m ber.stages.dense_all retrieve --split $$s --tag 2 || exit 1; done
