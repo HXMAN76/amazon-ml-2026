@@ -10,6 +10,8 @@ every pool record its nearest S1 records (a pool record has at most one owner, s
   python -m ber.stages.dense_all retrieve --split train|test    -> WORK/dense_all/{split}/pairs.parquet (q, pid, cos, rank)
   python -m ber.stages.dense_all report                         -> holdout recall gain versus number of pairs added, per (k, tau)
   python -m ber.stages.dense_all merge --split train|test       -> adds pairs to the candidate shards, feature columns dall_cos, dall_rank
+  --tag 2 on every command: the second, stronger channel (params section dense_all2, folder dense_all2, columns dall2_*), fine-tuned on
+  S1 no other encoder saw, with several hard negatives and synthetic look-alike decoys (ber.decoys) per S1.
 
 Needs torch and transformers (the `pytorch` conda env) except for `report` and `merge`.
 """
@@ -29,10 +31,19 @@ from ber.stages.dense import MODEL, topk_pairs
 from ber.tracking import log_stage
 
 TEXT = (pl.col("name1") + " | " + pl.col("addr")).alias("text")
+TAG = ""  # "" = the first channel (dense_all); "2" = dense_all2 (set by --tag)
+
+
+def _prm() -> dict:
+    return config.load()["dense_all" + TAG]
+
+
+def _dir():
+    return config.paths()["work"] / ("dense_all" + TAG)
 
 
 def model_dir():
-    return config.paths()["work"] / "dense_all" / "model_ft"
+    return _dir() / "model_ft"
 
 
 def _load_texts(split: str) -> tuple[np.ndarray, list[str], np.ndarray, list[str]]:
@@ -45,14 +56,15 @@ def _load_texts(split: str) -> tuple[np.ndarray, list[str], np.ndarray, list[str
     return s1["rid"].to_numpy().astype(np.int64), s1["text"].to_list(), pool["pid"].to_numpy().astype(np.int64), pool["text"].to_list()
 
 
-def dense_all_train_q(prm: dict) -> np.ndarray:
-    """S1 used to fine-tune: outside the stage-1 sample and the locked holdout, with at least one true match."""
+def dense_all_train_q(prm: dict, exclude: tuple[np.ndarray, ...] = ()) -> np.ndarray:
+    """S1 used to fine-tune: outside the stage-1 sample, the locked holdout and `exclude`, with at least one true match."""
     from ber.split import holdout_q
 
     P = config.paths()
     lab = pl.read_parquet(P["parquet"] / "train" / "labels.parquet", columns=["s1_rid"]).unique()
     smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])
-    ok = np.setdiff1d(lab["s1_rid"].to_numpy().astype(np.int64), np.concatenate([smp["rid"].to_numpy().astype(np.int64), holdout_q().astype(np.int64)]))
+    ok = np.setdiff1d(lab["s1_rid"].to_numpy().astype(np.int64),
+                      np.concatenate([smp["rid"].to_numpy().astype(np.int64), holdout_q().astype(np.int64), *[e.astype(np.int64) for e in exclude]]))
     rng = np.random.default_rng(prm["seed"])
     return np.sort(rng.choice(ok, size=min(prm["ft_s1"], len(ok)), replace=False))
 
@@ -74,15 +86,30 @@ def _embedder(src: str, max_len: int, device: str = "cuda", train: bool = False)
     return tok, model, emb
 
 
+def _train_q(prm: dict) -> np.ndarray:
+    """The first channel's S1; the second channel also avoids every S1 the other encoders were fine-tuned on."""
+    if not TAG:
+        return dense_all_train_q(prm)
+    from ber.split import final_q
+    from ber.stages.dense import dense_train_q
+
+    cfg = config.load()
+    return dense_all_train_q(prm, (dense_train_q(cfg["dense"]), dense_all_train_q(cfg["dense_all"]), final_q()))
+
+
 def finetune() -> None:
-    """Symmetric InfoNCE over (S1, true pool record) with one hard negative per S1 (a non-true candidate of the same S1)."""
+    """Symmetric InfoNCE over (S1, true pool record) with n_neg hard negatives per S1 (non-true candidates of the same S1) and,
+    if synth_decoy, one synthetic look-alike of the true record (ber.decoys) as an extra negative."""
     import torch
 
+    from ber.decoys import make_decoy
+
     P = config.paths()
-    prm = config.load()["dense_all"]
+    prm = _prm()
+    n_neg, synth = int(prm.get("n_neg", 1)), bool(prm.get("synth_decoy", False))
     t0 = time.time()
-    D = dense_all_train_q(prm)
-    np.save(P["work"] / "dense_all_train_q.npy", D)
+    D = _train_q(prm)
+    np.save(P["work"] / f"dense_all{TAG}_train_q.npy", D)
     lab = pl.read_parquet(P["parquet"] / "train" / "labels.parquet").with_columns(
         (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"), pl.col("s1_rid").alias("q")).select("q", "pid")
     lab = lab.join(pl.DataFrame({"q": D}), on="q", how="semi")
@@ -98,9 +125,9 @@ def finetune() -> None:
     need = {int(x) for l in ppos for x in l} | {int(x) for l in pneg for x in l}
     p_of = {int(i): t for i, t in zip(pid.tolist(), ptx) if int(i) in need}
     del stx, ptx
-    print(f"fine-tuning on {len(qs)} S1 (pairs with hard negatives)", flush=True)
+    print(f"fine-tuning {prm.get('model', MODEL)} on {len(qs)} S1 ({n_neg} hard negatives, synthetic decoy {synth})", flush=True)
 
-    tok, model, emb = _embedder(MODEL, prm["max_len"], train=True)
+    tok, model, emb = _embedder(prm.get("model", MODEL), prm["max_len"], train=True)
     opt = torch.optim.AdamW(model.parameters(), lr=prm["ft_lr"], weight_decay=0.01)
     bs, epochs = prm["ft_batch"], prm["ft_epochs"]
     steps = epochs * (len(qs) // bs)
@@ -115,9 +142,11 @@ def finetune() -> None:
             b = order[a: a + bs]
             ta = [s_of[qs[i]] for i in b]
             tp = [p_of[int(ppos[i][rng.integers(len(ppos[i]))])] for i in b]
-            tn = [p_of[int(pneg[i][rng.integers(len(pneg[i]))])] for i in b]
+            tn = [p_of[int(pneg[i][rng.integers(len(pneg[i]))])] for i in b for _ in range(n_neg)]
+            if synth:  # a look-alike of the true record: same text with a few letters and the house number moved
+                tn += [" | ".join(make_decoy(*(t.split(" | ", 1) + [""])[:2], rng)) for t in tp]
             ea, ep_, en = emb(ta), emb(tp), emb(tn)
-            pool = torch.cat([ep_, en])                      # in-batch positives plus one hard negative per S1
+            pool = torch.cat([ep_, en])                      # in-batch positives plus the hard negatives of every S1
             logits = ea @ pool.T / prm["ft_temp"]
             tgt = torch.arange(len(b), device=ea.device)
             loss = (torch.nn.functional.cross_entropy(logits, tgt) + torch.nn.functional.cross_entropy((ea @ ep_.T).T / prm["ft_temp"], tgt)) / 2
@@ -135,7 +164,7 @@ def finetune() -> None:
     print(f"saved {out} after {time.time() - t0:.0f}s", flush=True)
 
 
-def _encode_to(path, texts: list[str], emb, batch: int = 1024, block: int = 262_144, dim: int = 384) -> None:
+def _encode_to(path, texts: list[str], emb, batch: int = 1024, block: int = 262_144, dim: int = 384) -> None:  # dim: 384 small, 768 base
     """Encode texts into a float16 .npy memmap block by block (length-sorted inside each block)."""
     import torch
 
@@ -154,26 +183,26 @@ def _encode_to(path, texts: list[str], emb, batch: int = 1024, block: int = 262_
 
 def embed(split: str) -> None:
     P = config.paths()
-    prm = config.load()["dense_all"]
+    prm = _prm()
     t0 = time.time()
     _, _, emb = _embedder(str(model_dir()), prm["max_len"])
     sid, stx, pid, ptx = _load_texts(split)
-    out = P["work"] / "dense_all" / split
+    out = _dir() / split
     out.mkdir(parents=True, exist_ok=True)
     np.save(out / "s1_ids.npy", sid)
     np.save(out / "pool_ids.npy", pid)
     print(f"{split}: {len(stx)} S1 and {len(ptx)} pool records to encode", flush=True)
-    _encode_to(out / "s1_emb.npy", stx, emb)
+    _encode_to(out / "s1_emb.npy", stx, emb, dim=int(prm.get("dim", 384)))
     print(f"S1 encoded in {time.time() - t0:.0f}s", flush=True)
-    _encode_to(out / "pool_emb.npy", ptx, emb)
+    _encode_to(out / "pool_emb.npy", ptx, emb, dim=int(prm.get("dim", 384)))
     print(f"pool encoded, total {time.time() - t0:.0f}s", flush=True)
 
 
 def retrieve(split: str) -> None:
     P = config.paths()
-    prm = config.load()["dense_all"]
+    prm = _prm()
     t0 = time.time()
-    d = P["work"] / "dense_all" / split
+    d = _dir() / split
     pairs = topk_pairs(np.load(d / "s1_emb.npy"), np.load(d / "s1_ids.npy"), np.load(d / "pool_emb.npy", mmap_mode="r"),
                        np.load(d / "pool_ids.npy"), prm["k"], chunk=1024)
     pairs.write_parquet(d / "pairs.parquet", compression="zstd")
@@ -191,7 +220,7 @@ def report() -> None:
     from ber.split import holdout_q
 
     P = config.paths()
-    pairs = pl.read_parquet(P["work"] / "dense_all" / "train" / "pairs.parquet")
+    pairs = pl.read_parquet(_dir() / "train" / "pairs.parquet")
     hq = pl.DataFrame({"q": holdout_q()})
     lab = pl.read_parquet(P["parquet"] / "train" / "labels.parquet").with_columns(
         (pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"), pl.col("s1_rid").alias("q")).select("q", "pid")
@@ -211,10 +240,10 @@ def report() -> None:
 
 
 def merge(split: str) -> None:
-    """Add dense-all pairs (rank < k_merge, cos >= tau) to the candidate shards; every pair gets dall_cos and dall_rank."""
+    """Add dense-all pairs (rank < k_merge, cos >= tau) to the candidate shards; every pair gets dall{TAG}_cos and dall{TAG}_rank."""
     P = config.paths()
-    prm = config.load()["dense_all"]
-    pairs = pl.read_parquet(P["work"] / "dense_all" / split / "pairs.parquet")
+    prm = _prm()
+    pairs = pl.read_parquet(_dir() / split / "pairs.parquet")
     k_empty = prm.get("k_merge_empty", prm["k_merge"])
     if k_empty > prm["k_merge"]:  # pool records without an address carry only a name: give them more neighbours (zr1 report)
         pq = P["parquet"] / split
@@ -226,7 +255,7 @@ def merge(split: str) -> None:
     else:
         pairs = pairs.filter((pl.col("rank") < prm["k_merge"]) & (pl.col("cos") >= prm["tau"]))
     src = P["work"] / "blocks" / split
-    bak = P["work"] / "blocks" / f"{split}_predall"
+    bak = P["work"] / "blocks" / f"{split}_predall{TAG}"
     if bak.exists():
         shutil.rmtree(src)
         shutil.copytree(bak, src)
@@ -237,26 +266,30 @@ def merge(split: str) -> None:
         c = pl.read_parquet(f)
         qmin, qmax = int(c["q"].min()), int(c["q"].max())
         d = (pairs.filter((pl.col("q") >= qmin) & (pl.col("q") <= qmax))
-                  .select(pl.col("q").cast(c.schema["q"]), pl.col("pid").cast(c.schema["pid"]), pl.col("cos").alias("dall_cos"),
-                          pl.col("rank").cast(pl.Float32).alias("dall_rank")))
+                  .select(pl.col("q").cast(c.schema["q"]), pl.col("pid").cast(c.schema["pid"]), pl.col("cos").alias(f"dall{TAG}_cos"),
+                          pl.col("rank").cast(pl.Float32).alias(f"dall{TAG}_rank")))
         m = c.join(d, on=["q", "pid"], how="left")
         new = d.join(c.select("q", "pid"), on=["q", "pid"], how="anti")
         if new.height:
-            fill = {col: pl.lit(0.0 if c.schema[col].is_float() else 0).cast(c.schema[col]) for col in c.columns if col not in ("q", "pid", "emb_cos", "emb_rank")}
-            fill.update({col: pl.lit(None, dtype=c.schema[col]) for col in ("emb_cos", "emb_rank") if col in c.columns})
+            dense_cols = [col for col in c.columns if col.startswith(("emb_", "dall"))]  # other channels: unknown for the new pairs
+            fill = {col: pl.lit(0.0 if c.schema[col].is_float() else 0).cast(c.schema[col]) for col in c.columns if col not in ("q", "pid", *dense_cols)}
+            fill.update({col: pl.lit(None, dtype=c.schema[col]) for col in dense_cols})
             new = new.with_columns(**fill).select(m.columns)
             m = pl.concat([m, new])
         total_new += new.height
         m.sort("q", "pid").write_parquet(f, compression="zstd")
-    print(f"{split}: {total_new} dense-all pairs added to the candidate shards", flush=True)
-    log_stage(f"dense_all_merge_{split}", prm, {"added": float(total_new)})
+    print(f"{split}: {total_new} dense-all{TAG} pairs added to the candidate shards", flush=True)
+    log_stage(f"dense_all{TAG}_merge_{split}", prm, {"added": float(total_new)})
 
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["finetune", "embed", "retrieve", "report", "merge"])
     ap.add_argument("--split", choices=["train", "test"], default="train")
+    ap.add_argument("--tag", default="", help="2: the second channel (params dense_all2, folder dense_all2, columns dall2_*)")
     a = ap.parse_args(argv)
+    global TAG
+    TAG = a.tag
     {"finetune": finetune, "embed": lambda: embed(a.split), "retrieve": lambda: retrieve(a.split), "report": report,
      "merge": lambda: merge(a.split)}[a.cmd]()
 

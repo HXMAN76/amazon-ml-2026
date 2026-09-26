@@ -94,3 +94,19 @@ dense_all:             # name + address embeddings for EVERY pool record (see st
   k_merge_empty: 1     # (s6 recipe; 3 = the dropped v6/s7 setting) neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
   tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
   seed: 11
+dense_all2:            # v6: second, stronger name+address channel (python -m ber.stages.dense_all ... --tag 2)
+  model: intfloat/multilingual-e5-small   # MIT; intfloat/multilingual-e5-base (dim 768) only if time allows
+  dim: 384
+  ft_s1: 900000        # S1 no other encoder saw (outside sample, holdout, dense and dense_all fine-tune sets)
+  ft_epochs: 2
+  ft_batch: 256
+  ft_lr: 0.00003
+  ft_temp: 0.05
+  n_neg: 3             # hard negatives per S1 (non-true candidates of the same S1)
+  synth_decoy: true    # plus one synthetic look-alike of the true record (ber.decoys)
+  max_len: 48
+  k: 5
+  k_merge: 1
+  k_merge_empty: 1
+  tau: 0.0
+  seed: 23
