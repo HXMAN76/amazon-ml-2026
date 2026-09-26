@@ -47,6 +47,36 @@ COUNTRY_ALIASES = {
     "usa": "us", "united states": "us", "united states of america": "us", "america": "us",
     "in": "india", "ind": "india", "bharat": "india", "fr": "france", "fra": "france",
 }
+# State names and their postal codes. A comma-separated address component that IS a state (name or code, optionally
+# followed by a postcode) becomes the code, so `Saulsbury, TN` and `Saulsbry, Tennessee` agree, and a lone `CT` / `FL`
+# component is the state, not the street abbreviation `court` / `floor`. Hand-written tables, no lookups.
+US_STATES = {
+    "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca", "colorado": "co",
+    "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga", "hawaii": "hi", "idaho": "id",
+    "illinois": "il", "indiana": "in", "iowa": "ia", "kansas": "ks", "kentucky": "ky", "louisiana": "la", "maine": "me",
+    "maryland": "md", "massachusetts": "ma", "michigan": "mi", "minnesota": "mn", "mississippi": "ms", "missouri": "mo",
+    "montana": "mt", "nebraska": "ne", "nevada": "nv", "new hampshire": "nh", "new jersey": "nj", "new mexico": "nm",
+    "new york": "ny", "north carolina": "nc", "north dakota": "nd", "ohio": "oh", "oklahoma": "ok", "oregon": "or",
+    "pennsylvania": "pa", "rhode island": "ri", "south carolina": "sc", "south dakota": "sd", "tennessee": "tn",
+    "texas": "tx", "utah": "ut", "vermont": "vt", "virginia": "va", "washington": "wa", "west virginia": "wv",
+    "wisconsin": "wi", "wyoming": "wy", "district of columbia": "dc", "puerto rico": "pr",
+}
+IN_STATES = {
+    "andhra pradesh": "ap", "arunachal pradesh": "ar", "assam": "as", "bihar": "br", "chhattisgarh": "cg",
+    "chattisgarh": "cg", "goa": "ga", "gujarat": "gj", "haryana": "hr", "himachal pradesh": "hp", "jharkhand": "jh",
+    "karnataka": "ka", "kerala": "kl", "madhya pradesh": "mp", "maharashtra": "mh", "manipur": "mn", "meghalaya": "ml",
+    "mizoram": "mz", "nagaland": "nl", "odisha": "od", "orissa": "od", "punjab": "pb", "rajasthan": "rj", "sikkim": "sk",
+    "tamil nadu": "tn", "tamilnadu": "tn", "telangana": "ts", "tripura": "tr", "uttar pradesh": "up", "uttarakhand": "uk",
+    "uttaranchal": "uk", "west bengal": "wb", "delhi": "dl", "nct of delhi": "dl", "jammu and kashmir": "jk",
+    "ladakh": "la", "chandigarh": "ch", "puducherry": "py", "pondicherry": "py", "lakshadweep": "ld",
+    "andaman and nicobar islands": "an", "dadra and nagar haveli": "dn", "daman and diu": "dd",
+    # the same states written in Indic scripts (seen in S3 addresses, e.g. `Nadia, পশ্চিমবঙ্গ`, `MOHALI, ਪੰਜਾਬ`)
+    "पश्चिम बंगाल": "wb", "পশ্চিমবঙ্গ": "wb", "उत्तर प्रदेश": "up", "मध्य प्रदेश": "mp", "महाराष्ट्र": "mh", "बिहार": "br",
+    "राजस्थान": "rj", "दिल्ली": "dl", "हरियाणा": "hr", "गुजरात": "gj", "ગુજરાત": "gj", "पंजाब": "pb", "ਪੰਜਾਬ": "pb",
+    "झारखंड": "jh", "छत्तीसगढ़": "cg", "उत्तराखंड": "uk", "हिमाचल प्रदेश": "hp", "ओडिशा": "od", "ଓଡ଼ିଶା": "od",
+    "कर्नाटक": "ka", "ಕರ್ನಾಟಕ": "ka", "तमिलनाडु": "tn", "தமிழ்நாடு": "tn", "केरल": "kl", "കേരളം": "kl",
+    "तेलंगाना": "ts", "తెలంగాణ": "ts", "आंध्र प्रदेश": "ap", "ఆంధ్ర ప్రదేశ్": "ap",
+}
 LEET = {"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b"}
 
 _DBA = re.compile(
@@ -86,6 +116,28 @@ def _tokens(s: str) -> list[str]:
     if s.isascii():  # fast path: about 20x quicker than the per-character Unicode path
         return s.lower().replace("&", " and ").translate(_ASCII_TABLE).split()
     return _tokens_slow(s)
+
+
+def _state_table(names: dict[str, str]) -> dict[tuple[str, ...], str]:
+    """Token-tuple lookup (built with the same tokeniser as addresses) of state names and of the codes themselves."""
+    tab = {tuple(_tokens(unicodedata.normalize("NFC", k))): v for k, v in names.items()}
+    tab.update({(v,): v for v in names.values()})
+    return tab
+
+
+STATE_KEYS = {"us": _state_table(US_STATES), "india": _state_table(IN_STATES)}
+
+
+def _state_code(toks: list[str], table: dict[tuple[str, ...], str]) -> list[str] | None:
+    """The code (plus a trailing postcode) when an address component is a state: `tennessee`, `nc 27405`, `west bengal 700001`."""
+    code = table.get(tuple(toks))
+    if code:
+        return [code]
+    if len(toks) >= 2 and toks[-1].isdigit():
+        code = table.get(tuple(toks[:-1]))
+        if code:
+            return [code, toks[-1]]
+    return None
 
 
 def _leet_fix(tok: str) -> str:
@@ -143,18 +195,28 @@ def parse_name(raw: object) -> NameParts:
 
 
 def norm_address(raw: object, country: object = "") -> str:
-    """Normalise an address: decode entities, tokenise, drop filler words, expand abbreviations (French rules only for France)."""
+    """Normalise an address: decode entities, tokenise, drop filler words, expand abbreviations (French rules only for France),
+    and map a component that is a US / Indian state (name, code or Indic-script name) to its code."""
     if not isinstance(raw, str) or not raw.strip():
         return ""
-    fr = norm_country(country) == "france"
+    ctry = norm_country(country)
+    fr = ctry == "france"
     abbr = {**ADDR_ABBR, **FR_ADDR_ABBR} if fr else ADDR_ABBR
+    states = STATE_KEYS.get(ctry)
+    s = unicodedata.normalize("NFC", html.unescape(raw))
     toks: list[str] = []
-    for t in _tokens(unicodedata.normalize("NFC", html.unescape(raw))):
-        if len(t) > 5 and t.endswith("cdp"):
-            t = t[:-3]  # `chicagocdp` -> `chicago`
-        if t in ADDR_FILLER or (fr and t in FR_FILLER):
+    for comp in (s.split(",") if states else (s,)):  # commas are punctuation to the tokeniser, so splitting keeps the tokens
+        ct = _tokens(comp)
+        code = _state_code(ct, states) if states else None
+        if code:
+            toks.extend(code)
             continue
-        toks.append(abbr.get(t, t))
+        for t in ct:
+            if len(t) > 5 and t.endswith("cdp"):
+                t = t[:-3]  # `chicagocdp` -> `chicago`
+            if t in ADDR_FILLER or (fr and t in FR_FILLER):
+                continue
+            toks.append(abbr.get(t, t))
     return " ".join(toks)
 
 

@@ -31,7 +31,7 @@ from ber.tracking import log_stage
 
 PID_BASE = 10_000_000
 TYPES = ("n", "a", "p", "c", "m", "d", "h")
-INDEX_VERSION = 4  # bump when token generation changes so the cached pool index is rebuilt
+INDEX_VERSION = 5  # bump when token generation changes so the cached pool index is rebuilt (5: state names -> codes)
 
 
 def base_tokens(tbl: str, idcol: str, prefix_len: int, min_prefix: int) -> str:

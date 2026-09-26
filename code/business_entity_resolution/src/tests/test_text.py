@@ -78,8 +78,11 @@ def test_street_and_saint_share_one_token():
 def test_romanisation_bridges_scripts():
     assert text.romanize("राम मीडिया प्राइवेट लिमिटेड") == "ram midiya praivet limited"
     assert text.romanize("Ram Media") == "Ram Media"  # ASCII passes through unchanged
-    row = text.normalise_row("रियल फाउंडेशन", "महाराष्ट्र", "India")
-    assert row[text.COLUMNS.index("core_rom")] == "riyl phaumdesn" and row[text.COLUMNS.index("addr_rom")] == "mharastr"
+    row = text.normalise_row("रियल फाउंडेशन", "नागपुर", "India")
+    assert row[text.COLUMNS.index("core_rom")] == "riyl phaumdesn" and row[text.COLUMNS.index("addr_rom")] == "nagpur"
+    # v5: a component that is a state (here Maharashtra in Devanagari) becomes the state code, like `Maharashtra` and `MH`
+    row = text.normalise_row("रियल फाउंडेशन", "नागपुर, महाराष्ट्र", "India")
+    assert row[text.COLUMNS.index("addr_rom")] == "nagpur mh" and text.norm_address("Nagpur, Maharashtra", "India") == "nagpur mh"
 
 
 def test_french_address_rules_apply_only_to_france():
