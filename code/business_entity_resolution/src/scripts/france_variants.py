@@ -6,6 +6,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   weak:T:pmax[:shared]  name similarity (name_tset) < T, address similarity (addr_tset) >= 90, same house number, p < pmax; `shared`: the S1's address is
                         shared with another S1 (a multi-tenant building)
   legal:pmax            legal-form conflict (both sides name a different form), p < pmax
+  legalhouse:pmax       legal-form conflict and a different house number, p < pmax
   thr:t                 p < t
   thrp:t                p < t unless the pair is protected: equal names after removing spaced legal forms, or a pool name of at most 3 letters that is a subsequence of the S1's initials
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
@@ -111,6 +112,8 @@ def main() -> None:
                 c = c & (pl.col("addr_n") >= 2)
         elif k[0] == "legal":
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
+        elif k[0] == "legalhouse":  # a sibling next door: other legal form and another house number (research: emptied_samples.py examples)
+            c = (pl.col("legal_conflict") > 0.5) & (pl.col("house_eq") < 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "thr":
             c = pl.col("p") < float(k[1])
         elif k[0] == "thrp":
