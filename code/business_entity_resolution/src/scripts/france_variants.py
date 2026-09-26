@@ -20,7 +20,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   restore:KINDS:pmin    not a rule: add back shortlisted France pairs below the decision whose pool record nobody owns, whose name relation is one of KINDS
                         (exact, spelled_legal, initials, glued, noise_swap; joined by +; france_recall.py), at the S1's address (same house number,
                         address similarity >= 90), p >= pmin, within the S1's free slots (5 S2 / 6 S3), best p first
-  protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
+  protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrpn, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
                         metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
 Prints the number of pairs each rule drops with its decoy share from the slot-limit fit (decoy_by_category.py; worth dropping above about 26%)
 and the total, then writes WORK/output/NEWNAME like reemit.py."""
@@ -174,7 +174,7 @@ def main() -> None:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
         if protect:
-            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrx", "xfr"}]
+            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrx", "xfr"}]
             o2 = own.with_columns(any_c.alias("_d"), (pl.any_horizontal(hard) if hard else pl.lit(False)).alias("_h"))
             alive = o2.filter(~pl.col("_d")).select("q").unique()
             back = (o2.filter(pl.col("_d") & ~pl.col("_h") & (pl.col("p") >= protect[0])).join(alive, on="q", how="anti")
