@@ -15,6 +15,22 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - France-aware cross-encoder 1 (`xencFR/model`, 36 min, 1 epoch, warm start from `xenc2/model`; 500k replay + 50k initials + 32k spelled legal + 50k glued positives, 150k one-word-swap negatives, train records only): France type swaps below 0.5: 90% (old 19%); initials 0.04% (old 5%); noise-word swaps 63% (old 25%: a flaw, fixed by keeping the old score for swaps into fils/groupe/services/developpement); exact names 8.5% (old 3.7%). Holdout AP equal (0.99929 vs 0.99932). `xfr_slots.py`: its extra rejections are decoy-rich only among one-word swaps (83-85%), not among "other" pairs.
 - Model 2 (`xencFR2/model`) adds 100k "other tenant" negatives. Bases built by swapping France's xs and rebuilding the s22 stack for France only (US/India unchanged): `s22F1n`, `s22F2n`, `s22F12n` (mean logit), `s22F1s` (new score only on one-word swaps). On them `typeswap` fires on 3.5-6k pairs (s22: 25k) and `thrp` still drops 24-25k pairs at 44-46%/38-39% decoy share.
 
+
+## Overnight work after 03:45 (user asleep; target 0.990 / top 50)
+- Findings: (1) France's noise-word swaps (fils, groupe, services, developpement) are true copies the model scores low: `thrpn` (thrp that also
+  spares them) raises the decoy share of what it drops from 48% to 54% (the spared 7.8k pairs are about 16% decoys); 8.6k unowned noise-swap records
+  sit at their S1's address with p about 0.16 (restore candidates). (2) Exact-name restores are bad (holdout: 0.4% true). (3) The legal-form +
+  house-number "sibling" idea is wrong (holdout: 99.9% true, France rate below the holdout's). (4) Stack blends (s22+s27, +s26+s22e) do not beat s27.
+  (5) Confident non-exact France pairs look like true copies (glued, coined aliases, d b a) in full and free S1 alike: no hidden decoy pool there.
+- New rules in `france_variants.py`: `thrpn:t`, `restore:KINDS:pmin` (uses `france_recall.restore_candidates`), `legalhouse` (not useful).
+- Queue at 04:10 (GPU lane `jobs`, in order): `v8m3_xfr3` (cross-encoder 3: full replay + noise-swap positives), `v8m3a0_kill` (stops the CPU-lane
+  job `v8z9_s24` that blocks it), `v8m3a_r3` (recipes `v8s_<base>_{A,AR,AR2}` = typeswap + thrpn 0.995 + protect [+ restore of noise swaps,
+  initials, spelled legal, glued at the S1's address, p >= 0.05 / 0.2] on s27 and s22F12n), `v8m3q_qwen` (score the team's Qwen3-0.6B
+  cross-encoder, both splits), `v8m3r_s24` (stack s24 = s22 + xs3, paired tests, recipes `v8r_s24_{A,AR}`), `v8m4_xfr4` (seed 2 of model 3),
+  `v8m5_avg34` (mean of 3 and 4 in the stack), `v8m9_deliver` (validator --check-ids, upload to `s3://sagemaker-us-east-1-645311222213/ber/v8/runs/`).
+- Candidate for the team today (if the portal confirms the direction): `v8s_s27_AR` (s27 + typeswap + thrpn 0.995 + protect + restore), or its s24
+  version if s24 beats s27 on the holdout. Copy from our bucket to the team folder with the laptop (the notebook role cannot write there).
+
 ## Infrastructure (our AWS, profile `barani`, account 645311222213)
 - Notebook `barani-v5` (ml.g5.16xlarge), two-lane runner: `jobs/` (GPU), `jobs2/` (CPU); lanes read their pending list once per loop (a job queued later waits until the lane's list is done). Laptop tool from this worktree: `smssh-venv/bin/python aws/sm/sm.py --profile barani {publish|enqueue <job> --queue jobs|jobs2|jobs|nb start|stop|status}`; read logs with `aws s3 cp s3://sagemaker-us-east-1-645311222213/<lane>/done/<job>.log -` (sm.py jlog output is hard to grep).
 - The notebook role cannot read the team bucket; the laptop user can: team files are copied server-side into `s3://sagemaker-us-east-1-645311222213/ber/team_work/`, then synced to `/home/ec2-user/SageMaker/work_t` (`BER_WORK` of every v8 job; our v6 `work/` untouched). Delivery: `v8w_deliver.sh` template (validator --check-ids, then `ber/v8/runs/<name>/output/`), then a laptop server-side copy to the team folder.
