@@ -1,0 +1,9 @@
+# Extra packages for the GPU stages (dense, dense_all, xenc); install on top of requirements.txt in the GPU environment.
+# All permissively licensed: torch (BSD-3), transformers / sentence-transformers / datasets (Apache-2.0).
+# The xenc stage needs sentence-transformers >= 4 (CrossEncoderTrainer; the legacy CrossEncoder.fit path lost weights in v3 runs).
+# Freeze the exact versions on the notebook with `pip freeze > requirements-gpu.lock` before the final run.
+torch>=2.4
+transformers>=4.51,<5
+sentence-transformers>=5.0,<6
+datasets>=3.0
+accelerate>=1.0
