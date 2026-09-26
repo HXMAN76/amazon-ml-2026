@@ -54,8 +54,10 @@ def emit(name: str, P: dict, df: pl.DataFrame, cfg: dict, t0: float) -> None:
     p = df["p"].to_numpy()
     sel = decision.assign_exclusive(df) if cfg["exclusive"] else df
     sel = sel.filter(pl.col("p") >= cfg["threshold"])
+    if cfg.get("cap"):  # per-S1 limit of selected records per source (training maximum: 5 from S2, 6 from S3)
+        sel = decision.cap_per_source(sel, {int(k): int(v) for k, v in cfg["cap"].items()})
     print(f"{df.height} candidate pairs scored, {sel.height} kept at threshold {cfg['threshold']:.2f} "
-          f"(exclusive={cfg['exclusive']}), mean p {float(p.mean()):.4f}", flush=True)
+          f"(exclusive={cfg['exclusive']}, cap={cfg.get('cap') or 'no'}), mean p {float(p.mean()):.4f}", flush=True)
 
     pq = P["parquet"] / "test"
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "entity_id"]).sort("rid")

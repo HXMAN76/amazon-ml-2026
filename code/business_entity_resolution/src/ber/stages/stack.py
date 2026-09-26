@@ -437,15 +437,21 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     b = pl.DataFrame({"q": hq, "pid": hp, "p": p2, "label": hy})
     ea = decision.per_entity_f05(decision.assign_exclusive(a).filter(pl.col("p") >= base_cfg["threshold"]), nt_h).sort("q")["f"].to_numpy()
     eb = decision.per_entity_f05(decision.assign_exclusive(b).filter(pl.col("p") >= thr), nt_h).sort("q")["f"].to_numpy()
+    cap = {int(k): int(v) for k, v in (prm.get("cap") or {}).items()}
+    if cap:  # the cap is kept only if it does not lose on the holdout
+        ec = decision.per_entity_f05(decision.cap_per_source(decision.assign_exclusive(b).filter(pl.col("p") >= thr), cap), nt_h).sort("q")["f"].to_numpy()
+        print(f"cap {cap}: holdout {ec.mean():.5f} vs {eb.mean():.5f} without", flush=True)
+        cap = cap if ec.mean() >= eb.mean() else {}
+        eb = ec if cap else eb
     delta, lo, hi = decision.paired_bootstrap_delta(ea, eb)
-    rep = {"base": base, "base_holdout_f05": float(ea.mean()), "stack_holdout_f05": float(eb.mean()), "delta": delta,
+    rep = {"base": base, "cap": cap, "base_holdout_f05": float(ea.mean()), "stack_holdout_f05": float(eb.mean()), "delta": delta,
            "delta_ci95": [lo, hi], "ship": bool(lo > 0), "stack_threshold": thr, "oof_subsample_f05": score_oof, "holdout_s1": hold.height}
     out = P["work"] / "models" / name
     out.mkdir(parents=True, exist_ok=True)
     tune.write_parquet(out / "oof_tune.parquet", compression="zstd")   # out-of-fold p on the non-holdout S1 (calibration, tuning)
     b.write_parquet(out / "holdout_pred.parquet", compression="zstd")  # stacked p on the locked holdout
     model.save_model(str(out / "xgb.json"))
-    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):]}, indent=2))
+    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "cap": cap, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):]}, indent=2))
     (out / "holdout.json").write_text(json.dumps(rep, indent=2))
     print("HOLDOUT paired comparison:", json.dumps(rep), flush=True)
     imp = model.get_score(importance_type="gain")

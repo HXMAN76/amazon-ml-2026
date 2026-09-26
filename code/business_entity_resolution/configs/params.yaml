@@ -62,6 +62,7 @@ stack:                 # consensus stacking on top of the first-stage probabilit
   decoy: false         # edit-type features of the core names (substitution vs indel, Hamming ...)
   shortlist_k: 10      # candidate shortlist by first-stage p1: best K per S1 ...
   shortlist_pmin: 0.005  # ... with p1 at least this (the best pair of every S1 is always kept); see zo8 report
+  cap: {2: 5, 3: 6}    # at most 5 S2 and 6 S3 matches per S1 (training maximum); kept only if it does not lose on the holdout
 expf:                  # calibration and per-S1 expected-F0.5 selection on the stacked probabilities
   base: s1
   J: 12                # candidates per S1 modelled exactly; the rest enter as a Poisson term

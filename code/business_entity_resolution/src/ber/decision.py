@@ -62,3 +62,45 @@ def tune_threshold(df: pl.DataFrame, n_true: pl.DataFrame, exclusive: bool,
         curve.append((float(t), macro_f05(base.filter(pl.col("p") >= t), n_true)))
     best = max(curve, key=lambda x: x[1])
     return best[0], best[1], curve
+
+
+def tune_threshold_by_group(df: pl.DataFrame, n_true: pl.DataFrame, groups: pl.DataFrame, exclusive: bool = True,
+                            min_q: int = 2000, grid: np.ndarray | None = None) -> dict[str, float]:
+    """One threshold per group of S1 (e.g. country). groups: (q, g). Exclusive assignment is decided on all pairs first
+    (competition is global); each group then gets its own cut. Groups with fewer than `min_q` S1 get no entry, so they
+    fall back to the global threshold when applied (France has no training S1)."""
+    base = assign_exclusive(df) if exclusive else df
+    out: dict[str, float] = {}
+    for (g,), sub_q in groups.group_by("g"):
+        if sub_q.height < min_q:
+            continue
+        nt = n_true.join(sub_q.select("q"), on="q", how="semi")
+        thr, _, _ = tune_threshold(base.join(sub_q.select("q"), on="q", how="semi"), nt, exclusive=False, grid=grid)
+        out[str(g)] = thr
+    return out
+
+
+def select_by_threshold(df: pl.DataFrame, default: float, by_group: dict[str, float] | None = None,
+                        groups: pl.DataFrame | None = None) -> pl.DataFrame:
+    """Keep pairs with p >= the threshold of their S1's group (default for groups without their own threshold)."""
+    if not by_group or groups is None:
+        return df.filter(pl.col("p") >= default)
+    tab = pl.DataFrame({"g": list(by_group.keys()), "_thr": list(by_group.values())}, schema={"g": pl.Utf8, "_thr": pl.Float64})
+    g = groups.with_columns(pl.col("q").cast(df.schema["q"]), pl.col("g").cast(pl.Utf8)).join(tab, on="g", how="left")
+    d = df.join(g.select("q", "_thr"), on="q", how="left").with_columns(pl.col("_thr").fill_null(default))
+    return d.filter(pl.col("p") >= pl.col("_thr")).drop("_thr")
+
+
+def cap_per_source(sel: pl.DataFrame, caps: dict[int, int], pid_base: int = 10_000_000) -> pl.DataFrame:
+    """Keep at most caps[src] selected records per S1 and source (highest p first): the training data never has more than
+    5 S2 and 6 S3 matches for one S1, so extra selections are errors."""
+    if not caps:
+        return sel
+    src = (pl.col("pid") // pid_base).cast(pl.Int64)
+    lim = pl.lit(None, dtype=pl.Int64)
+    for s, c in caps.items():
+        lim = pl.when(src == int(s)).then(pl.lit(int(c), dtype=pl.Int64)).otherwise(lim)
+    d = sel.with_columns(src.alias("_src"), lim.alias("_cap"))
+    d = d.sort(["q", "_src", "p", "pid"], descending=[False, False, True, False]).with_columns(
+        pl.int_range(pl.len()).over(["q", "_src"]).alias("_r"))
+    return d.filter(pl.col("_cap").is_null() | (pl.col("_r") < pl.col("_cap"))).drop("_src", "_cap", "_r")
