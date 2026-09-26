@@ -405,12 +405,12 @@ def _read(split: str) -> pl.DataFrame:
     return pl.concat([pl.read_parquet(f) for f in sorted((P["work"] / STACK_DIR / split).glob("chunk_*.parquet"))])
 
 
-def _load_arrays(split: str, drop: tuple[str, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
+def _load_arrays(split: str, drop: tuple[str, ...] = (), exact: tuple[str, ...] = ()) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
     """Chunk files straight into one preallocated float32 matrix (no polars concat, no second copy)."""
     P = config.paths()
     files = sorted((P["work"] / STACK_DIR / split).glob("chunk_*.parquet"))
     first = pl.read_parquet(files[0])
-    feats = [c for c in first.columns if c not in {"q", "pid", "label"} and not c.startswith(drop)]
+    feats = [c for c in first.columns if c not in {"q", "pid", "label"} and not c.startswith(drop) and c not in exact]
     n = sum(pl.scan_parquet(f).select(pl.len()).collect().item() for f in files)
     x = np.empty((n, len(feats)), dtype=np.float32)
     qa, pida, y = np.empty(n, dtype=np.int64), np.empty(n, dtype=np.int64), np.empty(n, dtype=np.int8)
@@ -430,7 +430,7 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     P = config.paths()
     t0 = time.time()
     hold = pl.DataFrame({"q": holdout_q()})
-    x, qa, pida, y, feats = _load_arrays("train", drop)  # `drop`: feature prefixes left out (ablations)
+    x, qa, pida, y, feats = _load_arrays("train", drop, tuple(prm.get("drop_exact", ())))  # `drop`: feature prefixes left out (ablations)
     is_hold = np.isin(qa, hold["q"].to_numpy())
     q = qa.astype(np.uint64)
     fold = ((q * np.uint64(2654435761)) % np.uint64(2 ** 32) % np.uint64(prm["folds"])).astype(np.int64)
@@ -515,6 +515,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--name", default="s1")
     ap.add_argument("--base", default=None)
     ap.add_argument("--drop", default="", help="comma-separated feature-name prefixes to leave out of training (ablation)")
+    ap.add_argument("--drop-exact", default="", help="train: comma-separated exact feature names left out of training")
     ap.add_argument("--tag", default="", help="separate chunk folder stack<tag> (parallel variants)")
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
@@ -547,6 +548,7 @@ def main(argv: list[str] | None = None) -> None:
     elif a.cmd == "tfidf":
         tfidf_pass(a.split)
     elif a.cmd == "train":
+        prm["drop_exact"] = tuple(x for x in a.drop_exact.split(",") if x)
         train(a.name, base, prm, tuple(x for x in a.drop.split(",") if x))
     else:
         predict(a.name)

@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="v0")
     ap.add_argument("--extra", type=int, default=0, help="add this many S1 from the rest (features/train_rest) to the training set")
+    ap.add_argument("--drop-cols", default="", help="comma-separated exact feature names left out of training (shift-robust variants)")
     ap.add_argument("--set", default="", help="comma-separated parameter overrides, e.g. max_depth=9,eta=0.05,rounds=3000")
     a = ap.parse_args(argv)
     P, prm = config.paths(), dict(config.load()["train_gpu"])
@@ -64,7 +65,8 @@ def main(argv: list[str] | None = None) -> None:
         df = pl.concat([df.with_columns(pl.col("fold").cast(pl.Int64)), rest.with_columns(pl.Series("fold", fold_e))], how="diagonal_relaxed")
         train_q = np.concatenate([train_q, extra_q])
         print(f"extra training S1: {len(extra_q)} ({rest.height} pairs)", flush=True)
-    feats = [c for c in df.columns if c not in NON_FEATURES]
+    dropped = set(filter(None, a.drop_cols.split(",")))
+    feats = [c for c in df.columns if c not in NON_FEATURES and c not in dropped]
     device = pick_device(prm["device"])
     print(f"{df.height} pairs, {len(feats)} features, positives {df['label'].sum()}, device={device}", flush=True)
 
