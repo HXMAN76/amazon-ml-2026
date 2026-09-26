@@ -1,8 +1,7 @@
-# v6 step a2_density: is the extra test density ownerless copies? baseline stack retrained at test density (portal proxy)
+# v6 step a2_density: are the extra ownerless test records orphans (copies of absent S1) or look-alike decoys?
 # Stages are Makefile targets (code/business_entity_resolution/Makefile); checkpoints to the common bucket after each stage.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
-export THIN=""
-STAGES="${STAGES:-bs_density bs_thin_stack}"
+STAGES="${STAGES:-bs_density}"
 RUN=bs
 set +x
 BER_ML_ROOT=$SM/ml BER_CODE=$SM/ber BER_SKIP_INSTALL=1 BER_STAGES="$STAGES" \

@@ -1,4 +1,4 @@
-"""What are the extra ownerless pool records of the test set, and how much test-density thinning (split.thin_q) do they justify?
+"""What are the extra ownerless pool records of the test set: look-alike decoys or orphans, and how much thinning would they justify?
 
 Usage: python src/scripts/density_check.py MODEL        (MODEL: a stacked model with output/MODEL/pair_p.parquet, e.g. bs_s6)
 
@@ -6,7 +6,8 @@ Test has about 5.8 pool records per S1 against 4.7 in train, with the same numbe
 it has about twice as many ownerless records per S1. Two kinds are possible and they need different training:
   * look-alike decoys of an existing S1 (train has these): their nearest S1 in the dense_all embedding is very close;
   * orphans, i.e. copies of a business whose S1 is absent from the test file: their nearest S1 is only some other business.
-Thinning train S1 creates exactly the second kind. Label-free on test, this script compares the nearest-S1 cosine of the test records
+Dropping train S1 (thinning) would create exactly the second kind. Result on 26 Sep: orphan share 0, the extra test
+records are decoys, so thinning was dropped. Label-free on test, this script compares the nearest-S1 cosine of the test records
 the model leaves unclaimed with two labelled train references (ownerless train records = decoys; true records with their owner
 removed = simulated orphans), fits the test histogram as a mixture of the two, and turns the orphan share into a thinning fraction:
 dropping a fraction f of train S1 gives m * f / (1 - f) orphans per remaining S1 (m = true matches per S1), so f = o / (m + o) for

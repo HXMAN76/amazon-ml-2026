@@ -1,7 +1,6 @@
 # v6 step c1_xenc: cross-encoder with sibling context on the uncertain band
 # Stages are Makefile targets (code/business_entity_resolution/Makefile); checkpoints to the common bucket after each stage.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
-export THIN=""
 STAGES="${STAGES:-bs_xenc}"
 RUN=bs
 set +x

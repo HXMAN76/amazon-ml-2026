@@ -1,7 +1,6 @@
-# v6 step b1_encoder: second name+address encoder (dense_all2) and the first stage bs_w1 at test density
+# v6 step b1_encoder: second name+address encoder (dense_all2) and the first stage bs_w1
 # Stages are Makefile targets (code/business_entity_resolution/Makefile); checkpoints to the common bucket after each stage.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
-export THIN="--thin"
 STAGES="${STAGES:-bs_encoder}"
 RUN=bs
 set +x

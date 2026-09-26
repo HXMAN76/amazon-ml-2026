@@ -333,13 +333,6 @@ def build(split: str, base: str, prm: dict) -> None:
     P = config.paths()
     t0 = time.time()
     d = shortlist(load_p1(split, base), prm)
-    thin = np.empty(0, dtype=np.int64)
-    if split == "train" and prm.get("thin"):  # test density: these S1 leave the universe, their true records become ownerless
-        from ber.split import thin_q
-
-        thin = thin_q(**config.load()["thin"])
-        d = d.join(pl.DataFrame({"q": thin}).with_columns(pl.col("q").cast(d.schema["q"])), on="q", how="anti")
-        print(f"thinning: {len(thin)} train S1 left out", flush=True)
     print(f"{split}: shortlist keeps {d.height} pairs, {d.height / d['q'].n_unique():.2f} per S1", flush=True)
     d = pid_features(d)
     if split == "train":  # keep the locked holdout, the final holdout and a seeded subsample of the other S1 for training
@@ -526,7 +519,6 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tag", default="", help="separate chunk folder stack<tag> (parallel variants)")
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
-    ap.add_argument("--thin", action="store_true", help="build: train at test density (drop split.thin_q S1)")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (WORK/xenc/{split}/scores.parquet)")
     a = ap.parse_args(argv)
     global STACK_DIR
@@ -534,7 +526,6 @@ def main(argv: list[str] | None = None) -> None:
     prm = dict(config.load()["stack"])
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
-    prm["thin"] = a.thin
     prm["xenc"] = a.xenc
     base = a.base or prm["base"]
     if a.cmd == "build":

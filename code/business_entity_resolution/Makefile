@@ -84,23 +84,18 @@ bs_stack:
 	$(PY) -m ber.stages.stack train --name $(BS_S) --base $(BS_V)
 	$(PY) -m ber.stages.stack predict --name $(BS_S)
 
-# v6 steps after the baseline. THIN=--thin trains the first stage and the stack at test density (split.thin_q, params thin).
-THIN ?=
-.PHONY: bs_density bs_thin_stack bs_encoder bs_xenc bs_final_stack bs_set
+# v6 steps after the baseline.
+.PHONY: bs_density bs_encoder bs_xenc bs_final_stack bs_set
 bs_density:
 	$(PY) src/scripts/density_check.py $(BS_S)
-bs_thin_stack:  # the baseline stack retrained at test density: its holdout is the portal proxy (compare with s6's portal score)
-	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base $(BS_V) --thin --tag t && $(PY) -m ber.stages.stack tfidf --split $$s --tag t || exit 1; done
-	$(PY) -m ber.stages.stack train --name $(BS_S)t --base $(BS_V) --tag t
-	$(PY) -m ber.stages.stack predict --name $(BS_S)t --tag t
 bs_encoder:  # second name+address channel (dense_all2) and the first stage on it
 	$(PY) -m ber.stages.dense_all finetune --tag 2
 	for s in train test; do $(PY) -m ber.stages.dense_all embed --split $$s --tag 2 && $(PY) -m ber.stages.dense_all retrieve --split $$s --tag 2 || exit 1; done
 	$(PY) -m ber.stages.dense_all report --tag 2
 	for s in test train; do $(PY) -m ber.stages.dense_all merge --split $$s --tag 2 || exit 1; done
-	$(PY) -m ber.stages.pairs --split train $(THIN)
+	$(PY) -m ber.stages.pairs --split train
 	$(PY) -m ber.stages.train_gpu --name bs_w1
-	$(PY) -m ber.stages.pairs --split train --rest $(THIN)
+	$(PY) -m ber.stages.pairs --split train --rest
 	$(PY) -m ber.stages.score_rest --name bs_w1
 	$(PY) -m ber.stages.pairs --split test
 	$(PY) -m ber.stages.predict --name bs_w1
@@ -109,7 +104,7 @@ bs_xenc:
 	for s in train test; do $(PY) -m ber.stages.xenc score --split $$s --base bs_w1 || exit 1; done
 	$(PY) -m ber.stages.xenc report --base bs_w1
 bs_final_stack:
-	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc $(THIN) --tag w && $(PY) -m ber.stages.stack tfidf --split $$s --tag w || exit 1; done
+	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc --tag w && $(PY) -m ber.stages.stack tfidf --split $$s --tag w || exit 1; done
 	$(PY) -m ber.stages.stack train --name bs_w2 --base bs_w1 --tag w
 	$(PY) -m ber.stages.stack predict --name bs_w2 --tag w
 	$(PY) src/scripts/paired_models.py $(BS_S) bs_w2 || true
