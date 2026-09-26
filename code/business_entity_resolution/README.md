@@ -62,7 +62,7 @@ python src/scripts/check_submission.py $BER_WORK/output/s17 $BER_DATA/test
 ```
 
 Parameters for every stage are in `configs/params.yaml`; run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl`
-and an MLflow sqlite database. `make test` runs the unit and end-to-end tests (28 tests, CPU only, on a small synthetic dataset).
+and an MLflow sqlite database. `make test` runs the unit and end-to-end tests (29 tests, CPU only, on a small synthetic dataset).
 `make reproduce` runs the earlier, simpler pipeline (token blocking plus first-stage model only).
 
 ## Layout
