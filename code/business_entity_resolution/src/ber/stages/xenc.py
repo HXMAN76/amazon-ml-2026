@@ -237,6 +237,14 @@ def report(base: str) -> dict:
     y = d["label"].to_numpy()
     rep = {"band_pairs": d.height, "positives": int(y.sum()), "ap_p1": float(average_precision_score(y, d["p"].to_numpy())),
            "ap_xs": float(average_precision_score(y, d["xs"].to_numpy()))}
+    prev = P["work"] / "xenc_v1" / "train" / "scores.parquet"
+    if prev.exists():  # the previous cross-encoder on the holdout pairs both scored
+        c = d.join(pl.read_parquet(prev).select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), pl.col("xs").alias("xs_prev")),
+                   on=["q", "pid"], how="inner")
+        yc = c["label"].to_numpy()
+        rep.update(common_pairs=c.height, ap_p1_common=float(average_precision_score(yc, c["p"].to_numpy())),
+                   ap_xs_common=float(average_precision_score(yc, c["xs"].to_numpy())),
+                   ap_xs_prev_common=float(average_precision_score(yc, c["xs_prev"].to_numpy())))
     print("XENC REPORT (locked holdout, band only):", rep, flush=True)
     log_stage("xenc_report", prm, rep)
     return rep
