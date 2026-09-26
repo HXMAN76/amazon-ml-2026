@@ -310,26 +310,46 @@ def tfidf_pass(split: str) -> None:
         print(f"{split} {kind}: cosines added to {len(files)} chunk files in {time.time() - t0:.0f}s", flush=True)
 
 
+def fitted_q() -> list[np.ndarray]:
+    """S1 used to fit the dense encoders and the cross-encoder (whichever exist in this configuration / WORK)."""
+    cfg, work = config.load(), config.paths()["work"]
+    out = []
+    if cfg.get("dense"):
+        from ber.stages.dense import dense_train_q
+
+        out.append(dense_train_q(cfg["dense"]))
+    if cfg.get("dense_all"):
+        from ber.stages.dense_all import dense_all_train_q
+
+        out.append(dense_all_train_q(cfg["dense_all"]))
+    for f in ("dense_all2_train_q.npy", "xenc/train_q.npy"):  # written by their fine-tuning runs
+        if (work / f).exists():
+            out.append(np.load(work / f))
+    return out
+
+
 def build(split: str, base: str, prm: dict) -> None:
     """Write consensus-feature chunks for a split under WORK/stack/{split}."""
     P = config.paths()
     t0 = time.time()
     d = shortlist(load_p1(split, base), prm)
+    thin = np.empty(0, dtype=np.int64)
+    if split == "train" and prm.get("thin"):  # test density: these S1 leave the universe, their true records become ownerless
+        from ber.split import thin_q
+
+        thin = thin_q(**config.load()["thin"])
+        d = d.join(pl.DataFrame({"q": thin}).with_columns(pl.col("q").cast(d.schema["q"])), on="q", how="anti")
+        print(f"thinning: {len(thin)} train S1 left out", flush=True)
     print(f"{split}: shortlist keeps {d.height} pairs, {d.height / d['q'].n_unique():.2f} per S1", flush=True)
     d = pid_features(d)
-    if split == "train":  # keep the locked holdout plus a seeded subsample of the other S1 for training
-        hold = holdout_q()
+    if split == "train":  # keep the locked holdout, the final holdout and a seeded subsample of the other S1 for training
+        from ber.split import unscored_q
+
+        hold = unscored_q()
         allq = d.select("q").unique()["q"].to_numpy()
         pool = np.setdiff1d(allq, hold)
-        dense_ft = config.load().get("dense")
-        if dense_ft:  # S1 the name encoder was fine-tuned on would carry optimistic emb_cos features: keep them out of stage two
-            from ber.stages.dense import dense_train_q
-
-            pool = np.setdiff1d(pool, dense_train_q(dense_ft))
-            if config.load().get("dense_all"):
-                from ber.stages.dense_all import dense_all_train_q
-
-                pool = np.setdiff1d(pool, dense_all_train_q(config.load()["dense_all"]))
+        for sid in fitted_q():  # S1 an encoder or the cross-encoder was fit on carry optimistic scores: keep them out of stage two
+            pool = np.setdiff1d(pool, sid)
         rng = np.random.default_rng(prm["seed"])
         sub = rng.choice(pool, size=min(prm["sub_q"], len(pool)), replace=False)
         keep = np.sort(np.concatenate([hold, sub]))
@@ -399,15 +419,18 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     """Fit the stacked model on the non-holdout S1, tune the threshold, and score the locked holdout with a paired CI."""
     P = config.paths()
     t0 = time.time()
+    from ber.split import final_q
+
     hold = pl.DataFrame({"q": holdout_q()})
     x, qa, pida, y, feats = _load_arrays("train", drop)  # `drop`: feature prefixes left out (ablations)
     is_hold = np.isin(qa, hold["q"].to_numpy())
+    is_final = np.isin(qa, final_q())  # the untouched final holdout: never trained on, scored only at the freeze
     q = qa.astype(np.uint64)
     fold = ((q * np.uint64(2654435761)) % np.uint64(2 ** 32) % np.uint64(prm["folds"])).astype(np.int64)
     device = pick_device(prm["device"])
     p = {"objective": "binary:logistic", "eval_metric": "aucpr", "device": device, "tree_method": "hist", "max_depth": prm["max_depth"],
          "eta": prm["eta"], "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 1, "seed": prm["seed"]}
-    tr_mask = ~is_hold
+    tr_mask = ~is_hold & ~is_final
     oof = np.zeros(len(y), dtype=np.float32)
     iters = []
     for k in range(prm["folds"]):
@@ -450,6 +473,9 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     out.mkdir(parents=True, exist_ok=True)
     tune.write_parquet(out / "oof_tune.parquet", compression="zstd")   # out-of-fold p on the non-holdout S1 (calibration, tuning)
     b.write_parquet(out / "holdout_pred.parquet", compression="zstd")  # stacked p on the locked holdout
+    if is_final.any():  # stacked p on the final holdout: written, not looked at (src/scripts/final_check.py at the freeze)
+        pl.DataFrame({"q": qa[is_final], "pid": pida[is_final], "p": model.predict(xgb.DMatrix(x[is_final], feature_names=feats)),
+                      "label": y[is_final]}).write_parquet(out / "final_pred.parquet", compression="zstd")
     model.save_model(str(out / "xgb.json"))
     (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "cap": cap, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):]}, indent=2))
     (out / "holdout.json").write_text(json.dumps(rep, indent=2))
@@ -494,12 +520,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tag", default="", help="separate chunk folder stack<tag> (parallel variants)")
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
+    ap.add_argument("--thin", action="store_true", help="build: train at test density (drop split.thin_q S1)")
     a = ap.parse_args(argv)
     global STACK_DIR
     STACK_DIR = "stack" + a.tag
     prm = dict(config.load()["stack"])
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
+    prm["thin"] = a.thin
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)
