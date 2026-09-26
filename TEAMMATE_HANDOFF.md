@@ -67,3 +67,7 @@ Only the provided data; models MIT/Apache and at most 8B parameters (ours: XGBoo
 ## 8. Status of the overnight jobs (26 Sep 22:45)
 
 Running or queued on our second notebook, all stopping it when done (about 03:30): `rc1` (symmetric e5-base cross-encoder training), `rc2` (scoring every shortlisted pair, both orders), `rc3` (stack `s26`, paired test against `s22`), `rg10` (stack seeds, `s22e`), `rd1` on our main notebook (second cross-encoder seed, done about 23:30), `rd2` (scores with it, averages the two seeds, stack `s27`), exports `re1`/`re2` to the shared bucket. **Cancelled to save money:** Qwen3-0.6B scoring and its stack `s24` (the fitted model is saved in `work/xenc3Q/model`; scoring takes about 2.5 hours per pair list on one A10G).
+
+## 9. Continuing Qwen on another AWS account (planned)
+The fitted Qwen3-0.6B cross-encoder is `work/xenc3Q/model` (in the export). Templates: `aws/jobs/qwen_score.sh` (scores the band pairs of both splits, about 200 pairs/s per A10G, 5 to 8 hours on one GPU) and `aws/jobs/qwen_stack.sh` (stack `s24` = `s22` + the Qwen score, paired test against `s22`; needs the full work directory and 128 GB RAM). Expected gain is small (+0.0001 to +0.0004 over `s22`); accept it only with a positive paired interval, then rebuild the France rules on `s24`.
+
