@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reproduces the final submission (model s17) from the raw TSV files. Run from code/business_entity_resolution.
+# Reproduces the final submission (model s22 with the France decoding step; portal 0.984502 for the s22t2c variant) from the raw TSV files. Run from code/business_entity_resolution.
 #   BER_DATA=<folder with train/ and test/>  BER_WORK=<scratch, about 120 GB>  bash reproduce_final.sh
 # Two Python environments are used: `ber` (Python 3.12, requirements.txt) for everything except the steps marked [torch], which need the
 # `pytorch` environment (requirements-gpu.txt: torch with CUDA, transformers, sentencepiece, plus polars, duckdb, pyyaml, scikit-learn).
@@ -56,15 +56,25 @@ pyt ber.stages.xenc train --dir xenc2_v7 --base-model intfloat/multilingual-e5-b
 pyt ber.stages.xenc score --split train --dir xenc2_v7 --model-dir xenc2/model --set score_batch=256
 pyt ber.stages.xenc score --split test --dir xenc2_v7 --model-dir xenc2/model --set score_batch=256
 
-# 7. stack s17 (shortlist, consensus, digit, TF-IDF, decoy edit and carried features, both cross-encoder scores, competition on the refined
-#    probability), decision and outputs
-py ber.stages.stack build --split train --base v7 --tag _k --xenc --xcons --xenc-dir xenc2_v7 --xenc-dir2 xenc_v7 --xenc-fit-more 300000 --decoy --extra --sub-q 1500000
-py ber.stages.stack tfidf --split train --tag _k
-py ber.stages.stack build --split test --base v7 --tag _k --xenc --xcons --xenc-dir xenc2_v7 --xenc-dir2 xenc_v7 --decoy --extra
-py ber.stages.stack tfidf --split test --tag _k
-py ber.stages.stack train --name s17 --base v7 --tag _k --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
-py ber.stages.stack predict --name s17
+# 7. cross-encoder scores for EVERY shortlisted pair (the band-only scores above feed the older stack): e5-base scoring of all pairs of the shortlist
+py ber.stages.xenc data --base v7 --dir xenc2F_v7 --set fit_more=300000,band_lo=0.005,band_hi=1.0
+pyt ber.stages.xenc score --split train --dir xenc2F_v7 --model-dir xenc2/model --set score_batch=512
+pyt ber.stages.xenc score --split test --dir xenc2F_v7 --model-dir xenc2/model --set score_batch=512
 
-# 8. checks (the official validator is also run by `predict`/`stack predict` when work/official/validate_submission.py exists)
-python src/scripts/check_submission.py "$BER_WORK/output/s17" "$BER_DATA/test"
-echo "outputs: $BER_WORK/output/s17/matching_results.tsv and candidate_pairs.tsv"
+# 8. stack s22 (shortlist, consensus, digit, TF-IDF, decoy edit and carried features, e5-base score on all pairs as xs, e5-small band score as xs2,
+#    competition on the refined probability), decision and outputs
+py ber.stages.stack build --split train --base v7 --tag _p --xenc --xcons --xenc-fit-more 300000 --decoy --extra --sub-q 1500000 --xenc-dir xenc2F_v7 --xenc-dir2 xenc_v7
+py ber.stages.stack tfidf --split train --tag _p
+py ber.stages.stack build --split test --base v7 --tag _p --xenc --xcons --xenc-fit-more 300000 --decoy --extra --sub-q 1500000 --xenc-dir xenc2F_v7 --xenc-dir2 xenc_v7
+py ber.stages.stack tfidf --split test --tag _p
+py ber.stages.stack train --name s22 --base v7 --tag _p --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
+py ber.stages.stack predict --name s22
+
+# 9. structural decoding of the test predictions (src/scripts/france_variants.py; France only, see README "Decoding"): decoys that swap the type word of the name
+#    (learned vocabulary, from slot occupancy), a stricter cut-off for France's over-confident probabilities, and the training maximum of 5 S2 and 6 S3 matches per S1.
+#    The candidate file is unchanged; only matches are removed.
+python src/scripts/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.985" --cap
+
+# 10. checks (the official validator is also run by `emit` when work/official/validate_submission.py exists)
+python src/scripts/check_submission.py "$BER_WORK/output/s22final" "$BER_DATA/test"
+echo "outputs: $BER_WORK/output/s22final/matching_results.tsv and candidate_pairs.tsv"

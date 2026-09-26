@@ -38,6 +38,17 @@ from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
 
 Every S1 entity, including entities of a country never seen in training (France), gets exactly one row; an empty list means no match.
 
+## Decoding (France)
+
+France has no training labels and its records differ from the training countries: names are two words (city or brand plus a type word such as `club`, `ecole`, `comite`), many
+businesses share a building, and the region in an address is often replaced by the department. The test predictions of the stacked model are post-processed by
+`src/scripts/france_variants.py` with three structural rules that use only the test files and the training data's known limits:
+- **Type-word swap decoys.** A pair whose core names differ by exactly one common word on each side is a decoy when the swapped-in word belongs to the country's type vocabulary. The
+  vocabulary is estimated without labels from slot occupancy: an S1 has at most 5 S2 and 6 S3 matches, true copies must fit into the free slots, so their number per S1 falls to zero when the S1 is
+  full, while decoys arrive at a rate that does not depend on how full it is. Words whose rate does not fall (ratio of S1 with three or more exact copies to S1 with none of at least 0.75) are type words.
+- **A stricter probability cut-off for France** (0.985): the model's probabilities are over-confident there.
+- **Capacities**: at most 5 S2 and 6 S3 matches per S1 in every country.
+
 ## Reproduce
 
 Requirements: two Python 3.12 environments (`requirements.txt`; and `requirements-gpu.txt` with a CUDA build of torch for the dense
