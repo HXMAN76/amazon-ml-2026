@@ -7,6 +7,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
                         shared with another S1 (a multi-tenant building)
   legal:pmax            legal-form conflict (both sides name a different form), p < pmax
   thr:t                 p < t
+  thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
                         swaps from generic suffix words (services, groupe, france); p < pmax
@@ -88,6 +89,8 @@ def main() -> None:
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "thr":
             c = pl.col("p") < float(k[1])
+        elif k[0] == "thrx":
+            c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
         elif k[0] == "typeswap":
             rmin = float(k[2]) if len(k) > 2 else 0.75
             words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()

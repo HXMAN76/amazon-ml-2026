@@ -61,6 +61,7 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `s19` (`v8`) | joint name counts over train and test in the first stage | 0.99026, +0.00001 against `s17` (no gain) | second notebook |
 | `s25` | `s17` plus address multiplicity features | 0.99028, +0.00004 (no gain); France over-claiming unchanged (64.2% of the pool claimed, 3.53 matches per S1, 205 S1 above 5 S2): address sharing is not the France cause | `runs/s25` |
 | `s20` | e5-large (560M) cross-encoder as `xs`, e5-base as `xs2`, band pairs | 0.99030, +0.00005 against `s17` (no gain: a bigger cross-encoder is not the lever) | second notebook `work/output/s20` |
+| `s22t2c` (France rules on `s22`) | type-word swap rule + France threshold 0.985 + cap | portal **0.984502** (`s22sx` 0.982477, `s17` 0.980502) | `runs/s22t2c` |
 | analysis `ra1` to `ra5` | recall attrition, name ambiguity, ambiguity profile, post-stratification | see `research.md` section 23 | `jobs2/done/ra*.log` |
 
 ### 6.2 Running or queued now (26 Sep 13:00)

@@ -92,4 +92,5 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 - Result: France F0.5 about 0.92, US and India about 0.99; the France threshold sweep on `s22` (`s22f985` first, then `s22f97`, `s22f995`) and a France calibration are the next uploads. `s24` or `s25` join if they beat `s22` on the holdout.
 - Freeze checklist unchanged (zip, official validator with `--check-ids`, methodology document, one clean reproduction). If the final model is `s22` or later, update `reproduce_final.sh` and `README.md` (two extra stack steps, cross-encoder scoring on every shortlisted pair; if `s24`, Qwen3-0.6B Apache-2.0, 0.6B parameters).
 - Portal log addition (26 Sep evening): **`s22sx` 0.982477** (France swap rule on `s22`, best so far). Five submissions tomorrow; plan in `research.md` section 25.1 and `EXPERIMENTS.md` section 10.
+- Portal log addition (26 Sep, last slot): **`s22t2c` 0.984502** (`runs/s22t2c/output/`; France rules on `s22`: type-word swap rule, threshold 0.985, caps). Best so far. Corrected: `s17` 0.980502.
 
