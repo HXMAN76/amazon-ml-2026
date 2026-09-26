@@ -134,6 +134,7 @@ def finetune() -> None:
     t0 = time.time()
     pq = P["parquet"] / "train"
     D = dense_train_q(prm)
+    (P["work"] / "dense").mkdir(parents=True, exist_ok=True)  # a fresh WORK has no dense/ yet
     np.save(P["work"] / "dense" / "train_q.npy", D)
     _, _, p_ids, _ = _texts("train")
     lab = pl.read_parquet(pq / "labels.parquet").with_columns((pl.col("src").cast(pl.Int64) * PID_BASE + pl.col("other_rid")).alias("pid"),
