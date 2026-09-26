@@ -7,4 +7,4 @@ aws s3 sync s3://$B/ber/team_work/output/s27 $BER_WORK/output/s27 --only-show-er
 python src/scripts/paired_models.py s22 s27
 python src/scripts/france_variants.py s27 v8_27t2c --rules typeswap:1.01,thr:0.985 --cap
 python src/scripts/france_variants.py s27 v8_27t2cp --rules typeswap:1.01,thr:0.985,protect:0.9 --cap
-python src/scripts/france_empty.py s22 v8_27t2c
+python src/scripts/france_empty.py s27 v8_27t2c
