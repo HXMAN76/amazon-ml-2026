@@ -173,3 +173,12 @@ Update 20:00: the test-like evaluation of `v7` (`research.md` section 26.2) show
 | `s22v2` | the same with 0.995 | 58.2k |
 Suggested order: `s22u3` (cut-off direction), `s22v1` (do the protected pairs help), then the combination; `s26` versions after 03:00.
 
+### 10.5 Compute map, 26 Sep 21:10
+| GPU | Job | Ready |
+|---|---|---|
+| second notebook GPU 0 | `rc1` symmetric e5-base cross-encoder (seed 0), then `rc2` scoring (train split), `rc3` stack `s26` | 21:15, 23:15, 00:45 |
+| second notebook GPU 1 | idle now; `rc2` scoring (test split) from 21:15; then `rd2` scoring of seed 1 (test split) | 23:15 to 01:15 |
+| second notebook GPU 2 | `rn1` Qwen3-0.6B cross-encoder training, then `rn2` scoring (with GPU 3), `rn3` stack `s24` | 22:05, 00:35, 02:05 |
+| second notebook GPU 3 | idle until `rn2` | |
+| main notebook GPU | `rd1`: seed 1 of the symmetric cross-encoder (23:30), then `rd2` (second notebook, lane B2): score both splits with seed 1, average the logits of the two seeds (`xenc2SymE_v7`, columns `xs`, `xs_asym`, `xs_seed_gap`), stack `s27`, paired tests against `s22` and `s26` | about 03:30 |
+

@@ -157,6 +157,8 @@ def train() -> None:
     tok = AutoTokenizer.from_pretrained(MODEL)
     dec = is_decoder(MODEL)
     sym = int(prm.get("symmetric", 0))
+    seed = int(prm.get("train_seed", 0))
+    torch.manual_seed(seed)  # head initialisation and dropout; the order of the pairs uses the same seed
     if dec:
         tok.padding_side = "right"
     model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, **({"dtype": torch.float32} if dec else {}))
@@ -171,7 +173,7 @@ def train() -> None:
     steps = epochs * (len(y) // bs)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / (0.06 * steps)) * max(0.0, 1 - i / steps))
     scaler = torch.amp.GradScaler(enabled=not dec)
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(seed)
     model.train()
     step = 0
     for ep in range(epochs):
