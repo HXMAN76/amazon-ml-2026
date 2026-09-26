@@ -1,6 +1,6 @@
 # Handoff: v6 (`bs` line) on the barani GPU notebook
 
-Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 10:20 IST**.
+Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 11:15 IST**.
 Window closes Sun 27 Sep 23:59 IST; planned freeze **Sun 12:00 IST**.
 
 ## 1. Goal and why
@@ -72,8 +72,11 @@ Evaluation:
 | `a2b_density` | orphans or decoys? | pool per S1 train 4.68, test 5.75; ownerless per S1 train 1.22, test unclaimed 2.32. Nearest-S1 cosine: train decoys 0.670, simulated orphans 0.562, **test unclaimed 0.671 -> orphan share 0: the extra test records are decoys**. Thinned stack `bs_s6t` 0.98294 (no change). Thinning removed. |
 | `b1_encoder` | dense_all2 (e5-small, 900k S1, 3 hard negatives + 1 synthetic decoy) + first stage `bs_w1` | **first stage `bs_w1` holdout 0.97926** [0.9788, 0.9797] vs `bs_v5` 0.97626: **+0.0030**; recall 0.9557 (was 0.9493), precision 0.9934. The new channel recovers 913 of the 8,216 true pairs still missing; most of the gain is its sharper cosine feature. 169 min (fine-tune 59 min). |
 | `b2_tw` | test-weighted holdout and threshold for `bs_s6` | queued |
-| `c1_xenc` | cross-encoder (gte-multilingual-reranker-base) with sibling context | trained on 157,642 pairs of 200k S1 in 17 min; scored 962k train and 1.18M test band pairs |
-| `d1_stack`, `b2_tw`, `e1_errors` | stack `bs_w2` (+ xs, decoy features, dall2 columns) + set model + blend `bs_final`; test weighting; error analysis | queued |
+| `c1_xenc` | cross-encoder (gte-multilingual-reranker-base) with sibling context | trained on 157,642 pairs of 200k S1 in 17 min; scored 962k train and 1.18M test band pairs. Holdout band (72,100 pairs): average precision **0.853 vs 0.815** for the first stage alone |
+| `d1_stack` | stack `bs_w2` (+ xs, decoy features, dall2 columns), set model, blend `bs_final` | **`bs_w2` 0.98699**, +0.0040 over `bs_s6` (paired); xs is the 3rd most important feature. **`bs_final` (75% stack + 25% set model) 0.98718**, +0.00019 [0.00009, 0.00029] over `bs_w2`. Validator PASS |
+| `b2_tw` | test-weighted `bs_s6` | 0.97892 test-weighted (plain 0.98299): country mix and extra decoys cost about 0.004. Best threshold unchanged (0.63): the threshold is robust to the test's decoy density |
+| `e1_errors` | error analysis of `bs_w2` (holdout) | oracle 0.9958; loss: blocking 0.0042, matcher 0.0088. 7,738 missed true pairs vs 1,610 false positives (median p1 of misses 0.35). Weakest segments: S1 with an empty-address match 0.951 (13% of S1), S1 with a single true match 0.942. Threshold curve flat 0.63 to 0.70 |
+| `f1_xenc2` | cross-encoder v2 (600k S1, band 0.02 to 0.98), stack `bs_w3` on 650k S1, set model, blend `bs_final3` | running |
 
 Local checks: `pytest` 34 pass; a CPU smoke run of the whole v6 chain on synthetic data (scratch script, not in the repo) found
 and fixed a set-model bug (final-holdout rows were dropped).
@@ -83,7 +86,7 @@ Expected (estimates, to be replaced by measurements):
 | Model | Locked holdout | Portal |
 |---|---|---|
 | `bs_s6` | 0.98299 (measured) | about 0.966 to 0.971 |
-| `bs_final` | about 0.988 to 0.991 | about 0.973 to 0.982 (central 0.978) |
+| `bs_final` | **0.98718 (measured)** | about 0.975 to 0.98 |
 
 ## 6. Next steps
 1. Done: `bs_s6` reproduces `s6` (0.98299).
