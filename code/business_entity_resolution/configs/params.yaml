@@ -88,6 +88,6 @@ dense_all:             # name + address embeddings for EVERY pool record (see st
   max_len: 48
   k: 5                 # S1 neighbours retrieved per pool record
   k_merge: 1           # of these, pairs that may be added (top-1 owner candidate of each pool record: zn2 report)
-  k_merge_empty: 3     # neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
+  k_merge_empty: 1     # (s6 recipe; 3 = the dropped v6/s7 setting) neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
   tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
   seed: 11

@@ -311,6 +311,10 @@ def test_dense_all_merge_gives_empty_address_records_more_neighbours(tmp_path, m
     (work / "dense_all" / "train").mkdir(parents=True)
     dp.write_parquet(work / "dense_all" / "train" / "pairs.parquet")
     have = set(zip(cand["q"].to_list(), cand["pid"].to_list()))
+    from ber import config
+
+    cfg = config.load()  # the setting under test (params.yaml keeps the s6 recipe, k_merge_empty 1)
+    monkeypatch.setattr(config, "load", lambda *a, **k: {**cfg, "dense_all": {**cfg["dense_all"], "k_merge_empty": 3}})
     dense_all.merge("train")
     merged = pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))])
     got = set(zip(merged["q"].to_list(), merged["pid"].to_list()))
