@@ -85,13 +85,17 @@ bs_stack:
 	$(PY) -m ber.stages.stack predict --name $(BS_S)
 
 # v6 steps after the baseline.
+STK ?= bs_w2
+STK_TAG ?= w
+SETM ?= bs_set
+FINAL ?= bs_final
 .PHONY: bs_density bs_tw bs_errors bs_encoder bs_xenc bs_final_stack bs_set
 bs_density:
 	$(PY) src/scripts/density_check.py $(BS_S)
 bs_tw:  # holdout score and threshold re-weighted to the test's country and look-alike mix
-	$(PY) src/scripts/test_weighted.py $(BS_S)
+	$(PY) src/scripts/test_weighted.py $(STK)
 bs_errors:  # where the final stack still loses on the locked holdout (blocking vs matcher, error examples)
-	$(PY) src/scripts/error_analysis.py bs_w2 holdout
+	$(PY) src/scripts/error_analysis.py $(STK) holdout
 bs_encoder:  # second name+address channel (dense_all2) and the first stage on it
 	$(PY) -m ber.stages.dense_all finetune --tag 2
 	for s in train test; do $(PY) -m ber.stages.dense_all embed --split $$s --tag 2 && $(PY) -m ber.stages.dense_all retrieve --split $$s --tag 2 || exit 1; done
@@ -107,11 +111,11 @@ bs_xenc:
 	$(PY) -m ber.stages.xenc finetune --base bs_w1
 	for s in train test; do $(PY) -m ber.stages.xenc score --split $$s --base bs_w1 || exit 1; done
 	$(PY) -m ber.stages.xenc report --base bs_w1
-bs_final_stack:
-	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc --decoy --extra --tag w && $(PY) -m ber.stages.stack tfidf --split $$s --tag w || exit 1; done
-	$(PY) -m ber.stages.stack train --name bs_w2 --base bs_w1 --tag w
-	$(PY) -m ber.stages.stack predict --name bs_w2 --tag w
-	$(PY) src/scripts/paired_models.py $(BS_S) bs_w2 || true
+bs_final_stack:  # STK / STK_TAG / SETM / FINAL name a variant so earlier models stay for the paired comparison
+	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc --decoy --extra --tag $(STK_TAG) && $(PY) -m ber.stages.stack tfidf --split $$s --tag $(STK_TAG) || exit 1; done
+	$(PY) -m ber.stages.stack train --name $(STK) --base bs_w1 --tag $(STK_TAG)
+	$(PY) -m ber.stages.stack predict --name $(STK) --tag $(STK_TAG)
+	$(PY) src/scripts/paired_models.py $(BS_S) $(STK) || true
 bs_set:
-	$(PY) -m ber.stages.setmodel train --name bs_set --stack bs_w2
-	$(PY) -m ber.stages.setmodel blend --name bs_final --stack bs_w2 --set bs_set
+	$(PY) -m ber.stages.setmodel train --name $(SETM) --stack $(STK)
+	$(PY) -m ber.stages.setmodel blend --name $(FINAL) --stack $(STK) --set $(SETM)
