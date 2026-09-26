@@ -1,5 +1,7 @@
 # Handoff: Amazon ML Challenge 2026 (Business Entity Resolution)
 
+> **Newest: `TEAMMATE_HANDOFF.md`** (the team continues on their own AWS; our account's credits are used up; artifacts are in the shared bucket `ml-challenge-nooglers/ml-challenge-2026/handoff-nooglers-20260926/`). This file describes OUR infrastructure (account 567503593043) and its pitfalls.
+
 - Archived docs (26 Sep): `docs/archive/` holds v1, v2, research-v2, plan, the teammate handoff, remote-setup and the SSH-client requirements; do not follow them.
 
 Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.

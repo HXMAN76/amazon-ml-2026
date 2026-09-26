@@ -1,5 +1,7 @@
 # Team guide: how we train, what the best model is, what is left to do
 
+> **Continuing on your own AWS? Start with `TEAMMATE_HANDOFF.md`** (state at 26 Sep 22:45 IST, what to submit next, where every artifact is, how to run things without our account).
+
 Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 16:30 IST (best: `s17`, holdout 0.99025, portal 0.981). What runs on every GPU and the ideas still open: `EXPERIMENTS.md`. Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
