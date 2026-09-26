@@ -16,13 +16,21 @@ PID_BASE = 10_000_000
 DF_MIN = 100
 
 
+SPACED = r"(?:^| )(?:s a r l|s a s u|s a s|e u r l|s c i|s n c|e i r l|e i|s a)(?: |$)"
+
+
+def strip_spaced(c: pl.Expr) -> pl.Expr:
+    """Remove spaced legal forms (`s a r l`, `e u r l`, `s c i`, `e i`, ...): two passes because neighbouring matches share a blank."""
+    return c.str.replace_all(SPACED, " ").str.replace_all(SPACED, " ").str.replace_all(r"\s+", " ").str.strip_chars()
+
+
 def tok_df(s1: pl.DataFrame) -> pl.DataFrame:
     return s1.select(pl.col("core1").str.split(" ").list.unique().alias("t")).explode("t").group_by("t").len().rename({"len": "df"})
 
 
 def flag(pairs: pl.DataFrame, df: pl.DataFrame) -> pl.DataFrame:
     """pairs: (a_core, b_core). Adds swap (bool): exactly one token differs on each side and both are common."""
-    d = pairs.with_columns(pl.col("a_core").str.split(" ").list.unique().alias("ta"), pl.col("b_core").str.split(" ").list.unique().alias("tb"))
+    d = pairs.with_columns(strip_spaced(pl.col("a_core")).str.split(" ").list.unique().alias("ta"), strip_spaced(pl.col("b_core")).str.split(" ").list.unique().alias("tb"))
     d = d.with_columns(pl.col("ta").list.set_difference(pl.col("tb")).alias("da"), pl.col("tb").list.set_difference(pl.col("ta")).alias("db"))
     one = (pl.col("da").list.len() == 1) & (pl.col("db").list.len() == 1)
     d = d.with_columns(pl.when(one).then(pl.col("da").list.first()).otherwise(None).alias("xa"), pl.when(one).then(pl.col("db").list.first()).otherwise(None).alias("xb"))

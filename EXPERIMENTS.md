@@ -161,3 +161,15 @@ Update 20:00: the test-like evaluation of `v7` (`research.md` section 26.2) show
 - **Not adopted, with reasons:** two-fold cross-fitting (two more cross-encoder fits plus stack changes for about +0.0002 to +0.0005, leakage risk; revisit only if `s26` wins); sibling candidate channel (the closest experiment, extra empty-address neighbours `v6`/`s7`, gave nothing; two thirds of the misses are name-ambiguous and the stack already has the sibling name evidence; the candidate oracle 0.9957 is not the binding limit, the matcher is); France stack features learned from labels (US and India labels contain no France-type decoys: swap pairs are true 99.7% there, so `typeswap_risk` would get no weight; the structural rule is the correct place); density-ratio weights (the test-like evaluation of `v7` shows a mismatch penalty of only 0.0006, below the plan's own 0.001 gate); "no portal probes" (France has no labels; the portal gave `s22sx` +0.0015 over `s22`; we keep it but only for at most five predeclared structural variants).
 - **Kept as optional after `s26`:** three stack seeds (+0.0001 to +0.0003), a learned per-S1 candidate budget (the organisers rank smaller candidate sets higher; weight unknown).
 
+### 10.4 France variants ready for 27 Sep (all on `s22`, all with the caps 5 S2 / 6 S3; portal `s22t2c` 0.984502 is the base to beat)
+| File | Rules | Pairs dropped in France |
+|---|---|---|
+| `s22u3` | type-word swaps + threshold 0.995 | 104k |
+| `s22u4` | type-word swaps + threshold 0.97 | 66k |
+| `s22u1` | type-word swaps + threshold 0.985 on non-exact-name pairs only | 56k |
+| `s22u2` | type-word swaps + threshold 0.995 on non-exact-name pairs only | 68k |
+| `s22v3` | as `s22t2c` but the swap flag ignores spaced legal forms (`e u r l`) | 79.5k |
+| `s22v1` | swaps (spaced-legal aware) + threshold 0.985 that spares equal names after legal spacing and initials pairs | 49.5k |
+| `s22v2` | the same with 0.995 | 58.2k |
+Suggested order: `s22u3` (cut-off direction), `s22v1` (do the protected pairs help), then the combination; `s26` versions after 03:00.
+

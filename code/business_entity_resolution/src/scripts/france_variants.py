@@ -7,6 +7,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
                         shared with another S1 (a multi-tenant building)
   legal:pmax            legal-form conflict (both sides name a different form), p < pmax
   thr:t                 p < t
+  thrp:t                p < t unless the pair is protected: equal names after removing spaced legal forms, or a pool name of at most 3 letters that is a subsequence of the S1's initials
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
@@ -22,7 +23,7 @@ import polars as pl
 
 from ber import config, decision
 from ber.stages.predict import emit
-from word_swap import flag, tok_df
+from word_swap import flag, strip_spaced, tok_df
 
 PID_BASE = 10_000_000
 
@@ -89,6 +90,13 @@ def main() -> None:
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "thr":
             c = pl.col("p") < float(k[1])
+        elif k[0] == "thrp":
+            tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ")).select("q", "pid", "a_core", "b_core")
+            ok = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if is_subseq(bc, "".join(t_[0] for t_ in ac.split()))]
+            ok_df = pl.DataFrame({"q": [x[0] for x in ok], "pid": [x[1] for x in ok]}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_ini"))
+            own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok"))
+            own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
+            c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok")
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
         elif k[0] == "typeswap":
