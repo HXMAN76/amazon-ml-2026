@@ -316,6 +316,19 @@ def build(split: str, base: str, prm: dict) -> None:
     t0 = time.time()
     d = shortlist(load_p1(split, base), prm)
     print(f"{split}: shortlist keeps {d.height} pairs, {d.height / d['q'].n_unique():.2f} per S1", flush=True)
+    dx = None
+    if prm.get("xcons") and prm.get("xenc"):  # competition features on the cross-encoder refined probability (xs inside the band, p1 elsewhere)
+        xs0 = pl.read_parquet(P["work"] / prm.get("xenc_dir", "xenc") / f"{split}_xs.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
+        if split == "train":  # xs of the S1 the cross-encoder was fitted on is optimistic: keep it out of the competitors' refined probabilities
+            from ber.stages.xenc import xenc_train_q
+
+            xp0 = dict(config.load()["xenc"])
+            if prm.get("xenc_fit_more"):
+                xp0["fit_more"] = prm["xenc_fit_more"]
+            xs0 = xs0.filter(~pl.col("q").is_in(xenc_train_q(xp0)))
+        dx = (d.select("q", "pid", "p").join(xs0, on=["q", "pid"], how="left")
+               .with_columns(pl.when(pl.col("xs").is_not_null()).then(pl.col("xs")).otherwise(pl.col("p")).cast(pl.Float32).alias("p")).select("q", "pid", "p"))
+        dx = pid_features(dx)
     d = pid_features(d)
     if split == "train":  # keep the locked holdout plus a seeded subsample of the other S1 for training
         hold = holdout_q()
@@ -362,6 +375,10 @@ def build(split: str, base: str, prm: dict) -> None:
         lo, hi = int(qs[0]), int(qs[-1])
         rows0 = d.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).join(pl.DataFrame({"q": qs}), on="q", how="semi")
         rows = q_features(rows0)
+        if dx is not None:
+            rx = q_features(dx.join(pl.DataFrame({"q": qs}), on="q", how="semi").filter((pl.col("q") >= lo) & (pl.col("q") <= hi)))
+            xc = [c for c in rx.columns if c not in {"q", "pid", "p"}]
+            rows = rows.join(rx.select("q", "pid", pl.col("p").alias("px"), *xc).rename({c: c + "_x" for c in xc}), on=["q", "pid"], how="left")
         orig = (scan.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).select(["q", "pid", *carried])
                     .with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).collect())
         rows = rows.join(orig, on=["q", "pid"], how="left").join(digit_features(rows0, s1_addr, pool_addr, n2), on=["q", "pid"], how="left")
@@ -500,6 +517,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
+    ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
     ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
@@ -511,6 +529,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
     prm["xenc"] = prm.get("xenc", False) or a.xenc
     prm["xenc_dir"] = a.xenc_dir
+    prm["xcons"] = prm.get("xcons", False) or a.xcons
     prm["xenc_fit_more"] = a.xenc_fit_more
     if a.sub_q:
         prm["sub_q"] = a.sub_q
