@@ -375,6 +375,9 @@ def build(split: str, base: str, prm: dict) -> None:
         feat_files = [str(f) for sub_dir in ("train", "train_rest") for f in sorted((P["work"] / "features" / sub_dir).glob("part_*.parquet"))]
     else:
         keep = np.sort(d.select("q").unique()["q"].to_numpy())
+        if prm.get("ctry"):  # rebuild one country's S1 only (competition features above still see every claimant)
+            cq = pl.read_parquet(P["parquet"] / "test" / "source1.parquet", columns=["rid", "ctry"]).filter(pl.col("ctry") == prm["ctry"])["rid"].to_numpy()
+            keep = np.intersect1d(keep, cq.astype(keep.dtype))
         feat_files = [str(f) for f in sorted((P["work"] / "features" / "test").glob("part_*.parquet"))]
     d = d.sort("q", "pid")
     out = P["work"] / STACK_DIR / split
@@ -552,6 +555,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
+    ap.add_argument("--ctry", default="", help="build, test split: write the chunks of this country's S1 only (e.g. france)")
     ap.add_argument("--sub-q", type=int, default=None, help="build: number of non-holdout S1 for stage-two training (default: params stack.sub_q)")
     a = ap.parse_args(argv)
     global STACK_DIR
@@ -566,6 +570,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["xenc_dir3"] = a.xenc_dir3
     prm["addrmult"] = a.addrmult
     prm["xenc_fit_more"] = a.xenc_fit_more
+    prm["ctry"] = a.ctry
     if a.sub_q:
         prm["sub_q"] = a.sub_q
     for kv in filter(None, a.set.split(",")):
