@@ -1,6 +1,6 @@
 # Handoff: v6 (`bs` line) on the barani GPU notebook
 
-Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 06:45 IST**.
+Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 10:20 IST**.
 Window closes Sun 27 Sep 23:59 IST; planned freeze **Sun 12:00 IST**.
 
 ## 1. Goal and why
@@ -70,9 +70,10 @@ Evaluation:
 |---|---|---|
 | `a1_base` + `a1b_resume` | baseline rebuild of `s6` | **`bs_s6` locked holdout 0.98299** (team `s6` 0.9831): reproduced. First stage `bs_v5` holdout 0.9763 [0.9758, 0.9767] (team 0.9757); pruner top-30 recall 0.9479 (team 0.9471); dense_all recovers 15,649 of 23,865 missed pairs. Stack gain over first stage +0.0067 [0.0064, 0.0071]. Cap 5+6: no change (0.98299 both). Official validator PASS. 134 min. One fix on the way (`WORK/dense` missing on a fresh box). |
 | `a2b_density` | orphans or decoys? | pool per S1 train 4.68, test 5.75; ownerless per S1 train 1.22, test unclaimed 2.32. Nearest-S1 cosine: train decoys 0.670, simulated orphans 0.562, **test unclaimed 0.671 -> orphan share 0: the extra test records are decoys**. Thinned stack `bs_s6t` 0.98294 (no change). Thinning removed. |
-| `b1_encoder` | dense_all2 (e5-small, 900k S1, 3 hard negatives + 1 synthetic decoy) + first stage `bs_w1` | running (7,030 fine-tuning steps, then embed / retrieve / features) |
+| `b1_encoder` | dense_all2 (e5-small, 900k S1, 3 hard negatives + 1 synthetic decoy) + first stage `bs_w1` | **first stage `bs_w1` holdout 0.97926** [0.9788, 0.9797] vs `bs_v5` 0.97626: **+0.0030**; recall 0.9557 (was 0.9493), precision 0.9934. The new channel recovers 913 of the 8,216 true pairs still missing; most of the gain is its sharper cosine feature. 169 min (fine-tune 59 min). |
 | `b2_tw` | test-weighted holdout and threshold for `bs_s6` | queued |
-| `c1_xenc`, `d1_stack` | cross-encoder; stack `bs_w2` (+ xs, decoy features, dall2 columns) + set model + blend `bs_final` | queued |
+| `c1_xenc` | cross-encoder (gte-multilingual-reranker-base) with sibling context | trained on 157,642 pairs of 200k S1 in 17 min; scored 962k train and 1.18M test band pairs |
+| `d1_stack`, `b2_tw`, `e1_errors` | stack `bs_w2` (+ xs, decoy features, dall2 columns) + set model + blend `bs_final`; test weighting; error analysis | queued |
 
 Local checks: `pytest` 34 pass; a CPU smoke run of the whole v6 chain on synthetic data (scratch script, not in the repo) found
 and fixed a set-model bug (final-holdout rows were dropped).
