@@ -31,7 +31,24 @@ Test S1 by country: US 663,106 (38.3%), India 809,986 (46.8%), France 259,452 (1
 - **Significance:** paired bootstrap (1000 resamples of S1) on the same holdout; a change ships only if its 95% interval against the current best excludes 0 (`decision.paired_bootstrap_delta`, `src/scripts/paired_models.py`).
 - **Portal:** public subset of the test set; it has read 0.012 to 0.018 below the holdout each time (test is harder: 5.8 pool records per S1 against 4.7, more India, France unlabeled).
 
-## 3. Current architecture (`s5` / `s6`, the best models)
+## 3.0 Update 26 Sep 06:40 IST: the current best pipeline is `s15` (supersedes the `s5`/`s6` numbers below)
+
+Three changes since `s6`, in order of importance:
+
+1. **Cross-encoder on the uncertain band (`stages/xenc.py`), feature `xs`.** `multilingual-e5-small` (MIT, 118M) with a one-logit head reads both records together ("name | address", romanised name appended for non-Latin names, digit runs tagged `[N]12[/]` and `[P]60001[/]`). Fitted on 400k S1 (458k pairs: the band of p1 0.02 to 0.98, every confident false positive as a hard negative, 10% of the easy positives), 3 epochs, 32 minutes on an A10G. Only band pairs are scored (0.75 per S1 on train, 1.11 per S1 on test for `v7`), and the score enters the stack as one feature. The S1 it was fitted on are excluded from stage-two training. Effect: +0.0053 F0.5 on the holdout (`s8` 0.98362 to `s11` 0.98887), the largest single gain since the dense channels.
+2. **First stage `v7`:** trained on 850k S1 (the 250k sample plus 600k S1 from the rest, never the holdout and never the S1 the dense encoders were fitted on), 5-fold out-of-fold over all of them, depth 9, eta 0.05, up to 3000 rounds (the old settings hit the 600-round cap). Holdout 0.97796 against 0.97565 for `v5`; precision 0.9933, recall 0.9527.
+3. **Stack settings:** decoy edit features (`dc_*`: Levenshtein, Indel, substitution estimate, Hamming for equal lengths, length difference, first letter, word symmetric difference), more carried first-stage columns (dense channel columns, coverage, skeleton, length), 1.5M S1 for stage two, depth 9, eta 0.05, up to 1500 rounds.
+
+```
+candidates (token blocking + dense names + dense_all)  ->  first stage v7 (850k S1, depth 9)  ->  p1
+p1  ->  shortlist (best 10 by p1, p1 >= 0.005)  ->  band pairs (0.02 <= p1 <= 0.98)  ->  cross-encoder xs
+shortlist + xs  ->  stack s15 (consensus, digit, TF-IDF, decoy edit, carried columns, xs; 1.5M S1; depth 9)
+->  exclusive assignment, threshold 0.71  ->  matching_results.tsv, candidate_pairs.tsv (4.74 candidates per S1 on test)
+```
+
+Holdout F0.5 of `s15`: 0.98935 (paired +0.00018, CI [+0.00004, +0.00032], over `s13`; `s13` 0.98917 uses base `v5`). Stack ablation trail on the way: see the version table (section 4).
+
+## 3.1 Current architecture (`s5` / `s6`, the best models)
 
 ```
 raw TSV (train, test)
@@ -94,7 +111,18 @@ Holdout = locked 150k-S1 set; out-of-fold (OOF) = the 250k training sample; port
 | `s6` | `s5` with the candidate shortlist (K 10, floor 0.005) | holdout 0.9831 | 4.9 candidates per S1, the file for the final ranking; portal pending |
 | `v6` / `s7` | extra dense neighbours (top 3) for pool records with an empty address | 0.97557 / 0.98309 | no gain (`v5` 0.97565, `s6` 0.98308); dropped |
 
-Planned but not built yet (each behind a paired gate): `s8` = stack with decoy edit features and more carried columns, `s9` = second consensus round on `s6`'s probabilities (code exists, options `--decoy`, `--extra`, base a stacked model); details in section 9.
+| `s8` | stack with decoy edit features and extra carried first-stage columns | holdout 0.98362 | +0.00054 [0.00036, 0.00073] over `s6`; decoy features alone +0.00024 |
+| `s9` | second consensus round on `s6`'s probabilities | 0.98317 | +0.00009, CI includes 0; dropped |
+| `s10` | stage-two training set 1.5M S1 instead of 400k | 0.98343 | +0.00036 [0.00019, 0.00052] over `s6` |
+| `s12` | decoy + extra features + 1.5M S1 + depth 9, eta 0.05, 1500 rounds | holdout 0.98505 | +0.00198 [0.00177, 0.00219] over `s6`; depth 9 beat 6 and 11 on out-of-fold and holdout |
+| `s11` | `s8` + cross-encoder score `xs` | holdout **0.98887** | +0.00525 [0.00497, 0.00555] over `s8` |
+| `s13` | `s11` + 1.5M S1 + depth 9 | holdout 0.98917 | +0.00030 [0.00019, 0.00041] over `s11` |
+| `v7` | first stage on 850k S1 (250k sample + 600k), depth 9, eta 0.05, 3000 rounds | holdout 0.97796 [0.9775, 0.9784] | +0.0023 over `v5` |
+| `s15` | stack on `v7` with cross-encoder, decoy, extra, 1.5M S1, depth 9 | holdout **0.98935** | +0.00018 [0.00004, 0.00032] over `s13`; 4.74 candidates per S1 on test; current best |
+
+In flight (26 Sep 06:40): `s14` = the same stack on a stronger cross-encoder (`multilingual-e5-base`, 278M, fitted on 700k S1, band 0.01 to 0.99); earlier planned items `s8` and `s9` are done (rows above).
+
+Options in code: `stack build --decoy --extra --xenc --sub-q N --tag T`, `stack train --set depth=...`, a stacked base model for a second consensus round; details in section 9.
 
 ## 5. Component reference
 
@@ -118,6 +146,9 @@ Exclusive assignment (each pool record keeps its highest-probability S1, ties to
 
 ### 5.7 Analysis and validation scripts (`src/scripts/`)
 `error_analysis.py` (loss decomposition, false positives and negatives, per-country), `miss_analysis.py` (never-proposed pairs by cause), `noise_analysis.py` (recall and precision by noise type), `country_expected.py` (F0.5 estimated from probabilities per country, a France proxy), `shortlist_eval.py` (cost of candidate cut-offs), `paired_models.py` (paired bootstrap between two stacked models), `check_submission.py` (all format and content rules of the statement), `qa_prepare.py`.
+
+### 5.8 Cross-encoder (`stages/xenc.py`)
+Commands (`data` in the `ber` env, `train` and `score` in the `pytorch` env): `xenc data --base v7 --dir xenc_v7` builds the band pairs and the fit set, `xenc train` fine-tunes (`--base-model`, `--model-dir`, `--set fit_more=...,band_lo=...,epochs=...`), `xenc score --split train|test --dir ...` writes `WORK/<dir>/<split>_xs.parquet`, `stack build --xenc --xenc-dir <dir>` joins it. The fit S1 come from `xenc_train_q` (outside the stage-1 sample, the holdout and the dense-encoder fitting sets; `fit_more` extends the set while keeping the first 400k), and `stack build` excludes them from stage two. Measured: average precision inside the band 0.969 (cross-encoder) against 0.897 (first stage) on train pairs (optimistic, it includes fit S1); the honest measure is the holdout stack, +0.0053.
 
 ## 6. Repository map
 

@@ -74,3 +74,7 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 - Portal log for the methodology document (version history): v2 0.944 (25 Sep 13:46 IST), s4 0.953 (22:21), s3all 0.949 (22:53). Record every later upload here with time and score.
 - Cap of at most 5 S2 and 6 S3 matches per S1 (the training maximum): apply at the freeze if it does not lose on the holdout.
 - Run the official validator with `--check-ids` on the final files on the notebook (from the laptop the test sources download at about 1 MiB/s).
+
+## G. Added 26 Sep about 06:45 IST
+- Best files by holdout (none uploaded to the portal yet): `s15` 0.98935, `s13` 0.98917, `s11` 0.98887, `s12` 0.98505, all with 4.7 to 4.9 candidates per S1, all pass `check_submission.py` and the official validator (without `--check-ids`; run `--check-ids` on the notebook for the final file).
+- The final file must come from the pipeline that a clean reproduction rebuilds: `s15` needs `v7`, the cross-encoder model and its scores, the dense encoders and the stack; the reproduction budget is about 5 hours on the 16xlarge (blocking indexes have to be rebuilt).

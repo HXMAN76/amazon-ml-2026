@@ -1,6 +1,6 @@
 # Team guide: how we train, what the best model is, what is left to do
 
-Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 02:15 IST. Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
+Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 06:45 IST (best model is now `s15`, see the first table). Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
 
@@ -11,8 +11,13 @@ Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj)
 | `s4` stack with name dense channel | 0.953 | 0.9708 | 32 | `runs/s4/output/` |
 | `s5` stack with name+address dense channel | not yet scored | **0.9832** | 31 to 36 | `runs/s5/output/` |
 | `s6` = `s5` with candidate shortlist | not yet scored | 0.9831 | **4.9** | `runs/s6/output/` |
+| `s8` decoy edit + extra columns | not yet scored | 0.98362 | 4.9 | `runs/s8/output/` |
+| `s12` + 1.5M S1, depth 9 | not yet scored | 0.98505 | 4.9 | `runs/s12/output/` |
+| `s11` + cross-encoder score | not yet scored | 0.98887 | 4.9 | `runs/s11/output/` |
+| `s13` `s11` + 1.5M S1 + depth 9 | not yet scored | 0.98917 | 4.9 | `runs/s13/output/` |
+| **`s15`** stack on the first stage `v7` (850k S1) with cross-encoder | not yet scored | **0.98935** | **4.74** | `runs/s15/output/` |
 
-`s6` is the file to upload for the final ranking: the organisers rank `candidate_pairs.tsv` too and reward a smaller candidate set. All paths are under `s3://sagemaker-us-east-1-567503593043/`. Holdout = 150k train S1 that no model trains on (seed 2026, `ber.split.holdout_q`); every claim is a paired bootstrap on it. The portal has sat 0.012 to 0.018 below the holdout every time (test is harder: more distractors, 47% India, 15% France with no labels).
+`s15` is the current best (upload it, and one of `s13`/`s12` as a second reading, to learn whether the gains transfer to the portal); the organisers rank `candidate_pairs.tsv` too and reward a smaller candidate set, and all of these have about 4.7 to 4.9 candidates per S1. All paths are under `s3://sagemaker-us-east-1-567503593043/`. Holdout = 150k train S1 that no model trains on (seed 2026, `ber.split.holdout_q`); every claim is a paired bootstrap on it. The portal has sat 0.012 to 0.018 below the holdout every time (test is harder: more distractors, 47% India, 15% France with no labels).
 
 ## 2. Architecture of the best model (`s5` / `s6`)
 

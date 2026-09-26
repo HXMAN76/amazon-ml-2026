@@ -313,3 +313,20 @@ Organisers' email: `candidate_pairs.tsv` and its generating code count toward th
 
 ### 19.7 Literature (abstract level)
 Supervised contrastive blocking and fine-tuned embedding blockers beat off-the-shelf encoders (SC-Block, TriBERTa); pairwise matching is near its ceiling on multilingual benchmarks while blocking and clustering carry the remaining error (OpenSanctions Pairs, CorpFam); BGE-M3 (MIT) leads several Indic retrieval comparisons; Kaggle winners of Foursquare and Shopee used the same candidate generation, first GBDT, second GBDT with neighbour features recipe; decision-theoretic F-measure thresholds match plain thresholding for calibrated probabilities. Details in sections 18 and 18.1.
+
+
+## 20. Cross-encoder, more data, and infrastructure lessons (26 Sep 2026)
+
+### 20.1 Results (locked holdout, paired bootstrap)
+- Stack tuning on the `s8` features: depth 9 with eta 0.05 (up to 1500 rounds) 0.98410 against 0.98362 (+0.00048, CI [0.00034, 0.00064]); depth 6 0.98391, depth 11 0.98385; out-of-fold agrees. The stack hit the round cap in every fold, so it was under-trained.
+- Stage-two training set 1.5M S1 instead of 400k: +0.00036 [0.00019, 0.00052] alone; with decoy features, extra columns and depth 9 (`s12`) 0.98505, +0.00198 over `s6`.
+- Second consensus round on the stack's probabilities (`s9`): +0.00009, CI includes 0. Extra dense neighbours for empty-address pool records (`v6`, `s7`): no gain.
+- Cross-encoder (`multilingual-e5-small` with a one-logit head, fitted on 400k S1, band 0.02 to 0.98, digit tags): stack `s11` 0.98887, **+0.00525 [0.00497, 0.00555] over `s8`**; `xs` is the third most important feature. With 1.5M S1 and depth 9 (`s13`) 0.98917.
+- First stage on 850k S1, depth 9, eta 0.05, up to 3000 rounds (`v7`): 0.97796 against 0.97565 (`v5`); stack on `v7` (`s15`) 0.98935, +0.00018 [0.00004, 0.00032] over `s13`.
+- Reading: remaining matcher error was name noise that hand-made similarities approximate; a model that reads both records jointly captured most of it. More first-stage data and depth add little after that. The uncertain band is larger on the test (1.11 pairs per S1 for `v7`, 1.25 for `v5`) than on train (0.75 and 0.85), consistent with the test being harder.
+
+### 20.2 What went wrong and how to avoid it
+- **Stalls.** Twice (03:10 and 05:10 IST) both job lanes stopped updating their logs about 58 minutes after the notebook booted; nothing finished afterwards and status stayed InService, so the notebook was stopped and restarted (each cost 50 to 60 minutes of watching before it was noticed, first time). Cause unknown: no shell or CloudWatch data; suspects are root-volume pressure (the root disk was at 87 to 88% straight after boot), GPU contention between a scoring job and another GPU job, or something at one hour of uptime. Mitigations: per-minute diagnostic snapshot to `diag/latest.txt`, stale-log alarm in the watcher, GPU jobs serialised, `--exact-timestamps` on syncs, removal of stale live logs after a restart.
+- **Silent stale code.** `aws s3 sync` skips a file whose size is unchanged, so a fix that moved a line without changing the size was never delivered to the notebook and the job failed again with the old code. Keep `--exact-timestamps`.
+- **Environment split.** The `pytorch` conda env has no xgboost; steps that import `ber.stages.stack` (xenc `data`) must run in `ber`; only `train` and `score` need torch. pip installs in the `pytorch` env are lost at every notebook restart.
+- **Disk.** Stack chunk folders (one per variant), the dense-merge backups and two DuckDB pool indexes (29 GB) filled the data disk to 87%; the indexes and old variants were deleted (47 GB used afterwards). Regenerating the indexes is part of a clean reproduction.
