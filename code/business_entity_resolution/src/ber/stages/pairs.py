@@ -187,10 +187,22 @@ def main(argv: list[str] | None = None) -> None:
     s3 = pl.read_parquet(pq / "source3.parquet", columns=["rid", *cols]).sort("rid")
     pool = pl.concat([s2, s3])
     # name rarity: S1 rows sharing a core name, pool rows sharing a core name, S1 rows sharing a pool record's core name
-    s1 = s1.with_columns(pl.len().over("core1").alias("cnt_s1_a"))
-    pool = pool.with_columns(pl.len().over("core1").alias("cnt_pool_b"))
-    s1cnt = s1.group_by("core1").agg(pl.len().alias("cnt_s1_b"))
-    pool = pool.join(s1cnt, on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0))
+    if config.load().get("pairs", {}).get("joint_counts", False):
+        # count names over the train AND test records, so that the rarity features mean the same in both splits (the test has 21% fewer S1
+        # than the train, which makes every name look rarer there when counted within the split)
+        po = P["parquet"] / ("test" if a.split == "train" else "train")
+        s1o = pl.read_parquet(po / "source1.parquet", columns=["core1"])
+        poolo = pl.concat([pl.read_parquet(po / "source2.parquet", columns=["core1"]), pl.read_parquet(po / "source3.parquet", columns=["core1"])])
+        c_s1 = pl.concat([s1.select("core1"), s1o]).group_by("core1").agg(pl.len().alias("_c_s1"))
+        c_pool = pl.concat([pool.select("core1"), poolo]).group_by("core1").agg(pl.len().alias("_c_pool"))
+        s1 = s1.join(c_s1, on="core1", how="left", maintain_order="left").with_columns(pl.col("_c_s1").alias("cnt_s1_a")).drop("_c_s1")
+        pool = (pool.join(c_pool, on="core1", how="left", maintain_order="left").with_columns(pl.col("_c_pool").alias("cnt_pool_b")).drop("_c_pool")
+                    .join(c_s1.rename({"_c_s1": "cnt_s1_b"}), on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0)))
+    else:
+        s1 = s1.with_columns(pl.len().over("core1").alias("cnt_s1_a"))
+        pool = pool.with_columns(pl.len().over("core1").alias("cnt_pool_b"))
+        s1cnt = s1.group_by("core1").agg(pl.len().alias("cnt_s1_b"))
+        pool = pool.join(s1cnt, on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0))
     out = P["work"] / "features" / name
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("part_*.parquet"):

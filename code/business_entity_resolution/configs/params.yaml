@@ -101,3 +101,5 @@ xenc:                  # cross-encoder on the uncertain band (see stages/xenc.py
   epochs: 3
   max_len: 128
   score_batch: 512
+pairs:
+  joint_counts: false  # name-rarity counts over train and test records together (removes the set-size shift between the splits)
