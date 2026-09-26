@@ -2,6 +2,13 @@
 
 Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
 
+## 0.1 Live status (26 Sep 2026, 13:30 IST; newest, wins over everything below)
+- **Best model `s17`**: holdout F0.5 0.99025, portal 0.981 (gap 0.0093 after 0.0178 at `s12`, 0.0131 at `s15`-era estimate). Files: `runs/s17/output/`. `s17f85` (France threshold 0.85) is ready at `runs/s17f85/output/` for the next portal slot; other threshold variants (`s17f95`, `s17g85`, `s17f90`) come from job `rv9`.
+- **Gap findings**: adversarial validation AUC 0.8716 (drivers: blocking scores, `n_q_for_p`, `n_cand_q`, name counts, address token counts, `emb_cos`); test has 21% fewer S1 and about 40% unowned pool records (train 26%). Estimated split of the 0.0093: harder test ~0.003, mix ~0.001, France ~0.001, subset noise ~0.002, about 0.002 to 0.008 unexplained.
+- **Six lanes running**: main `rz4` (`v9`/`s21`, shift-robust first stage) and `ru3` (`s18`, small cross-encoder on the base model's data; `ru2b` training finished 13:21); second notebook `rx1` (`v8`/`s19`, joint name counts), `ry0` (`s20`, e5-large cross-encoder), `rw2` (`s22`, cross-encoder on every shortlisted pair), `rq1` (`v10`/`s23`, test-like universe, `drop_frac` 0.21). Gate every result by paired bootstrap against `s17` (`paired_models.py`). Expected: `s18` and threshold variants 14:10 to 14:40, `s22` about 15:30, `v8`/`v9`/`v10` 15:30 to 17:00.
+- **No gain (do not repeat)**: `v6`/`s7` extra empty-address neighbours, `s9` iterated consensus, calibrated expected-F0.5 selection.
+- **Backlog for tomorrow if submissions are unlimited**: per-country probe files (`reemit.py`), France threshold sweep. Spend so far about $70; no cap set by the user. Stop both notebooks after the last heavy job.
+
 ## 0. Latest status (25 Sep 2026, about 23:20 IST; where this differs from sections 1 and 6, this section wins)
 
 **Leaderboard (public subset), in order of submission**

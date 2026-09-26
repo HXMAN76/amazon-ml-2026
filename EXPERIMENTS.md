@@ -80,7 +80,9 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 |---|---|---|---|---|---|
 | | | | | | |
 
-## 7. Compute map (26 Sep 13:00)
+## 7. Compute map (26 Sep 13:30)
+Progress 13:30: `ru2b` finished, `ru3` (`s18`) scoring; `rz4`, `rx1`, `ry0`, `rw2`, `rq1` running, all logs fresh, no failures. Results are added to section 6 as they arrive.
+
 | Machine | Type | GPUs | Job lanes (queue prefixes) |
 |---|---|---|---|
 | `test-notebook` | `ml.g5.16xlarge`, 64 vCPU, 256 GB | 1 x A10G | `jobs/`, `jobs2/` (`jobs3/`, `jobs4/` after the next restart) |
