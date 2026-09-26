@@ -28,7 +28,7 @@ from ber.stages.block import PID_BASE
 
 MODEL = "intfloat/multilingual-e5-small"
 DATA_DIR = "xenc"  # WORK sub-folder of the pair lists and scores (`--dir xenc_v7` keeps a second set); the fitted model always lives in xenc/model
-MODEL_DIR = "xenc/model"  # WORK-relative folder of the fitted cross-encoder
+MODEL_DIR = "xenc/model"  # WORK-relative folder of the fitted cross-encoder (set by --model-dir)
 OVERRIDES: dict = {}   # parameter overrides from --set
 DIGITS = re.compile(r"\d+")
 

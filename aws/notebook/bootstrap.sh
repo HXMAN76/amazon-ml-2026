@@ -10,3 +10,17 @@ conda activate ber
 pip install -q -r /home/ec2-user/SageMaker/ber/requirements.txt && python -c "import pandas,scipy,sklearn,lightgbm,rapidfuzz" && echo ready > /home/ec2-user/SageMaker/ber/.env_ready
 pgrep -f "jobrunner.sh$" >/dev/null || nohup bash /home/ec2-user/jobrunner.sh > /home/ec2-user/jobrunner.log 2>&1 &
 pgrep -f "jobrunner.sh 2" >/dev/null || nohup bash /home/ec2-user/jobrunner.sh 2 > /home/ec2-user/jobrunner2.log 2>&1 &
+# diagnostic heartbeat: a snapshot of the machine state to S3 every minute (the last one before a stall shows what was happening)
+cat > /home/ec2-user/diag.sh <<'D'
+#!/bin/bash
+B=sagemaker-us-east-1-567503593043
+while true; do
+  { date; uptime; free -m | head -2; df -h / /home/ec2-user/SageMaker /tmp | tail -3
+    nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader 2>&1 | head -2
+    ps aux --sort=-%mem | head -6 | cut -c1-160; dmesg 2>/dev/null | tail -8; } > /tmp/diag.txt 2>&1
+  timeout 20 aws s3 cp /tmp/diag.txt s3://$B/diag/latest.txt --only-show-errors
+  cp /tmp/diag.txt /home/ec2-user/diag_$(date +%H%M).txt 2>/dev/null
+  sleep 60
+done
+D
+pgrep -f "diag.sh" >/dev/null || nohup setsid bash /home/ec2-user/diag.sh > /dev/null 2>&1 &
