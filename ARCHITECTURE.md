@@ -120,7 +120,10 @@ Holdout = locked 150k-S1 set; out-of-fold (OOF) = the 250k training sample; port
 | `v7` | first stage on 850k S1 (250k sample + 600k), depth 9, eta 0.05, 3000 rounds | holdout 0.97796 [0.9775, 0.9784] | +0.0023 over `v5` |
 | `s15` | stack on `v7` with cross-encoder, decoy, extra, 1.5M S1, depth 9 | holdout **0.98935** | +0.00018 [0.00004, 0.00032] over `s13`; 4.74 candidates per S1 on test; current best |
 
-In flight (26 Sep 06:40): `s14` = the same stack on a stronger cross-encoder (`multilingual-e5-base`, 278M, fitted on 700k S1, band 0.01 to 0.99); earlier planned items `s8` and `s9` are done (rows above).
+| `s14` | stack on base `v5` with cross-encoder 2 (`multilingual-e5-base`, 278M, fitted on 700k S1 = 966k pairs, band 0.01 to 0.99, 3 epochs, 2.4 h on an A10G) | holdout **0.98986** | +0.00069 [0.00054, 0.00083] over `s13`; average precision inside the band 0.986 against 0.934 for p1 (train pairs, optimistic) |
+| `s16` | `s15` + competition features on the cross-encoder refined probability (`--xcons`) | holdout 0.98946 | +0.00011 [0.00001, 0.00021] over `s15` |
+
+In flight (26 Sep 12:10): `s17` = base `v7` + cross-encoder 2 rescored on `v7`'s bands (average precision inside the band 0.976 against 0.918) + cross-encoder 1 as `xs2` + `--xcons`; `s18` = small cross-encoder fitted on the same 966k pairs as the base one (separates model size from data size). Portal: `s12` scored 0.971976 (holdout 0.98505).
 
 Options in code: `stack build --decoy --extra --xenc --sub-q N --tag T`, `stack train --set depth=...`, a stacked base model for a second consensus round; details in section 9.
 
@@ -186,6 +189,12 @@ The dense stages need the notebook `pytorch` conda env (torch plus transformers)
 ## 9. What is next (backlog, expected gains, status)
 
 See `TEAM_GUIDE.md` section 4 for owners. Current state on 26 Sep 02:15: the notebook is being moved to `ml.g5.16xlarge` (64 vCPU, 256 GB, one A10G, $5.12/h, budget 270 credits) with two parallel job lanes; the first experiments queued for it are `ra1` (`s8`: decoy edit features plus extra carried columns, and a variant without the decoy features) and `rb1` (`s9`: second consensus round on `s6`). After those: state-name normalisation (`OK` and `Oklahoma`, Indic states; needs a re-prepare and rebuild), cross-encoder scores for the uncertain band from a teammate (added as one stack feature), a seed ensemble and larger training samples, the 5 S2 + 6 S3 cap, a threshold check on the portal, and the freeze (rebuild the code zip, one clean reproduction, validator with `--check-ids`, methodology document).
+
+## 12. Where the remaining loss is, and the holdout to portal gap (26 Sep 12:10 IST)
+
+`s15` on the locked holdout: oracle on the candidates 0.9957, blocking loss 0.0043, matcher loss 0.0064, precision 0.9980, recall against all true pairs 0.9718 (candidates contain 98.56%). US 0.98968, India 0.98886. Missed true pairs by cause: pool address empty 10,833 of about 14.6k (74%; 22,854 true pairs, 75% reach the candidates, 53% matched), alias-only names 1,719, words injected or dropped 2,720, typos 2,169, house number differs 635. False positives 1,033 (58% distractors without an owner). The empty-address records carry only a name, so much of this is ambiguity; the theoretical best threshold for F0.5 (F* / 1.25 = about 0.79) is close to the tuned 0.71.
+
+The portal read `s12` 0.9720 against a holdout of 0.9851 (gap 0.0131; `s4` 0.0178, `v2` 0.0125). Estimated causes: the test is harder than the training data for every country (pool records per S1 5.8 against 4.7, unowned pool share about 40% against 26%; model-based estimate about -0.003), the country mix (-0.001 now that India is close to the US), France (model-based estimate 0.9866 against 0.9940 for the US, -0.001), public-subset noise (about 0.002), leaving about 0.008 unexplained: France probabilities not calibrated (no French labels), or covariate shift. Count-based first-stage features depend on the set size (the test has 21% fewer S1 than the train), which makes names look rarer on the test; `pairs.joint_counts` counts over train and test together, and `src/scripts/adv_validation.py` measures the shift directly. Tools for the remaining diagnosis: per-country thresholds (`reemit.py`), per-country probe files (empty one country's predictions; the score drop gives its F0.5), and stack training weights that make the training pairs look like the test.
 
 ## 10. Risks and open questions
 - **Holdout to portal gap.** 0.012 to 0.018 so far, partly explained by mix and distractor density (about 0.008), the rest unexplained (France miscalibration, public-subset noise). `s5` and `s6` portal scores will show whether the dense channels narrowed it.

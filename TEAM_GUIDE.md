@@ -1,6 +1,6 @@
 # Team guide: how we train, what the best model is, what is left to do
 
-Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 06:45 IST (best model is now `s15`, see the first table). Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
+Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 12:10 IST (best by holdout `s14`; `s12` scored 0.971976 on the portal). Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
 
@@ -15,7 +15,9 @@ Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj)
 | `s12` + 1.5M S1, depth 9 | not yet scored | 0.98505 | 4.9 | `runs/s12/output/` |
 | `s11` + cross-encoder score | not yet scored | 0.98887 | 4.9 | `runs/s11/output/` |
 | `s13` `s11` + 1.5M S1 + depth 9 | not yet scored | 0.98917 | 4.9 | `runs/s13/output/` |
-| **`s15`** stack on the first stage `v7` (850k S1) with cross-encoder | not yet scored | **0.98935** | **4.74** | `runs/s15/output/` |
+| `s15` stack on the first stage `v7` (850k S1) with cross-encoder 1 | not yet scored | 0.98935 | 4.74 | `runs/s15/output/` |
+| **`s14`** base `v5`, cross-encoder 2 (e5-base) | not yet scored | **0.98986** | 4.9 | `runs/s14/output/` |
+| `s12` (uploaded 26 Sep) | **0.971976 (rank 402)** | 0.98505 | 4.9 | `runs/s12/output/` |
 
 `s15` is the current best (upload it, and one of `s13`/`s12` as a second reading, to learn whether the gains transfer to the portal); the organisers rank `candidate_pairs.tsv` too and reward a smaller candidate set, and all of these have about 4.7 to 4.9 candidates per S1. All paths are under `s3://sagemaker-us-east-1-567503593043/`. Holdout = 150k train S1 that no model trains on (seed 2026, `ber.split.holdout_q`); every claim is a paired bootstrap on it. The portal has sat 0.012 to 0.018 below the holdout every time (test is harder: more distractors, 47% India, 15% France with no labels).
 
@@ -70,6 +72,8 @@ Everything runs on one SageMaker notebook instance, driven through an S3 job que
 - Never put credentials, presigned URLs or Jupyter links in chat or git. Nothing under `handoff.md` contains a secret; keep it that way.
 - Cost: every hour of the big notebook costs money; the notebook stops itself after an idle hour (job-aware). Do not leave experiments running without a purpose.
 
+**Second notebook (26 Sep).** `test-notebook-2` (`ml.g5.24xlarge`, 4 GPUs) has its own queue prefixes `jobsB/` and `jobsB2/` (the runner picks the prefixes from the notebook name); the working files it needs are exported to `s3://sagemaker-us-east-1-567503593043/state/` by a job on the main notebook. Check heartbeats in `diag/<notebook-name>.txt`. The AWS CLI login expires after about 5 hours: `aws login --profile hxman-26`.
+
 **Access for teammates.** The current CLI login is the account root, which must not be shared. To give a teammate queue access without the console, Hariheman creates an IAM user with the policy in `iam/team/teammate_s3_policy.json` (list/read `runs/`, `jobs/`, `ber/code*`; write only `jobs/pending/` and `ber/code_*`) and hands over the keys privately (not in chat or the repo). Note that anyone who can write to `jobs/pending/` can run code on the notebook, so treat that access as notebook access. Alternative with no new credentials: send a job script or a branch name to Hariheman, who queues it.
 
 ## 4. Optimization list
@@ -86,6 +90,7 @@ Everything runs on one SageMaker notebook instance, driven through an S3 job que
 | 8 | Learned per-S1 shortlist size; check floor 0.02 | at the freeze | smaller file at about -0.0001 | pipeline |
 | 9 | Cap of 5 S2 + 6 S3 matches per S1 | at the freeze | up to +0.0002 | pipeline |
 | 10 | Threshold check on the portal (test has more distractors) | Saturday evening, 2 to 3 uploads | up to +0.002 | Hariheman |
+| 10b | Per-country probe files and France threshold variants (`src/scripts/reemit.py`), adversarial validation of the train to test shift (`adv_validation.py`), joint name counts (`pairs.joint_counts`) | backlog, queued | closes part of the 0.013 portal gap | pipeline |
 | 11 | Freeze: rebuild code zip, one clean reproduction, official validator `--check-ids` on the notebook, methodology document, final uploads | Sunday | none | all |
 
 Where the loss still is (holdout, `s5`): blocking 0.0047 (80% of never-proposed pairs have an empty pool address), matcher 0.0121 (name noise: injected or dropped words, typos, alias-only names; 78% of false positives are records with no owner). Empty-address pool records: 4.4% of true pairs, 71% in candidates, 50% matched.

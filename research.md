@@ -330,3 +330,14 @@ Supervised contrastive blocking and fine-tuned embedding blockers beat off-the-s
 - **Silent stale code.** `aws s3 sync` skips a file whose size is unchanged, so a fix that moved a line without changing the size was never delivered to the notebook and the job failed again with the old code. Keep `--exact-timestamps`.
 - **Environment split.** The `pytorch` conda env has no xgboost; steps that import `ber.stages.stack` (xenc `data`) must run in `ber`; only `train` and `score` need torch. pip installs in the `pytorch` env are lost at every notebook restart.
 - **Disk.** Stack chunk folders (one per variant), the dense-merge backups and two DuckDB pool indexes (29 GB) filled the data disk to 87%; the indexes and old variants were deleted (47 GB used afterwards). Regenerating the indexes is part of a clean reproduction.
+
+
+## 21. Portal result for s12, remaining loss, and the shift hypothesis (26 Sep 2026)
+
+- **Portal:** `s12` 0.971976 (rank 402), holdout 0.98505. Gaps (holdout minus portal): v2 0.0125, s3all 0.0187, s4 0.0178, s12 0.0131. The portal gain from s4 to s12 (+0.019) exceeded the holdout gain (+0.0143), so the dense channels reduced the gap.
+- **Cross-encoder 2 (`s14`):** `multilingual-e5-base` (278M) on 966k fit pairs (band 0.01 to 0.99, 7.2k confident false positives, 204k easy positives), stack `s14` 0.98986, +0.00069 over `s13`. Competition features on the refined probability (`s16`) +0.00011 over `s15`. A second cross-encoder feature `xs2` and cross-encoder scoring on `v7`'s bands are in `s17`.
+- **Loss decomposition of s15** and the empty-address finding (74% of remaining misses): section 12 of `ARCHITECTURE.md`.
+- **Estimated test difficulty per country (s15 probabilities, blocking misses ignored):** US 0.9940, India 0.9951, France 0.9866; uncertain best-candidate share 0.2%, 0.1%, 0.5%; mean matches per S1 3.43, 3.40, 3.60. The France row suggests over-claiming there, hence the planned France threshold experiments.
+- **Shift hypothesis:** `log_cnt_s1_*`, `n_q_for_p`, rank and margin features depend on the number of S1 and pool records (test S1 count is 21% below train; pool 3% below). Remedies prepared: joint counts (`pairs.joint_counts`), density-ratio weights for the stack, adversarial validation to find the drivers.
+- **Literature used:** a controlled study of matcher architectures on the Qwen3 family (arXiv 2607.24688): cross-encoders beat bi-encoders, larger models only partly narrow the gap and rely more on shortcut learning, so "bigger" is not automatically better; this motivated testing a small cross-encoder on the base model's data before scaling to `multilingual-e5-large`.
+- **Infrastructure:** capacity error for `ml.g5.12xlarge` (used `ml.g5.24xlarge` for the second notebook); AWS CLI login expires after about 5 hours; stale-code and hang lessons in section 20.2.

@@ -78,3 +78,8 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 ## G. Added 26 Sep about 06:45 IST
 - Best files by holdout (none uploaded to the portal yet): `s15` 0.98935, `s13` 0.98917, `s11` 0.98887, `s12` 0.98505, all with 4.7 to 4.9 candidates per S1, all pass `check_submission.py` and the official validator (without `--check-ids`; run `--check-ids` on the notebook for the final file).
 - The final file must come from the pipeline that a clean reproduction rebuilds: `s15` needs `v7`, the cross-encoder model and its scores, the dense encoders and the stack; the reproduction budget is about 5 hours on the 16xlarge (blocking indexes have to be rebuilt).
+
+## H. Added 26 Sep about 12:10 IST
+- Portal log: v2 0.944 (13:46), s4 0.953 (22:21), s3all 0.949 (22:53), **s12 0.971976 (26 Sep, rank 402)**. Best by holdout not yet uploaded: `s14` 0.98986, `s16`, `s15`, `s13`.
+- Submissions left on 26 Sep: 4 (more tomorrow, possibly unlimited). Planned uses: `s14` as baseline, `s14f85`/`s14f95` (France threshold variants from `runs/s14f85/` and `runs/s14f95/` with `runs/s14/output/candidate_pairs.tsv`), then the final model.
+- Candidate file rule: every variant reuses the candidate file of its parent model (matches are a subset of it).
