@@ -189,6 +189,24 @@ def decoy_features(rows: pl.DataFrame, s1_name: np.ndarray, pool_name: np.ndarra
                          "dc_first": first, "dc_wordsym": sym})
 
 
+def addr_group_counts(addr: np.ndarray) -> np.ndarray:
+    """How many records of one file share each record's exact normalised address (0 for an empty address)."""
+    c = pl.DataFrame({"a": addr}).with_columns(pl.col("a").len().over("a").alias("n"), (pl.col("a").str.len_chars() == 0).alias("e"))
+    return c.select(pl.when(pl.col("e")).then(0).otherwise(pl.col("n")).cast(pl.Float32)).to_series().to_numpy()
+
+
+def addr_group_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarray, n2: int, s1_n: np.ndarray, pool_n: np.ndarray) -> pl.DataFrame:
+    """Address multiplicity. In France many businesses share one building address (9.9% of pool records share their address with at
+    least four others, against 1% in the US and India), so an address match is weaker evidence than in the training countries."""
+    q = rows["q"].to_numpy()
+    pid = rows["pid"].to_numpy()
+    pidx = np.where(pid < 3 * PID_BASE, pid - 2 * PID_BASE, n2 + pid - 3 * PID_BASE)
+    a, b = s1_n[q], pool_n[pidx]
+    same = (s1_addr[q] == pool_addr[pidx]) & (a > 0)
+    return pl.DataFrame({"q": q, "pid": pid, "s1_addr_n": np.log1p(a), "pool_addr_n": np.log1p(b), "addr_same_exact": same.astype(np.float32),
+                         "addr_n_prod": np.log1p(a) + np.log1p(b)}).with_columns(pl.col("s1_addr_n", "pool_addr_n", "addr_n_prod").cast(pl.Float32))
+
+
 def digit_features(rows: pl.DataFrame, s1_addr: np.ndarray, pool_addr: np.ndarray, n2: int) -> pl.DataFrame:
     """House-number relations and digit consensus. Look-alike distractors often differ from the S1 by a house number that
     lost or gained a trailing digit, while true records carry other kinds of noise; agreement with the S1's other
@@ -373,6 +391,8 @@ def build(split: str, base: str, prm: dict) -> None:
     if xs_df is not None and prm.get("xenc_dir3"):  # a third cross-encoder (different family) as xs3, scored on the band pairs only
         x3 = pl.read_parquet(P["work"] / prm["xenc_dir3"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs3"))
         xs_df = xs_df.join(x3.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
+    if prm.get("addrmult"):
+        s1_addr_n, pool_addr_n = addr_group_counts(s1_addr), addr_group_counts(pool_addr)
     have = set(scan.collect_schema().names())
     carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
     n = 0
@@ -391,6 +411,8 @@ def build(split: str, base: str, prm: dict) -> None:
         rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
         if xs_df is not None:
             rows = rows.join(xs_df.with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)), on=["q", "pid"], how="left")
+        if prm.get("addrmult"):
+            rows = rows.join(addr_group_features(rows0, s1_addr, pool_addr, n2, s1_addr_n, pool_addr_n), on=["q", "pid"], how="left")
         if prm.get("decoy", False):
             rows = rows.join(decoy_features(rows0, s1_name, pool_name, n2), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
@@ -525,6 +547,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
     ap.add_argument("--xenc-dir2", default="", help="build: WORK sub-folder of a second cross-encoder (feature xs2)")
+    ap.add_argument("--addrmult", action="store_true", help="build: address multiplicity features (how many records share the address)")
     ap.add_argument("--xenc-dir3", default="", help="build: WORK sub-folder of a third cross-encoder (feature xs3)")
     ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
@@ -541,6 +564,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["xcons"] = prm.get("xcons", False) or a.xcons
     prm["xenc_dir2"] = a.xenc_dir2
     prm["xenc_dir3"] = a.xenc_dir3
+    prm["addrmult"] = a.addrmult
     prm["xenc_fit_more"] = a.xenc_fit_more
     if a.sub_q:
         prm["sub_q"] = a.sub_q
