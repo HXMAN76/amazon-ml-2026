@@ -7,6 +7,7 @@ kinds to a replay sample of the fit set the team's e5-base cross-encoder was tra
 
   positives (label 1): a true train copy rewritten by one copy operator: `ini` (initials of its core words), `spell` (a short legal form
                        spelled out), `glue` (two neighbouring core words joined)
+  positives (label 1), with n_noise: the same word swap into one of train's own noise words (center, services, ...), which true copies do
   negatives (label 0): a true train copy with one common core word that it shares with its S1 swapped for another common word (`swap`;
                        common = in at least 100 train S1 core names; train's own noise words are never swapped in or out), and optionally
                        the copy renamed to another train business of its country (`tenant`: another tenant at the same address)
@@ -33,7 +34,7 @@ from ber.stages.xenc import tag_digits
 from ber.text import LEGAL
 
 NOISE = {"center", "centre", "services", "service"}  # the generator's word-swap noise in train (true copies swap these; research.md 25)
-DEFAULTS = {"seed": 7, "n_replay": 500_000, "n_ini": 50_000, "n_spell": 50_000, "n_glue": 50_000, "n_swap": 150_000, "n_tenant": 0, "df_min": 100}
+DEFAULTS = {"seed": 7, "n_replay": 500_000, "n_ini": 50_000, "n_spell": 50_000, "n_glue": 50_000, "n_swap": 150_000, "n_tenant": 0, "n_noise": 0, "df_min": 100}
 
 
 def initials(core: str) -> str:
@@ -74,6 +75,16 @@ def swap(name: str, s1_core: set[str], common: np.ndarray, common_set: set[str],
     return None
 
 
+def noise_swap(name: str, s1_core: set[str], common_set: set[str], rng: np.random.Generator) -> str | None:
+    """A true copy's own kind of word noise in train: one common word it shares with its S1 replaced by a noise word (center, services, ...)."""
+    toks = name.split()
+    pos = [i for i, t in enumerate(toks) if t in s1_core and t in common_set]
+    if not pos:
+        return None
+    i = int(rng.choice(pos))
+    return " ".join(toks[:i] + [str(rng.choice(sorted(NOISE - {toks[i]})))] + toks[i + 1:])
+
+
 def _records(split: str, src: int) -> pl.DataFrame:
     return pl.read_parquet(config.paths()["parquet"] / split / f"source{src}.parquet", columns=["rid", "name1", "core1", "addr", "ctry", "nl_name"])
 
@@ -94,11 +105,11 @@ def synth(fit: pl.DataFrame, prm: dict) -> pl.DataFrame:
     by_ctry = {k[0]: g["a_name"].to_numpy() for k, g in names.group_by("ctry")}
     rows = pos.to_dicts()
     order = rng.permutation(len(rows))
-    out, used = [], {"ini": 0, "spell": 0, "glue": 0, "swap": 0, "tenant": 0}
+    out, used = [], {"ini": 0, "spell": 0, "glue": 0, "swap": 0, "tenant": 0, "noise": 0}
     want = {k: int(prm[f"n_{k}"]) for k in used}
     for j in order:
         r = rows[j]
-        for kind in ("swap", "ini", "spell", "glue", "tenant"):  # one synthetic pair per true pair, the first kind still short of its quota
+        for kind in ("swap", "noise", "ini", "spell", "glue", "tenant"):  # one synthetic pair per true pair, the first kind still short of its quota
             if used[kind] >= want[kind]:
                 continue
             if kind == "ini":
@@ -109,6 +120,8 @@ def synth(fit: pl.DataFrame, prm: dict) -> pl.DataFrame:
                 nm, lab = glue(r["name1"], r["core1"], rng), 1
             elif kind == "swap":
                 nm, lab = swap(r["name1"], set(r["a_core"].split()), common, common_set, rng), 0
+            elif kind == "noise":
+                nm, lab = noise_swap(r["name1"], set(r["a_core"].split()), common_set, rng), 1
             else:
                 cand = by_ctry.get(r["ctry"])
                 nm, lab = (str(cand[rng.integers(len(cand))]) if cand is not None else None), 0

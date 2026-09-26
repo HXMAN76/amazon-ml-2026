@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from ber.stages.xenc_fr import NOISE, glue, initials, spell, swap
+from ber.stages.xenc_fr import NOISE, glue, initials, noise_swap, spell, swap
 
 
 def test_copy_operators():
@@ -21,3 +21,9 @@ def test_swap_uses_common_words_and_never_noise():
     out = {swap("nje club llc", {"nje", "club"}, common, set(common), rng) for _ in range(50)}
     assert out <= {"nje school llc", "nje clinic llc"} and out
     assert swap("nje services", {"nje", "services"}, common, set(common) | NOISE, rng) is None  # noise words are true-copy noise in train
+
+
+def test_noise_swap_is_a_true_copy_operator():
+    rng = np.random.default_rng(2)
+    out = {noise_swap("nje club llc", {"nje", "club"}, {"club"}, rng) for _ in range(30)}
+    assert out and out <= {f"nje {w} llc" for w in NOISE}
