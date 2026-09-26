@@ -65,6 +65,7 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `s20` | `multilingual-e5-large` (560M) cross-encoder, 1 epoch | second notebook, lane B2, GPU 1 | +0.0005 to +0.001 |
 | `s22` | cross-encoder on EVERY shortlisted pair (catch confident look-alike false positives) | second notebook, lane B3, GPUs 2 and 3 | +0.001 to +0.002 |
 | `v10`, `s23` | **test-like universe**: drop 21% of the train S1 (outside the sample and holdout) before the competition and count features so the training data has the test's S1 count and distractor rate (`pairs.drop_frac`); separate work directory `work10` | second notebook, lane B4, GPU 0 (`rq0` to `rq4`) | calibration for test conditions; portal gap |
+| `s24` | **third cross-encoder from another family**: `Qwen/Qwen3-0.6B` (Apache-2.0, 0.6B) with a one-logit head, fitted on the same 966k pairs as the e5-base model (one epoch, bf16, gradient checkpointing, prompt "Same business? A: ... B: ..." closed by `<|im_end|>`), scored on the v7 band pairs as feature `xs3`; stack `s24` = `s22` + `xs3` | second notebook, lane B3, GPU 2 (train, about 4.6 h from 15:20 IST), then GPUs 2 and 3 (scoring, about 2.5 h), then the stack build (`rn1`, `rn2`, `rn3`) | +0.0003 to +0.0008 over `s22`; ready about 00:00 IST |
 | free | lanes 3 and 4 (main) | idle | your experiment |
 
 ### 6.3 Ideas nobody has run (pick one)

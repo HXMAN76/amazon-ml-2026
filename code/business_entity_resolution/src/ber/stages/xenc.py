@@ -16,6 +16,7 @@ guard as for the dense encoders. The base encoder is intfloat/multilingual-e5-sm
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import time
 
@@ -38,6 +39,29 @@ def _prm() -> dict:
     for k, v in OVERRIDES.items():
         prm[k] = type(prm[k])(v) if k in prm else float(v)
     return prm
+
+
+def is_decoder(name: str) -> bool:
+    """Decoder-only bases (Qwen3) have no separator token and classify from the last token, so the pair is formatted and closed explicitly."""
+    return "qwen" in str(name).lower()
+
+
+def encode_pairs(tok, ta: list[str], tb: list[str], max_len: int, decoder: bool):
+    """Model inputs for a batch of record pairs (cuda tensors). Encoders use the tokenizer's pair encoding; decoders get one prompt per
+    pair, truncated to max_len - 1 tokens and closed by the end token so that the last-token classification head always reads the same token."""
+    import torch
+
+    if not decoder:
+        return tok(ta, tb, padding=True, truncation=True, max_length=max_len, return_tensors="pt").to("cuda")
+    ids = tok([f"Same business?\nA: {a}\nB: {b}" for a, b in zip(ta, tb)], add_special_tokens=False, truncation=True, max_length=max_len - 1)["input_ids"]
+    end, pad = tok.convert_tokens_to_ids("<|im_end|>"), tok.pad_token_id
+    n = max(len(x) for x in ids) + 1
+    inp = torch.full((len(ids), n), pad, dtype=torch.long)
+    att = torch.zeros((len(ids), n), dtype=torch.long)
+    for i, x in enumerate(ids):
+        inp[i, :len(x) + 1] = torch.tensor(x + [end])
+        att[i, :len(x) + 1] = 1
+    return {"input_ids": inp.cuda(), "attention_mask": att.cuda()}
 
 
 def tag_digits(t: str) -> str:
@@ -127,14 +151,25 @@ def train() -> None:
     prm = _prm()
     t0 = time.time()
     d = pl.read_parquet(P["work"] / DATA_DIR / "train_fit.parquet")
+    if OVERRIDES.get("max_rows"):  # smoke test: a small random subset
+        d = d.sample(int(OVERRIDES["max_rows"]), seed=0)
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
     tok = AutoTokenizer.from_pretrained(MODEL)
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1).cuda()
+    dec = is_decoder(MODEL)
+    if dec:
+        tok.padding_side = "right"
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, **({"dtype": torch.float32} if dec else {}))
+    model.config.pad_token_id = tok.pad_token_id
+    if dec:  # 0.6B parameters in fp32 with Adam leave too little room for activations on a 24 GB GPU otherwise
+        model.gradient_checkpointing_enable()
+        model.config.use_cache = False
+    model = model.cuda()
+    amp = torch.bfloat16 if dec else torch.float16
     opt = torch.optim.AdamW(model.parameters(), lr=prm["lr"], weight_decay=0.01)
     bs, epochs = prm["batch"], prm["epochs"]
     steps = epochs * (len(y) // bs)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / (0.06 * steps)) * max(0.0, 1 - i / steps))
-    scaler = torch.amp.GradScaler()
+    scaler = torch.amp.GradScaler(enabled=not dec)
     rng = np.random.default_rng(0)
     model.train()
     step = 0
@@ -142,8 +177,8 @@ def train() -> None:
         order = rng.permutation(len(y))
         for a in range(0, len(order) - bs + 1, bs):
             idx = order[a: a + bs]
-            enc = tok([ta[i] for i in idx], [tb[i] for i in idx], padding=True, truncation=True, max_length=prm["max_len"], return_tensors="pt").to("cuda")
-            with torch.autocast("cuda", dtype=torch.float16):
+            enc = encode_pairs(tok, [ta[i] for i in idx], [tb[i] for i in idx], prm["max_len"], dec)
+            with torch.autocast("cuda", dtype=amp):
                 logit = model(**enc).logits.squeeze(-1)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logit.float(), torch.from_numpy(y[idx]).cuda())
             opt.zero_grad()
@@ -168,8 +203,11 @@ def score(split: str) -> None:
     prm = _prm()
     t0 = time.time()
     d = pl.read_parquet(P["work"] / DATA_DIR / f"{split}.parquet")
+    if OVERRIDES.get("max_rows"):  # smoke test
+        d = d.head(int(OVERRIDES["max_rows"]))
     tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR)
-    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().half().eval()
+    dec = is_decoder(json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", ""))
+    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().to(torch.bfloat16 if dec else torch.float16).eval()
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)
@@ -177,7 +215,7 @@ def score(split: str) -> None:
     with torch.no_grad():
         for a in range(0, len(order), bs):
             idx = order[a: a + bs]
-            enc = tok([ta[i] for i in idx], [tb[i] for i in idx], padding=True, truncation=True, max_length=prm["max_len"], return_tensors="pt").to("cuda")
+            enc = encode_pairs(tok, [ta[i] for i in idx], [tb[i] for i in idx], prm["max_len"], dec)
             xs[idx] = torch.sigmoid(model(**enc).logits.squeeze(-1).float()).cpu().numpy()
     out = d.select("q", "pid").with_columns(pl.Series("xs", xs))
     if "label" in d.columns:
