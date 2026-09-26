@@ -24,9 +24,12 @@ from ber.stages.block import PID_BASE, TYPES
 from ber.tracking import log_stage
 
 
-def blocking_features(cand_glob: str) -> pl.DataFrame:
-    """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record."""
+def blocking_features(cand_glob: str, drop_q: np.ndarray | None = None) -> pl.DataFrame:
+    """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record.
+    drop_q: S1 removed from the candidate universe first (test-density thinning), so they compete for no record."""
     c = pl.read_parquet(cand_glob)
+    if drop_q is not None and len(drop_q):
+        c = c.join(pl.DataFrame({"q": drop_q}).with_columns(pl.col("q").cast(c.schema["q"])), on="q", how="anti")
     if "p_block" in c.columns:  # the pruner was fit on the training S1: never let its score become a model feature
         c = c.drop("p_block")
     f32 = [pl.col(x).cast(pl.Float32) for x in ("score", *[f"s_{t}" for t in TYPES])]
@@ -164,11 +167,18 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--split", choices=["train", "test"], required=True)
     ap.add_argument("--chunk", type=int, default=1_500_000)
     ap.add_argument("--rest", action="store_true", help="train: features for the S1 OUTSIDE the sample (unbiased scoring / holdout)")
+    ap.add_argument("--thin", action="store_true", help="train: drop split.thin_q S1 first (competition at test density)")
     a = ap.parse_args(argv)
     P = config.paths()
     pq = P["parquet"] / a.split
     t0 = time.time()
-    cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"))
+    drop = None
+    if a.thin and a.split == "train":
+        from ber.split import thin_q
+
+        drop = thin_q(**config.load()["thin"])
+        print(f"thinning: {len(drop)} train S1 left out of the candidate universe", flush=True)
+    cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"), drop)
     name = a.split
     if a.split == "train":  # competition stats above used the full candidate set; features only for the wanted S1
         smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])

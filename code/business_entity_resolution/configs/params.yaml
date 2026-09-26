@@ -47,6 +47,9 @@ prune:                 # cascade blocking: block with k_raw candidates, keep the
   max_depth: 6
   eta: 0.1
   seed: 0
+thin:                  # test-density training (split.thin_q): drop this fraction of train S1 so their true records become ownerless
+  frac: 0.19           # 1 - (train pool per S1 4.68) / (test pool per S1 5.76); density_check.py recomputes it
+  seed: 7
 stack:                 # consensus stacking on top of the first-stage probabilities p1
   base: v2             # first-stage model whose p1 (oof + p1_rest + pair_p) feed the consensus features
   sub_q: 400000        # training S1 drawn from the non-holdout S1 (holdout = 150k S1, seed 2026, see score_rest)
