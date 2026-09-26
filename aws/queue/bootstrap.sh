@@ -10,8 +10,8 @@ exec >> $L 2>&1
 up() { aws s3 cp $L s3://$B/jobs/live/_bootstrap.log --only-show-errors 2>/dev/null; }
 echo "[$(date '+%F %T')] bootstrap start; identity $(aws sts get-caller-identity --query Arn --output text)"; up
 aws s3 sync s3://$B/ber/dataset/ $SM/dataset/ --only-show-errors
-aws s3 sync s3://$B/ber/code $SM/ber --delete --exclude 'work/*' --only-show-errors
-aws s3 sync s3://$B/ber/tools $SM/tools --only-show-errors
+aws s3 sync s3://$B/ber/code $SM/ber --delete --exclude 'work/*' --exact-timestamps --only-show-errors
+aws s3 sync s3://$B/ber/tools $SM/tools --exact-timestamps --only-show-errors
 source /home/ec2-user/anaconda3/etc/profile.d/conda.sh
 [ -x $ENV/bin/python ] || conda create -y -q -p $ENV python=3.12
 conda activate $ENV
