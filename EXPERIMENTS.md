@@ -60,7 +60,8 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `v8`, `s19` | joint name counts only | second notebook, lane B, GPU 0 | shift check |
 | `s20` | `multilingual-e5-large` (560M) cross-encoder, 1 epoch | second notebook, lane B2, GPU 1 | +0.0005 to +0.001 |
 | `s22` | cross-encoder on EVERY shortlisted pair (catch confident look-alike false positives) | second notebook, lane B3, GPUs 2 and 3 | +0.001 to +0.002 |
-| free | lane B4 (second notebook), lanes 3 and 4 (main) | idle | your experiment |
+| `v10`, `s23` | **test-like universe**: drop 21% of the train S1 (outside the sample and holdout) before the competition and count features so the training data has the test's S1 count and distractor rate (`pairs.drop_frac`); separate work directory `work10` | second notebook, lane B4, GPU 0 (`rq0` to `rq4`) | calibration for test conditions; portal gap |
+| free | lanes 3 and 4 (main) | idle | your experiment |
 
 ### 6.3 Ideas nobody has run (pick one)
 1. **Two-fold cross-fitted cross-encoder** (fit on half of the non-holdout S1, score the other half, average both for test): every S1 gets an honest `xs` and the stack keeps all S1. Needs a `--fold` option in `stages/xenc.py`. Expected +0.0005 to +0.001.
@@ -91,3 +92,15 @@ Set `CUDA_VISIBLE_DEVICES` explicitly in every GPU job script (the lanes share t
 - **Per-country probe files:** take a good matching file and empty the predictions of one country's S1; the drop in portal score gives that country's F0.5 on the test set (France, India, US). Uses the allowed submissions, is diagnostic only, never final.
 - **France threshold sweep** on the portal with `reemit.py` variants; a stricter France threshold favours precision, which F0.5 rewards.
 - **Final choice** by holdout and portal together, then the freeze: code zip, one reproduction run (`reproduce_final.sh`), the official validator with `--check-ids`, the methodology document.
+
+## 9. Research notes: what could still be missing for the gap (26 Sep 13:00)
+Literature (abstract level): importance weighting with a train-versus-test classifier is the standard covariate-shift remedy, also for tree ensembles (arXiv 2410.20978, 2007.04043); gradient-boosting discriminators can localise and correct the features that cause a shift (DataFix, 2312.04546); an entity-resolution case study reports the same training-to-production gap and closes it with data-centric fixes (2111.10497); collective or group-level decoding helps sparse records (GraLMatch 2406.15015, label propagation 2605.25814).
+
+Ideas ranked by expected effect on the portal gap:
+1. **Test-like training universe** (`v10`, `pairs.drop_frac`): reproduces the test's S1 count and unowned pool share from labelled data; all competition and count features then have test-like distributions and the models see the test's distractor rate. Running.
+2. **Shift-robust first stage** (`v8`, `v9`): joint name counts; drop of blocking-score and competition features; running.
+3. **Cross-encoder on every shortlisted pair** (`s22`): lets the cross-encoder veto confident look-alikes. Running.
+4. **Density-ratio weights** for the stack (adversarial classifier output as sample weights): not built.
+5. **Cross-encoder test-time augmentation** (score each pair with the two records swapped, or with the romanised name, and average): not built, cheap on the free GPU lanes.
+6. **Group-level decoding** (link pool records of one entity across S2 and S3 and assign the group to one S1): partly captured by the stack's similarity to the S1's best other record; a full version is not built.
+7. **Transductive use of the unlabelled test set** (pseudo-labels): not used; the rules say the model is built from the provided training data, so confirm with the organisers before trying it.
