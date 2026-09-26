@@ -24,9 +24,12 @@ from ber.stages.block import PID_BASE, TYPES
 from ber.tracking import log_stage
 
 
-def blocking_features(cand_glob: str) -> pl.DataFrame:
-    """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record."""
+def blocking_features(cand_glob: str, drop_q: np.ndarray | None = None) -> pl.DataFrame:
+    """Per-pair blocking statistics: score ranks/gaps within the S1 and within the candidate record.
+    `drop_q`: S1 removed from the universe before any statistic is computed (test-like universe, see `pairs.drop_frac`)."""
     c = pl.read_parquet(cand_glob)
+    if drop_q is not None and len(drop_q):
+        c = c.filter(~pl.col("q").is_in(drop_q))
     if "p_block" in c.columns:  # the pruner was fit on the training S1: never let its score become a model feature
         c = c.drop("p_block")
     f32 = [pl.col(x).cast(pl.Float32) for x in ("score", *[f"s_{t}" for t in TYPES])]
@@ -168,7 +171,20 @@ def main(argv: list[str] | None = None) -> None:
     P = config.paths()
     pq = P["parquet"] / a.split
     t0 = time.time()
-    cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"))
+    drop_q = None
+    frac = float(config.load().get("pairs", {}).get("drop_frac", 0.0))
+    if a.split == "train" and frac > 0:
+        # test-like universe: the test has fewer S1 than the train (1.73M against 2.2M), hence more pool records without an owner and smaller
+        # competition and name-rarity counts. Drop a random share of the S1 outside the sample and the holdout: their pool records stay in
+        # the pool as distractors and every statistic below is computed without them.
+        from ber.split import holdout_q
+
+        s1_all = pl.read_parquet(pq / "source1.parquet", columns=["rid"])["rid"].to_numpy().astype(np.int64)
+        smp_q = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])["rid"].to_numpy().astype(np.int64)
+        pool_q = np.setdiff1d(s1_all, np.concatenate([smp_q, holdout_q().astype(np.int64)]))
+        drop_q = np.sort(np.random.default_rng(77).choice(pool_q, size=min(int(frac * len(s1_all)), len(pool_q)), replace=False))
+        print(f"test-like universe: dropping {len(drop_q)} of {len(s1_all)} S1", flush=True)
+    cand = blocking_features(str(P["work"] / "blocks" / a.split / "cand_*.parquet"), drop_q)
     name = a.split
     if a.split == "train":  # competition stats above used the full candidate set; features only for the wanted S1
         smp = pl.read_parquet(P["sample"] / "train_s1.parquet", columns=["rid"])
@@ -199,10 +215,12 @@ def main(argv: list[str] | None = None) -> None:
         pool = (pool.join(c_pool, on="core1", how="left", maintain_order="left").with_columns(pl.col("_c_pool").alias("cnt_pool_b")).drop("_c_pool")
                     .join(c_s1.rename({"_c_s1": "cnt_s1_b"}), on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0)))
     else:
-        s1 = s1.with_columns(pl.len().over("core1").alias("cnt_s1_a"))
+        kept = s1 if drop_q is None else s1.filter(~pl.col("rid").is_in(drop_q))
+        c_s1 = kept.group_by("core1").agg(pl.len().alias("_c"))
+        s1 = s1.join(c_s1, on="core1", how="left", maintain_order="left").with_columns(pl.col("_c").fill_null(0).alias("cnt_s1_a")).drop("_c")
         pool = pool.with_columns(pl.len().over("core1").alias("cnt_pool_b"))
-        s1cnt = s1.group_by("core1").agg(pl.len().alias("cnt_s1_b"))
-        pool = pool.join(s1cnt, on="core1", how="left", maintain_order="left").with_columns(pl.col("cnt_s1_b").fill_null(0))
+        pool = (pool.join(c_s1.rename({"_c": "cnt_s1_b"}), on="core1", how="left", maintain_order="left")
+                    .with_columns(pl.col("cnt_s1_b").fill_null(0)))
     out = P["work"] / "features" / name
     out.mkdir(parents=True, exist_ok=True)
     for old in out.glob("part_*.parquet"):

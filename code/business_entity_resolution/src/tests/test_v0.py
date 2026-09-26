@@ -330,3 +330,35 @@ def test_decoy_features_separate_substitutions_from_drops():
     assert f["dc_sub"].to_list()[0] == 2.0 and f["dc_same_len"].to_list()[0] == 1.0 and f["dc_ham"].to_list()[0] == 2.0  # swapped letters
     assert f["dc_sub"].to_list()[1] == 0.0 and f["dc_same_len"].to_list()[1] == 0.0  # a dropped character is no substitution
     assert f["dc_wordsym"].to_list()[2] == 1.0
+
+
+def test_pairs_test_like_universe_drops_s1_and_keeps_holdout(tmp_path, monkeypatch):
+    import yaml
+
+    from ber import config as cfgmod
+    from ber.stages import pairs
+
+    data, work = tmp_path / "dataset", tmp_path / "work"
+    synth.make(data, "train", n=300, seed=1)
+    synth.make(data, "test", n=40, seed=2)
+    monkeypatch.setenv("BER_DATA", str(data))
+    monkeypatch.setenv("BER_WORK", str(work))
+    prm = cfgmod.load()
+    prm["sample"]["n_s1"] = 100
+    prm["pairs"] = {"drop_frac": 0.3, "joint_counts": False}
+    y = tmp_path / "params.yaml"
+    y.write_text(yaml.safe_dump(prm))
+    monkeypatch.setenv("BER_PARAMS", str(y))
+    import numpy as np
+
+    import ber.split
+
+    monkeypatch.setattr(ber.split, "holdout_q", lambda n=150_000, seed=2026: np.array([0], dtype=np.int64))  # the real holdout would cover all of this tiny set
+    prepare.main([])
+    sample.main()
+    block.main(["--split", "train", "--all-train"])
+    pairs.main(["--split", "train", "--rest"])
+    got = pl.concat([pl.read_parquet(f) for f in sorted((work / "features" / "train_rest").glob("part_*.parquet"))])
+    full = pl.concat([pl.read_parquet(f) for f in sorted((work / "blocks" / "train").glob("cand_*.parquet"))])
+    rest_q = set(full["q"].unique().to_list()) - set(pl.read_parquet(work / "sample" / "train_s1.parquet")["rid"].to_list())
+    assert 0 < got["q"].n_unique() < len(rest_q)  # some rest S1 were dropped from the universe
