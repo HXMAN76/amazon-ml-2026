@@ -39,7 +39,7 @@ ORIG = ["score", "ns", "rank_q", "margin_p", "house_eq", "house_lev", "addr_b_em
         "name_jw", "num_common_frac", "digits_ratio", "legal_conflict", "pin_conflict", "pin_match", "nl_name_b",
         "same_ctry", "log_cnt_s1_a", "log_cnt_s1_b", "log_cnt_pool_b", "name_cov_a", "name_cov_b", "rom_tset", "alias_tset"]
 # further first-stage columns carried when present (channel columns of the dense retrievers, coverage, skeleton and length features)
-EXTRA = ["dall_cos", "dall_rank", "emb_cos", "emb_rank", "addr_cov_a", "addr_cov_b", "skel_ratio", "addr_skel_ratio", "rom_partial",
+EXTRA = ["dall_cos", "dall_rank", "dall2_cos", "dall2_rank", "emb_cos", "emb_rank", "addr_cov_a", "addr_cov_b", "skel_ratio", "addr_skel_ratio", "rom_partial",
          "rom_jw", "nospace_partial", "nospace_jw", "len_core_a", "len_core_b", "len_addr_b", "digits_lev", "ntok_addr_a", "ntok_addr_b",
          "legal_eq", "num_common"]
 HI = 0.5

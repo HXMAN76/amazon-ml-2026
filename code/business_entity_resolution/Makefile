@@ -104,7 +104,7 @@ bs_xenc:
 	for s in train test; do $(PY) -m ber.stages.xenc score --split $$s --base bs_w1 || exit 1; done
 	$(PY) -m ber.stages.xenc report --base bs_w1
 bs_final_stack:
-	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc --tag w && $(PY) -m ber.stages.stack tfidf --split $$s --tag w || exit 1; done
+	for s in train test; do $(PY) -m ber.stages.stack build --split $$s --base bs_w1 --xenc --decoy --extra --tag w && $(PY) -m ber.stages.stack tfidf --split $$s --tag w || exit 1; done
 	$(PY) -m ber.stages.stack train --name bs_w2 --base bs_w1 --tag w
 	$(PY) -m ber.stages.stack predict --name bs_w2 --tag w
 	$(PY) src/scripts/paired_models.py $(BS_S) bs_w2 || true
