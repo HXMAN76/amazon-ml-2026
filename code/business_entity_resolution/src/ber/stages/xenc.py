@@ -156,6 +156,7 @@ def train() -> None:
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
     tok = AutoTokenizer.from_pretrained(MODEL)
     dec = is_decoder(MODEL)
+    sym = int(prm.get("symmetric", 0))
     if dec:
         tok.padding_side = "right"
     model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, **({"dtype": torch.float32} if dec else {}))
@@ -177,7 +178,11 @@ def train() -> None:
         order = rng.permutation(len(y))
         for a in range(0, len(order) - bs + 1, bs):
             idx = order[a: a + bs]
-            enc = encode_pairs(tok, [ta[i] for i in idx], [tb[i] for i in idx], prm["max_len"], dec)
+            xa, xb = [ta[i] for i in idx], [tb[i] for i in idx]
+            if sym:  # symmetric training: the pair is shown in either order, so the score cannot depend on which record comes first
+                flip = rng.random(len(idx)) < 0.5
+                xa, xb = [b if f else a for a, b, f in zip(xa, xb, flip)], [a if f else b for a, b, f in zip(xa, xb, flip)]
+            enc = encode_pairs(tok, xa, xb, prm["max_len"], dec)
             with torch.autocast("cuda", dtype=amp):
                 logit = model(**enc).logits.squeeze(-1)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logit.float(), torch.from_numpy(y[idx]).cuda())
@@ -211,13 +216,22 @@ def score(split: str) -> None:
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)
+    asym = np.zeros(len(order), dtype=np.float32)
+    sym = int(prm.get("symmetric", 0))
     bs = prm["score_batch"]
     with torch.no_grad():
         for a in range(0, len(order), bs):
             idx = order[a: a + bs]
-            enc = encode_pairs(tok, [ta[i] for i in idx], [tb[i] for i in idx], prm["max_len"], dec)
-            xs[idx] = torch.sigmoid(model(**enc).logits.squeeze(-1).float()).cpu().numpy()
+            xa, xb = [ta[i] for i in idx], [tb[i] for i in idx]
+            l1 = model(**encode_pairs(tok, xa, xb, prm["max_len"], dec)).logits.squeeze(-1).float()
+            if sym:  # average the logits of both orders; the difference is a measure of how unsure the model is
+                l2 = model(**encode_pairs(tok, xb, xa, prm["max_len"], dec)).logits.squeeze(-1).float()
+                asym[idx] = (l1 - l2).abs().cpu().numpy()
+                l1 = (l1 + l2) / 2
+            xs[idx] = torch.sigmoid(l1).cpu().numpy()
     out = d.select("q", "pid").with_columns(pl.Series("xs", xs))
+    if sym:
+        out = out.with_columns(pl.Series("xs_asym", asym))
     if "label" in d.columns:
         from sklearn.metrics import average_precision_score
         print(f"{split}: average precision of xs {average_precision_score(d['label'].to_numpy(), xs):.4f} versus p1 {average_precision_score(d['label'].to_numpy(), d['p'].to_numpy()):.4f} inside the band", flush=True)

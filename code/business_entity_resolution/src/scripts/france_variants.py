@@ -35,8 +35,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("name")
     ap.add_argument("newname")
-    ap.add_argument("--rules", required=True)
+    ap.add_argument("--rules", default="")
     ap.add_argument("--country", default="france")
+    ap.add_argument("--cap", action="store_true", help="after the rules, keep at most 5 S2 and 6 S3 pairs per S1 in EVERY country (the training maximum), lowest probability first")
+    ap.add_argument("--no-rules", action="store_true", help="skip the country rules (use with --cap alone)")
     a = ap.parse_args()
     P = config.paths()
     t0 = time.time()
@@ -56,7 +58,8 @@ def main() -> None:
     own = flag(own.join(feat, on=["q", "pid"], how="left"), df).with_columns((pl.col("a_core") == pl.col("b_core")).alias("core_eq"))
     exact = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q").len().rename({"len": "n_exact"})
     own = own.join(exact, on="q", how="left").with_columns(pl.col("n_exact").fill_null(0))
-    if any(s.startswith("typeswap") for s in a.rules.split(",")):
+    rules_list = [] if a.no_rules else a.rules.split(",")
+    if any(s.startswith("typeswap") for s in rules_list):
         exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
         slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
         nA, nB = slots.filter(pl.col("k") >= 3).height, slots.filter(pl.col("k") == 0).height
@@ -71,7 +74,7 @@ def main() -> None:
         own = own.with_columns(pl.col("b_core").alias("_b"))
         print(f"typeswap: slots A {nA}, B {nB}; words with ratio >= 0.75 and at least 100 pairs: {rr.filter((pl.col('ratio') >= 0.75) & (pl.col('nA') + pl.col('nB') >= 100)).height}", flush=True)
     fired = []
-    for spec in a.rules.split(","):
+    for spec in rules_list:
         k = spec.split(":")
         if k[0] == "swap_exact":
             c = pl.col("swap") & (pl.col("n_exact") >= 1) & (pl.col("p") < float(k[1] if len(k) > 1 else 0.9999))
@@ -102,12 +105,21 @@ def main() -> None:
         n = own.filter(c).height
         fired.append(c)
         print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f})", flush=True)
-    any_c = fired[0]
-    for c in fired[1:]:
-        any_c = any_c | c
-    dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
+    if fired:
+        any_c = fired[0]
+        for c in fired[1:]:
+            any_c = any_c | c
+        dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
+    else:
+        dropped = pl.DataFrame({"q": [], "pid": []}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_drop"))
     print(f"total dropped {dropped.height} ({dropped.height / own.height:.4f} of {a.country}'s predicted pairs)", flush=True)
     out = pp.join(dropped, on=["q", "pid"], how="left").with_columns(pl.when(pl.col("_drop").is_not_null()).then(pl.min_horizontal(pl.col("p"), pl.lit(thr - 1e-6))).otherwise(pl.col("p")).alias("p")).drop("_drop")
+    if a.cap:
+        kept = decision.assign_exclusive(out).filter(pl.col("p") >= thr).with_columns(pl.when(pl.col("pid") < 3 * PID_BASE).then(5).otherwise(6).alias("cap_n"))
+        kept = kept.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", pl.col("cap_n")]).alias("_rk"))
+        over = kept.filter(pl.col("_rk") > pl.col("cap_n")).select("q", "pid").with_columns(pl.lit(True).alias("_cap"))
+        print(f"cap 5 S2 / 6 S3 (all countries): drops {over.height} pairs", flush=True)
+        out = out.join(over, on=["q", "pid"], how="left").with_columns(pl.when(pl.col("_cap").is_not_null()).then(pl.min_horizontal(pl.col("p"), pl.lit(thr - 1e-6))).otherwise(pl.col("p")).alias("p")).drop("_cap")
     (P["work"] / "output" / a.newname).mkdir(parents=True, exist_ok=True)
     out.write_parquet(P["work"] / "output" / a.newname / "pair_p.parquet", compression="zstd")
     emit(a.newname, P, out, {"threshold": thr, "exclusive": cfg["exclusive"]}, t0)

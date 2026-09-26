@@ -101,6 +101,7 @@ xenc:                  # cross-encoder on the uncertain band (see stages/xenc.py
   epochs: 3
   max_len: 128
   score_batch: 512
+  symmetric: 0         # 1: random A/B order in training, both orders averaged (logits) when scoring, plus the column xs_asym
 pairs:
   drop_frac: 0.0       # test-like universe: share of ALL train S1 dropped (outside the sample and holdout) before the competition and count features (0.21 mimics the test)
   joint_counts: false  # name-rarity counts over train and test records together (removes the set-size shift between the splits)
