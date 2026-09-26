@@ -13,6 +13,14 @@ python -m ber.stages.stack train --name s24 --base v7 --tag _q --set max_depth=9
 python -m ber.stages.stack predict --name s24
 python src/scripts/paired_models.py s22 s24
 python src/scripts/paired_models.py s27 s24
-R=restore:noise_swap+initials+spelled_legal+glued
-python src/scripts/france_variants.py s24 v8r_s24_A --rules typeswap:1.01,thrpn:0.995,protect:0.9 --cap 2>&1 | grep -E "fires on|^protect|^restore|with matches|PASS|FAIL|Traceback"
-python src/scripts/france_variants.py s24 v8r_s24_AR --rules typeswap:1.01,thrpn:0.995,protect:0.9,$R:0.05 --cap 2>&1 | grep -E "fires on|^protect|^restore|with matches|PASS|FAIL|Traceback"
+R=restore:noise_swap+noise_extra+initials+spelled_legal+glued
+python src/scripts/france_variants.py s24 v8u_s24_A --rules typeswap:1.01,thrpn:0.995,protect:0.9 --cap 2>&1 | grep -E "fires on|^protect|^restore|with matches|PASS|FAIL|Traceback"
+python src/scripts/france_variants.py s24 v8u_s24_AR --rules typeswap:1.01,thrpn:0.995,protect:0.9,$R:0.05 --cap 2>&1 | grep -E "fires on|^protect|^restore|with matches|PASS|FAIL|Traceback"
+FILES="v8u_s24_AR v8u_s24_A"
+for n in $FILES; do
+  o=$BER_WORK/output/$n
+  [ -f $o/matching_results.tsv ] || continue
+  if python $BER_WORK/official/validate_submission.py --matching $o/matching_results.tsv --candidate $o/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids | tail -3 | grep -q "^PASS"; then
+    echo "$n: PASS with --check-ids"; aws s3 cp $o/ s3://$B/ber/v8/runs/$n/output/ --recursive --exclude "*" --include "*.tsv" --only-show-errors
+  else echo "$n: VALIDATOR FAILED"; fi
+done
