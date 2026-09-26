@@ -367,6 +367,9 @@ def build(split: str, base: str, prm: dict) -> None:
     s1_addr, pool_addr, n2 = _addr_arrays(split)
     s1_name, pool_name = _name_arrays(split)
     xs_df = pl.read_parquet(P["work"] / prm.get("xenc_dir", "xenc") / f"{split}_xs.parquet") if prm.get("xenc") else None
+    if xs_df is not None and prm.get("xenc_dir2"):  # a second cross-encoder as a second feature xs2
+        x2 = pl.read_parquet(P["work"] / prm["xenc_dir2"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs2"))
+        xs_df = xs_df.join(x2.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
     have = set(scan.collect_schema().names())
     carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
     n = 0
@@ -517,6 +520,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--set", default="", help="comma-separated stack parameter overrides, e.g. max_depth=9,eta=0.05,rounds=1500")
     ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (needs stages/xenc.py output)")
+    ap.add_argument("--xenc-dir2", default="", help="build: WORK sub-folder of a second cross-encoder (feature xs2)")
     ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
@@ -530,6 +534,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["xenc"] = prm.get("xenc", False) or a.xenc
     prm["xenc_dir"] = a.xenc_dir
     prm["xcons"] = prm.get("xcons", False) or a.xcons
+    prm["xenc_dir2"] = a.xenc_dir2
     prm["xenc_fit_more"] = a.xenc_fit_more
     if a.sub_q:
         prm["sub_q"] = a.sub_q
