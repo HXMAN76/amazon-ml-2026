@@ -3,7 +3,7 @@
 Solution of team Nooglers for the Amazon ML Challenge 2026 (Business Entity Resolution). For every Source 1 (S1) business record it
 predicts the matching Source 2 / Source 3 (S2/S3) records and writes the candidate set the model scored. Score: macro F_0.5 over S1
 entities. Everything is derived from the provided training and test TSV files only: no external data, APIs, registries or geocoding.
-Pretrained models are used only as open-source encoders (`intfloat/multilingual-e5-small`, MIT, 118M parameters, downloaded once
+Pretrained models are used only as open-source encoders (`intfloat/multilingual-e5-small` and `-base`, MIT, 118M and 278M parameters, downloaded once
 from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
 
 ## Pipeline
@@ -96,7 +96,7 @@ training labels; its behaviour is only checked through the model's own probabili
 ## Licences and constraints
 
 Models: XGBoost (Apache-2.0) for both matching stages; `intfloat/multilingual-e5-small` (MIT, 118M parameters) as encoder for dense
-retrieval and as the cross-encoder base. Libraries: numpy, scikit-learn, pandas (BSD-3), polars, duckdb, rapidfuzz, pyyaml,
+retrieval and `intfloat/multilingual-e5-small` and `intfloat/multilingual-e5-base` (MIT, 278M parameters) as cross-encoder bases. Libraries: numpy, scikit-learn, pandas (BSD-3), polars, duckdb, rapidfuzz, pyyaml,
 mlflow, pytest (MIT/Apache-2.0), anyascii (ISC), torch (BSD-3), transformers (Apache-2.0). All far below 8B parameters. The abbreviation and
 legal-form tables in `text.py` are hand-written string rules, not external data lookups; the encoder weights are the only downloaded
 artifact and no data of the challenge is sent anywhere.
