@@ -1,6 +1,6 @@
 # Handoff: v6 (`bs` line) on the barani GPU notebook
 
-Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 11:15 IST**.
+Owner: Baranidharan. Branch `v6/strong-parts` (built on `sai` @ c9a82b8). Last update: **26 Sep 2026, about 14:15 IST**.
 Window closes Sun 27 Sep 23:59 IST; planned freeze **Sun 12:00 IST**.
 
 ## 1. Goal and why
@@ -76,7 +76,8 @@ Evaluation:
 | `d1_stack` | stack `bs_w2` (+ xs, decoy features, dall2 columns), set model, blend `bs_final` | **`bs_w2` 0.98699**, +0.0040 over `bs_s6` (paired); xs is the 3rd most important feature. **`bs_final` (75% stack + 25% set model) 0.98718**, +0.00019 [0.00009, 0.00029] over `bs_w2`. Validator PASS |
 | `b2_tw` | test-weighted `bs_s6` | 0.97892 test-weighted (plain 0.98299): country mix and extra decoys cost about 0.004. Best threshold unchanged (0.63): the threshold is robust to the test's decoy density |
 | `e1_errors` | error analysis of `bs_w2` (holdout) | oracle 0.9958; loss: blocking 0.0042, matcher 0.0088. 7,738 missed true pairs vs 1,610 false positives (median p1 of misses 0.35). Weakest segments: S1 with an empty-address match 0.951 (13% of S1), S1 with a single true match 0.942. Threshold curve flat 0.63 to 0.70 |
-| `f1_xenc2` | cross-encoder v2 (600k S1, band 0.02 to 0.98), stack `bs_w3` on 650k S1, set model, blend `bs_final3` | running |
+| `f1_xenc2` | cross-encoder v2 (600k S1 -> 493,570 pairs, band 0.02 to 0.98), stack `bs_w3` on 650k S1, set model, blend `bs_final3` | cross-encoder AP on the same 72,100 holdout pairs **0.935 vs 0.853** (v1). **`bs_w3` 0.98920** (+0.0022 over `bs_w2`, +0.0062 over `bs_s6`); **test-weighted 0.98736** (`bs_s6` 0.97892). Blend with the set model: no gain (+0.000005), so the output is the stack's. Loss: blocking 0.0042, matcher 0.0066 (was 0.0088); false positives 1,132 (was 1,610), missed true pairs 6,657 (was 7,738). **Best file so far: `output/bs_w3/`**, downloaded to the laptop as `output/v6_bs_w3/`. Validator PASS |
+| `f2_xenc3` | cross-encoder v3 (all 900k S1, 2 epochs), stack `bs_w4` paired against `bs_w3` | running; roll back to v2 (`WORK/xenc_prev`) if it loses |
 
 Local checks: `pytest` 34 pass; a CPU smoke run of the whole v6 chain on synthetic data (scratch script, not in the repo) found
 and fixed a set-model bug (final-holdout rows were dropped).
@@ -86,7 +87,8 @@ Expected (estimates, to be replaced by measurements):
 | Model | Locked holdout | Portal |
 |---|---|---|
 | `bs_s6` | 0.98299 (measured) | about 0.966 to 0.971 |
-| `bs_final` | **0.98718 (measured)** | about 0.975 to 0.98 |
+| `bs_final` | 0.98718 (measured) | |
+| **`bs_w3`** | **0.98920 (measured)**, test-weighted 0.98736 | about 0.98 |
 
 ## 6. Next steps
 1. Done: `bs_s6` reproduces `s6` (0.98299).
