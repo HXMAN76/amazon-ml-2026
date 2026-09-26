@@ -13,6 +13,9 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
                         swaps from generic suffix words (services, groupe, france); p < pmax
   tiny:pmax             pool name of at most 3 letters that is not a subsequence of the initials of the S1's core name, p < pmax
+  xfr:DIR:t[:pmax]      the France-aware cross-encoder score in WORK/DIR/test_xs.parquet (stages/xenc_fr.py) is below t, p < pmax (default 1.01)
+  protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
+                        metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
 Prints the number of pairs each rule drops and the total, then writes WORK/output/NEWNAME like reemit.py."""
 
 import argparse
@@ -61,6 +64,8 @@ def main() -> None:
     exact = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q").len().rename({"len": "n_exact"})
     own = own.join(exact, on="q", how="left").with_columns(pl.col("n_exact").fill_null(0))
     rules_list = [] if a.no_rules else a.rules.split(",")
+    protect = [float(r.split(":")[1]) for r in rules_list if r.startswith("protect:")]
+    rules_list = [r for r in rules_list if not r.startswith("protect:")]
     if any(s.startswith("typeswap") for s in rules_list):
         exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
         slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
@@ -105,6 +110,11 @@ def main() -> None:
             own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
             own = own.with_columns(pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().alias("_xb"))
             c = pl.col("swap") & pl.col("_xb").is_in(words) & (pl.col("p") < float(k[1]))
+        elif k[0] == "xfr":
+            xf = pl.read_parquet(P["work"] / k[1] / "test_xs.parquet").select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), pl.col("xs").alias("_xf"))
+            own = own.drop("_xf", strict=False).join(xf, on=["q", "pid"], how="left")
+            print(f"xfr: {own['_xf'].is_null().sum()} of {own.height} predicted pairs have no score", flush=True)
+            c = (pl.col("_xf") < float(k[2])) & (pl.col("p") < float(k[3] if len(k) > 3 else 1.01))
         elif k[0] == "tiny":
             tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ") & (pl.col("p") < float(k[1]))).select("q", "pid", "a_core", "b_core")
             bad = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if not is_subseq(bc, "".join(t[0] for t in ac.split()))]
@@ -114,13 +124,20 @@ def main() -> None:
         else:
             raise SystemExit(f"unknown rule {spec}")
         n = own.filter(c).height
-        fired.append(c)
+        fired.append((k[0], c))
         print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f})", flush=True)
     if fired:
-        any_c = fired[0]
-        for c in fired[1:]:
-            any_c = any_c | c
+        any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
+        if protect:
+            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrx", "xfr"}]
+            o2 = own.with_columns(any_c.alias("_d"), (pl.any_horizontal(hard) if hard else pl.lit(False)).alias("_h"))
+            alive = o2.filter(~pl.col("_d")).select("q").unique()
+            back = (o2.filter(pl.col("_d") & ~pl.col("_h") & (pl.col("p") >= protect[0])).join(alive, on="q", how="anti")
+                      .sort("p", descending=True).group_by("q").first().select("q", "pid"))
+            emptied = o2.select("q").unique().join(alive, on="q", how="anti").height
+            dropped = dropped.join(back, on=["q", "pid"], how="anti")
+            print(f"protect {protect[0]}: the rules empty {emptied} {a.country} S1; {back.height} of them keep their best soft-dropped pair", flush=True)
     else:
         dropped = pl.DataFrame({"q": [], "pid": []}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_drop"))
     print(f"total dropped {dropped.height} ({dropped.height / own.height:.4f} of {a.country}'s predicted pairs)", flush=True)
