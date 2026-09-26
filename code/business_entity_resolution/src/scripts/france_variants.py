@@ -13,15 +13,18 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
                         swaps from generic suffix words (services, groupe, france); p < pmax
   tiny:pmax             pool name of at most 3 letters that is not a subsequence of the initials of the S1's core name, p < pmax
+  typeins:pmax[:R]      the pool name is the S1's core name plus one inserted word that is a type word (the typeswap vocabulary), p < pmax
   xfr:DIR:t[:pmax]      the France-aware cross-encoder score in WORK/DIR/test_xs.parquet (stages/xenc_fr.py) is below t, p < pmax (default 1.01)
   protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
                         metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
-Prints the number of pairs each rule drops and the total, then writes WORK/output/NEWNAME like reemit.py."""
+Prints the number of pairs each rule drops with its decoy share from the slot-limit fit (decoy_by_category.py; worth dropping above about 26%)
+and the total, then writes WORK/output/NEWNAME like reemit.py."""
 
 import argparse
 import json
 import time
 
+import numpy as np
 import polars as pl
 
 from ber import config, decision
@@ -34,6 +37,21 @@ PID_BASE = 10_000_000
 def is_subseq(short: str, initials: str) -> bool:
     it = iter(initials)
     return all(c in it for c in short)
+
+
+def decoy_share(pairs: pl.DataFrame, slots: pl.DataFrame) -> list[float]:
+    """Decoy share of a set of pairs in S2 and S3 from slot occupancy (decoy_by_category.py): true copies fill the (cap - k) free slots of an S1
+    with k confident exact-name copies, decoys arrive at a rate that does not depend on k; fit rate(k) = D + T * (cap - k) / cap."""
+    per = slots.join(pairs.group_by("q", "src").len().rename({"len": "n"}), on=["q", "src"], how="left").with_columns(pl.col("n").fill_null(0))
+    out = []
+    for src, cap in ((2, 5), (3, 6)):
+        g = per.filter((pl.col("src") == src) & (pl.col("k") <= cap)).group_by("k").agg(pl.len().alias("w"), pl.col("n").mean().alias("r")).sort("k")
+        k, w, r = (g[c].to_numpy().astype(float) for c in ("k", "w", "r"))
+        A = np.vstack([np.ones_like(k), (cap - k) / cap]).T * np.sqrt(w)[:, None]
+        (d, _), *_ = np.linalg.lstsq(A, r * np.sqrt(w), rcond=None)
+        tot = float((w * r).sum())
+        out.append(round(min(1.0, max(float(d), 0.0) * w.sum() / tot), 3) if tot > 0 else float("nan"))
+    return out
 
 
 def main() -> None:
@@ -66,9 +84,9 @@ def main() -> None:
     rules_list = [] if a.no_rules else a.rules.split(",")
     protect = [float(r.split(":")[1]) for r in rules_list if r.startswith("protect:")]
     rules_list = [r for r in rules_list if not r.startswith("protect:")]
-    if any(s.startswith("typeswap") for s in rules_list):
-        exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
-        slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
+    exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
+    slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
+    if any(s.startswith(("typeswap", "typeins")) for s in rules_list):
         nA, nB = slots.filter(pl.col("k") >= 3).height, slots.filter(pl.col("k") == 0).height
         sw = own.filter(pl.col("swap")).join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
         sw = sw.with_columns(pl.col("a_core").str.split(" ").list.unique().alias("ta"), pl.col("b_core").str.split(" ").list.unique().alias("tb"))
@@ -110,6 +128,12 @@ def main() -> None:
             own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
             own = own.with_columns(pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().alias("_xb"))
             c = pl.col("swap") & pl.col("_xb").is_in(words) & (pl.col("p") < float(k[1]))
+        elif k[0] == "typeins":
+            rmin = float(k[2]) if len(k) > 2 else 0.75
+            words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()
+            own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
+            ins = (pl.col("_ta").list.set_difference(pl.col("_tb")).list.len() == 0) & (pl.col("_tb").list.set_difference(pl.col("_ta")).list.len() == 1)
+            c = ins & pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().is_in(words) & (pl.col("p") < float(k[1]))
         elif k[0] == "xfr":
             xf = pl.read_parquet(P["work"] / k[1] / "test_xs.parquet").select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), pl.col("xs").alias("_xf"))
             own = own.drop("_xf", strict=False).join(xf, on=["q", "pid"], how="left")
@@ -125,7 +149,7 @@ def main() -> None:
             raise SystemExit(f"unknown rule {spec}")
         n = own.filter(c).height
         fired.append((k[0], c))
-        print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f})", flush=True)
+        print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f}); decoy share S2, S3 {decoy_share(own.filter(c), slots)}", flush=True)
     if fired:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
@@ -137,7 +161,8 @@ def main() -> None:
                       .sort("p", descending=True).group_by("q").first().select("q", "pid"))
             emptied = o2.select("q").unique().join(alive, on="q", how="anti").height
             dropped = dropped.join(back, on=["q", "pid"], how="anti")
-            print(f"protect {protect[0]}: the rules empty {emptied} {a.country} S1; {back.height} of them keep their best soft-dropped pair", flush=True)
+            print(f"protect {protect[0]}: the rules empty {emptied} {a.country} S1; {back.height} of them keep their best soft-dropped pair "
+                  f"(decoy share of those pairs S2, S3 {decoy_share(back.join(own.select('q', 'pid', 'src'), on=['q', 'pid'], how='left'), slots)})", flush=True)
     else:
         dropped = pl.DataFrame({"q": [], "pid": []}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_drop"))
     print(f"total dropped {dropped.height} ({dropped.height / own.height:.4f} of {a.country}'s predicted pairs)", flush=True)
