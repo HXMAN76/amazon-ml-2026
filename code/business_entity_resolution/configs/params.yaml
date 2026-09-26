@@ -110,3 +110,19 @@ dense_all2:            # v6: second, stronger name+address channel (python -m be
   k_merge_empty: 1
   tau: 0.0
   seed: 23
+xenc:                  # cross-encoder on the uncertain band (python -m ber.stages.xenc); feature xs of the stack (--xenc)
+  base: bs_w1          # first-stage model supplying p1 (the band)
+  base_model: Alibaba-NLP/gte-multilingual-reranker-base   # Apache-2.0, ~306M, multilingual (Indic scripts)
+  lo: 0.05             # band: pairs with lo <= p1 <= hi are scored
+  hi: 0.95
+  sibling: true        # S1 side carries the S1's most confident other candidate after [SIB]
+  n_synth_decoy: 40000 # synthetic look-alikes of true records added as negatives (ber.decoys)
+  train_s1: 200000     # fine-tuning S1, drawn first from the dense_all2 fine-tune S1 (kept out of stage two)
+  n_pos_extra: 60000   # confident positives added to the band and the hard negatives
+  max_pairs: 700000
+  max_len: 192         # S1 + sibling + candidate
+  epochs: 1
+  batch: 64
+  lr: 0.00002
+  score_batch: 256
+  seed: 17

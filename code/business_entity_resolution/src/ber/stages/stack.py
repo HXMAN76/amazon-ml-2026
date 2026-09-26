@@ -368,6 +368,9 @@ def build(split: str, base: str, prm: dict) -> None:
     s1_name, pool_name = _name_arrays(split)
     have = set(scan.collect_schema().names())
     carried = [c for c in dict.fromkeys(ORIG + (EXTRA if prm.get("extra_features", False) else [])) if c in have]
+    xs = None
+    if prm.get("xenc"):  # cross-encoder score of the band pairs (NaN outside the band; XGBoost learns the missing branch)
+        xs = pl.read_parquet(P["work"] / "xenc" / split / "scores.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     n = 0
     for i, lo_i in enumerate(range(0, len(keep), prm["chunk_q"])):
         qs = keep[lo_i: lo_i + prm["chunk_q"]]
@@ -380,6 +383,9 @@ def build(split: str, base: str, prm: dict) -> None:
         rows = rows.join(consensus_text_features(rows0, pool_name, pool_addr, n2), on=["q", "pid"], how="left")
         if prm.get("decoy", False):
             rows = rows.join(decoy_features(rows0, s1_name, pool_name, n2), on=["q", "pid"], how="left")
+        if xs is not None:
+            rows = rows.join(xs.filter((pl.col("q") >= lo) & (pl.col("q") <= hi)).with_columns(
+                pl.col("q").cast(rows.schema["q"]), pl.col("pid").cast(rows.schema["pid"])), on=["q", "pid"], how="left")
         assert rows.height == rows0.height, "feature rows and first-stage rows must match one to one"
         rows = rows.with_columns([pl.col(c).cast(pl.Float32) for c in rows.columns if c not in {"q", "pid", "label"}])
         if "label" in rows.columns:
@@ -521,6 +527,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--decoy", action="store_true", help="build: add the edit-type (decoy) name features")
     ap.add_argument("--extra", action="store_true", help="build: carry more first-stage feature columns")
     ap.add_argument("--thin", action="store_true", help="build: train at test density (drop split.thin_q S1)")
+    ap.add_argument("--xenc", action="store_true", help="build: add the cross-encoder score xs (WORK/xenc/{split}/scores.parquet)")
     a = ap.parse_args(argv)
     global STACK_DIR
     STACK_DIR = "stack" + a.tag
@@ -528,6 +535,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["decoy"] = prm.get("decoy", False) or a.decoy
     prm["extra_features"] = prm.get("extra_features", False) or a.extra
     prm["thin"] = a.thin
+    prm["xenc"] = a.xenc
     base = a.base or prm["base"]
     if a.cmd == "build":
         build(a.split, base, prm)
