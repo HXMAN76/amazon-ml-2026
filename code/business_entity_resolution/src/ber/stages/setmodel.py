@@ -46,8 +46,10 @@ def load(stack: str, split: str) -> tuple[pl.DataFrame, list[str]]:
     cols = ["q", "pid", *(["label"] if split == "train" else []), *feats]
     d = pl.concat([pl.read_parquet(f, columns=cols) for f in sorted(folder.glob("chunk_*.parquet"))]).with_columns(
         pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
-    if split == "train":
-        ps = pl.concat([pl.read_parquet(P["work"] / "models" / stack / f, columns=["q", "pid", "p"]) for f in ("oof_tune.parquet", "holdout_pred.parquet")])
+    if split == "train":  # out-of-fold on the training S1, the stack's own p on the locked and the final holdout
+        M = P["work"] / "models" / stack
+        ps = pl.concat([pl.read_parquet(M / f, columns=["q", "pid", "p"]) for f in ("oof_tune.parquet", "holdout_pred.parquet", "final_pred.parquet")
+                        if (M / f).exists()])
     else:
         ps = pl.read_parquet(P["work"] / "output" / stack / "pair_p.parquet", columns=["q", "pid", "p"])
         d = d.with_columns(pl.lit(0, dtype=pl.Int8).alias("label"))
