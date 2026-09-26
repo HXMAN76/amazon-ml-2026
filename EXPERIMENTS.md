@@ -138,3 +138,15 @@ Facts: the portal gap is France (about 0.010 of score). US and India transfer fr
 Expected portal outcome if ranks 1 to 5 land: 0.984 (threshold only) to 0.988 (calibration works) to 0.990 (a real France cause found). The 0.988 people on the leaderboard are consistent with a France fix.
 
 Portal probes of the day: `s17pf` 0.187 and `s17pu` 0.453 done; one slot left on 26 Sep, planned `s22f985`. Tomorrow: `s22f97`, `s22f995`, `s22` alone, then `s24` or the France-aware model.
+
+### 10.1 Variants ready for the five slots of 27 Sep (all on `s22`, all include the `swap_exact` rule of `s22sx`, scored 0.982477)
+Files `runs/<name>/output/matching_results.tsv`; a portal difference to `s22sx` is a direct reading of the extra pairs dropped (break-even 26% wrong; per 1% of France's pairs: -0.0022 France F0.5 if true, +0.0063 if wrong, i.e. -0.00033 or +0.00094 overall).
+| File | Extra rule on top of `s22sx` | Extra pairs dropped |
+|---|---|---|
+| `s22a` | name similarity < 60, strong address, same house number, p < 0.999 | 17.8k (total 54.6k) |
+| `s22b` | the same with name similarity < 80 | 21.9k (total 58.6k) |
+| `s22c` | legal-form conflict, p < 0.9999 | 13.3k (total 50.1k) |
+| `s22d` | France threshold 0.985 | 47.6k (total 84.4k) |
+| `s22e` | tiny pool names that are not the initials of the S1 name, p < 0.9999 | see `runs/s22e` log |
+Order suggestion: `s22a`, `s22c`, `s22d`, then the combination of what won, then the final file. Realistic total gain of these categories: +0.001 to +0.003 (portal 0.9835 to 0.9855); +0.005 needs categories with more than 60% wrong pairs.
+
