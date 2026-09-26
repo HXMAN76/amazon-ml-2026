@@ -1,5 +1,5 @@
 #!/bin/bash
-# Reproduces the final submission (model s15) from the raw TSV files. Run from code/business_entity_resolution.
+# Reproduces the final submission (model s17) from the raw TSV files. Run from code/business_entity_resolution.
 #   BER_DATA=<folder with train/ and test/>  BER_WORK=<scratch, about 120 GB>  bash reproduce_final.sh
 # Two Python environments are used: `ber` (Python 3.12, requirements.txt) for everything except the steps marked [torch], which need the
 # `pytorch` environment (requirements-gpu.txt: torch with CUDA, transformers, sentencepiece, plus polars, duckdb, pyyaml, scikit-learn).
@@ -45,20 +45,26 @@ py ber.stages.train_gpu --name v7 --extra 600000 --set max_depth=9,eta=0.05,roun
 py ber.stages.score_rest --name v7
 py ber.stages.predict --name v7
 
-# 6. cross-encoder on the uncertain band of v7 (data in `ber`, fitting and scoring in `pytorch`)
+# 6. two cross-encoders on the uncertain band of v7 (data in `ber`, fitting and scoring in `pytorch`)
+#    e5-small: band 0.02 to 0.98, 400k fit S1 (defaults); e5-base: band 0.01 to 0.99, 700k fit S1 (fit_more=300000), 3 epochs
 py ber.stages.xenc data --base v7 --dir xenc_v7
-pyt ber.stages.xenc train --dir xenc_v7 --model-dir xenc_v7/model
-pyt ber.stages.xenc score --split train --dir xenc_v7 --model-dir xenc_v7/model
-pyt ber.stages.xenc score --split test --dir xenc_v7 --model-dir xenc_v7/model
+pyt ber.stages.xenc train --dir xenc_v7 --model-dir xenc/model
+pyt ber.stages.xenc score --split train --dir xenc_v7 --model-dir xenc/model
+pyt ber.stages.xenc score --split test --dir xenc_v7 --model-dir xenc/model
+py ber.stages.xenc data --base v7 --dir xenc2_v7 --set fit_more=300000,band_lo=0.01,band_hi=0.99
+pyt ber.stages.xenc train --dir xenc2_v7 --base-model intfloat/multilingual-e5-base --model-dir xenc2/model --set fit_more=300000,band_lo=0.01,band_hi=0.99,epochs=3,lr=0.00002,batch=64
+pyt ber.stages.xenc score --split train --dir xenc2_v7 --model-dir xenc2/model --set score_batch=256
+pyt ber.stages.xenc score --split test --dir xenc2_v7 --model-dir xenc2/model --set score_batch=256
 
-# 7. stack s15 (shortlist, consensus, digit, TF-IDF, decoy edit and carried features, cross-encoder score), decision and outputs
-py ber.stages.stack build --split train --base v7 --tag _i --xenc --xenc-dir xenc_v7 --decoy --extra --sub-q 1500000
-py ber.stages.stack tfidf --split train --tag _i
-py ber.stages.stack build --split test --base v7 --tag _i --xenc --xenc-dir xenc_v7 --decoy --extra
-py ber.stages.stack tfidf --split test --tag _i
-py ber.stages.stack train --name s15 --base v7 --tag _i --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
-py ber.stages.stack predict --name s15
+# 7. stack s17 (shortlist, consensus, digit, TF-IDF, decoy edit and carried features, both cross-encoder scores, competition on the refined
+#    probability), decision and outputs
+py ber.stages.stack build --split train --base v7 --tag _k --xenc --xcons --xenc-dir xenc2_v7 --xenc-dir2 xenc_v7 --xenc-fit-more 300000 --decoy --extra --sub-q 1500000
+py ber.stages.stack tfidf --split train --tag _k
+py ber.stages.stack build --split test --base v7 --tag _k --xenc --xcons --xenc-dir xenc2_v7 --xenc-dir2 xenc_v7 --decoy --extra
+py ber.stages.stack tfidf --split test --tag _k
+py ber.stages.stack train --name s17 --base v7 --tag _k --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
+py ber.stages.stack predict --name s17
 
 # 8. checks (the official validator is also run by `predict`/`stack predict` when work/official/validate_submission.py exists)
-python src/scripts/check_submission.py "$BER_WORK/output/s15" "$BER_DATA/test"
-echo "outputs: $BER_WORK/output/s15/matching_results.tsv and candidate_pairs.tsv"
+python src/scripts/check_submission.py "$BER_WORK/output/s17" "$BER_DATA/test"
+echo "outputs: $BER_WORK/output/s17/matching_results.tsv and candidate_pairs.tsv"

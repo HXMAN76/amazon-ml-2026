@@ -27,8 +27,9 @@ from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
    more), out-of-fold probabilities p1 for all of them; probabilities for the remaining train S1 come from `score_rest`.
 6. **Shortlist** (`stack.shortlist`): per S1 the best 10 candidates by p1 with p1 >= 0.005 (the best one always kept). This is the set that is
    scored by the second stage and written to `candidate_pairs.tsv` (about 4.7 candidates per S1).
-7. **xenc** (`stages/xenc.py`): a cross-encoder (`multilingual-e5-small` with a one-logit head) reads both records of the uncertain band
-   (p1 between 0.02 and 0.98) and produces one score `xs` per pair; digit runs are tagged so a changed digit is a visible difference.
+7. **xenc** (`stages/xenc.py`): two cross-encoders (`multilingual-e5-base` and `multilingual-e5-small`, each with a one-logit head) read both
+   records of the uncertain band (p1 between 0.01 and 0.99, respectively 0.02 and 0.98) and produce the scores `xs` and `xs2`; digit runs are
+   tagged so a changed digit is a visible difference. Their fitting S1 are excluded from the stack.
 8. **stack** (`stages/stack.py`): second-stage XGBoost on consensus evidence: how many confident records an S1 already has per source,
    how strongly other S1 claim the same record, house-number and digit agreement with the S1's other confident records, TF-IDF cosine
    of names and addresses, edit-type (decoy) features of the names, carried first-stage features and `xs`; trained on 1.5M S1.
@@ -50,14 +51,14 @@ export BER_WORK=/path/to/work        # scratch and outputs
 TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh   # runs every stage in order; about 6 hours on 64 vCPU + A10G
 ```
 
-The outputs are `$BER_WORK/output/s15/matching_results.tsv` (leaderboard file) and `$BER_WORK/output/s15/candidate_pairs.tsv`. Validate
+The outputs are `$BER_WORK/output/s17/matching_results.tsv` (leaderboard file) and `$BER_WORK/output/s17/candidate_pairs.tsv`. Validate
 with the organisers' script and the bundled checker (every rule of the statement: format, one row per S1, ids exist, matches are a subset
 of candidates, one owner per record, per-country statistics):
 
 ```bash
-python3 utils/validate_submission.py --matching $BER_WORK/output/s15/matching_results.tsv \
-    --candidate $BER_WORK/output/s15/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
-python src/scripts/check_submission.py $BER_WORK/output/s15 $BER_DATA/test
+python3 utils/validate_submission.py --matching $BER_WORK/output/s17/matching_results.tsv \
+    --candidate $BER_WORK/output/s17/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
+python src/scripts/check_submission.py $BER_WORK/output/s17 $BER_DATA/test
 ```
 
 Parameters for every stage are in `configs/params.yaml`; run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl`
@@ -86,7 +87,8 @@ Locked holdout of 150,000 training S1 that no model trained on (macro F_0.5, pai
 | + consensus stacking, digit and TF-IDF features | 0.9677 |
 | + name dense channel | 0.9708 |
 | + name and address dense channel (first stage 0.9757) and stack | 0.9832 |
-| + cross-encoder score, more training data, deeper stack (final, `s15`) | **0.9894** |
+| + cross-encoder score, more training data, deeper stack (`s15`) | 0.9894 |
+| + stronger cross-encoder (e5-base), e5-small as second feature, refined competition, first stage on 850k S1 (`s17`, portal 0.981) | **0.9903** |
 
 Test run: about 4.7 candidates per S1 (57M candidate pairs before the shortlist), about 94% of S1 receive at least one match. France has no
 training labels; its behaviour is only checked through the model's own probabilities and output statistics.

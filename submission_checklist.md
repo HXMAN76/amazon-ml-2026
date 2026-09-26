@@ -83,3 +83,6 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 - Portal log: v2 0.944 (13:46), s4 0.953 (22:21), s3all 0.949 (22:53), **s12 0.971976 (26 Sep, rank 402)**. Best by holdout not yet uploaded: `s14` 0.98986, `s16`, `s15`, `s13`.
 - Submissions left on 26 Sep: 4 (more tomorrow, possibly unlimited). Planned uses: `s14` as baseline, `s14f85`/`s14f95` (France threshold variants from `runs/s14f85/` and `runs/s14f95/` with `runs/s14/output/candidate_pairs.tsv`), then the final model.
 - Candidate file rule: every variant reuses the candidate file of its parent model (matches are a subset of it).
+
+## I. Added 26 Sep about 13:00 IST
+- Portal log: **`s17` 0.981 (26 Sep 12:31 PM)**, `s12` 0.972 (09:49 AM). Next uploads: `s17f85` (France threshold 0.85) to read France's behaviour; final candidates come from `EXPERIMENTS.md` section 6.2.

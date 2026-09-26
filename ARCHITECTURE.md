@@ -1,6 +1,6 @@
 # Architecture reference: current pipeline, every earlier version, and what was tried
 
-Team Nooglers, Amazon ML Challenge 2026 (Business Entity Resolution). Written 26 Sep 2026 about 02:15 IST. This is the single place that describes what the system is, how it got there, and why each piece exists. Companion documents: `TEAM_GUIDE.md` (how to run things, AWS how-to, backlog), `handoff.md` (infra details and latest status, section 0), `context.md` (data facts), `research.md` (measurements, sections 10 to 19), `plan.md` (the original v1 plan), `submission_checklist.md`, `submission/Documentation_template.md` (methodology draft for the organisers).
+Team Nooglers, Amazon ML Challenge 2026 (Business Entity Resolution). Written 26 Sep 2026 about 02:15 IST, updated through 13:00 IST (the current best is `s17`; experiment registry in `EXPERIMENTS.md`). This is the single place that describes what the system is, how it got there, and why each piece exists. Companion documents: `TEAM_GUIDE.md` (how to run things, AWS how-to, backlog), `handoff.md` (infra details and latest status, section 0), `context.md` (data facts), `research.md` (measurements, sections 10 to 19), `plan.md` (the original v1 plan), `submission_checklist.md`, `submission/Documentation_template.md` (methodology draft for the organisers).
 
 ## 1. Problem and data
 
@@ -123,7 +123,9 @@ Holdout = locked 150k-S1 set; out-of-fold (OOF) = the 250k training sample; port
 | `s14` | stack on base `v5` with cross-encoder 2 (`multilingual-e5-base`, 278M, fitted on 700k S1 = 966k pairs, band 0.01 to 0.99, 3 epochs, 2.4 h on an A10G) | holdout **0.98986** | +0.00069 [0.00054, 0.00083] over `s13`; average precision inside the band 0.986 against 0.934 for p1 (train pairs, optimistic) |
 | `s16` | `s15` + competition features on the cross-encoder refined probability (`--xcons`) | holdout 0.98946 | +0.00011 [0.00001, 0.00021] over `s15` |
 
-In flight (26 Sep 12:10): `s17` = base `v7` + cross-encoder 2 rescored on `v7`'s bands (average precision inside the band 0.976 against 0.918) + cross-encoder 1 as `xs2` + `--xcons`; `s18` = small cross-encoder fitted on the same 966k pairs as the base one (separates model size from data size). Portal: `s12` scored 0.971976 (holdout 0.98505).
+| `s17` | base `v7` + e5-base cross-encoder rescored on `v7`'s bands (average precision inside the band 0.976 against 0.918) + e5-small as `xs2` + refined competition (`--xcons`) | holdout **0.99025**, **portal 0.981** | +0.00039 [0.00026, 0.00053] over `s14`, +0.00079 over `s16`; 4.74 candidates per S1; current best |
+
+In flight (26 Sep 13:00): see `EXPERIMENTS.md` section 6.2 (`v8`, `v9`/`s21`, `s18`, `s19`, `s20`, `s22`). Portal: `s12` 0.971976, `s17` 0.981.
 
 Options in code: `stack build --decoy --extra --xenc --sub-q N --tag T`, `stack train --set depth=...`, a stacked base model for a second consensus round; details in section 9.
 

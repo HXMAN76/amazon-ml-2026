@@ -8,11 +8,13 @@ source /home/ec2-user/anaconda3/etc/profile.d/conda.sh
 conda env list | grep -q '^ber ' || conda create -y -q -n ber python=3.12
 conda activate ber
 pip install -q -r /home/ec2-user/SageMaker/ber/requirements.txt && python -c "import pandas,scipy,sklearn,lightgbm,rapidfuzz" && echo ready > /home/ec2-user/SageMaker/ber/.env_ready
-# job lanes: the main notebook uses prefixes jobs and jobs2; the second notebook (test-notebook-2) uses jobsB and jobsB2
+# job lanes: the main notebook uses prefixes jobs, jobs2, jobs3, jobs4; the second notebook (test-notebook-2) uses jobsB, jobsB2, jobsB3, jobsB4
 NBNAME=$(python3 -c "import json;print(json.load(open('/opt/ml/metadata/resource-metadata.json'))['ResourceName'])" 2>/dev/null || echo test-notebook)
-if [ "$NBNAME" = "test-notebook-2" ]; then L1=B; L2=B2; else L1=""; L2=2; fi
-pgrep -f "jobrunner.sh $L1\$" >/dev/null || nohup bash /home/ec2-user/jobrunner.sh $L1 > /home/ec2-user/jobrunner.log 2>&1 &
-pgrep -f "jobrunner.sh $L2\$" >/dev/null || nohup bash /home/ec2-user/jobrunner.sh $L2 > /home/ec2-user/jobrunner2.log 2>&1 &
+if [ "$NBNAME" = "test-notebook-2" ]; then LANES="B B2 B3 B4"; else LANES="_ 2 3 4"; fi
+for L in $LANES; do
+  A=$L; [ "$L" = "_" ] && A=""
+  pgrep -f "jobrunner.sh $A\$" >/dev/null || nohup bash /home/ec2-user/jobrunner.sh $A > /home/ec2-user/jobrunner_$L.log 2>&1 &
+done
 # diagnostic heartbeat: a snapshot of the machine state to S3 every minute (the last one before a stall shows what was happening)
 cat > /home/ec2-user/diag.sh <<'D'
 #!/bin/bash
