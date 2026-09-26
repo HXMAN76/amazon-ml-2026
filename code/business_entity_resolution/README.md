@@ -1,111 +1,100 @@
-# Business Entity Resolution: blocking + gradient-boosted matcher
+# Business Entity Resolution: multi-channel blocking, gradient-boosted matcher, cross-encoder and consensus stacking
 
-Solution for the Amazon ML Challenge 2026 (Business Entity Resolution). For every Source 1 (S1) business record it predicts
-the matching Source 2 / Source 3 (S2/S3) records, and it also writes the candidate set the model scored. Score: macro F_0.5
-over S1 entities. Everything is derived from the provided training and test TSV files only; no external data, APIs,
-registries or geocoding are used, and the model uses no pretrained neural network.
+Solution of team Nooglers for the Amazon ML Challenge 2026 (Business Entity Resolution). For every Source 1 (S1) business record it
+predicts the matching Source 2 / Source 3 (S2/S3) records and writes the candidate set the model scored. Score: macro F_0.5 over S1
+entities. Everything is derived from the provided training and test TSV files only: no external data, APIs, registries or geocoding.
+Pretrained models are used only as open-source encoders (`intfloat/multilingual-e5-small`, MIT, 118M parameters, downloaded once
+from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
 
 ## Pipeline
 
-1. **prepare** (`stages/prepare.py`, `text.py`): reads the TSVs and writes Parquet. Text normalisation is rule based:
-   HTML entity decoding, Latin-only accent stripping (Devanagari, Telugu and other scripts are preserved), lowercase,
-   punctuation removal, abbreviation expansion (`corp`, `ltd`, `rd`, `st`), repair of digit-for-letter noise inside words
-   (`c0mpany`), DBA/alias and domain-name splitting (`X dba Y`, `X | www.x.com`), legal forms (`pvt`, `llc`, `sarl`, `sci`)
-   kept in their own field, glued city suffix cleanup, and script fractions. Also builds the label table from the ground truth.
-2. **sample** (`stages/sample.py`): draws 250,000 training S1 entities as queries and assigns 5 cross-validation folds. The
-   full S2+S3 pool is kept, so competition between S1 entities matches test time.
-3. **block** (`stages/block.py`): candidate generation with a weighted token index in DuckDB. Every record becomes tagged
-   tokens: name words, address words and numbers, 5-character prefixes of long words, and composite keys (rare name word
-   with rare address word, two rare name words, two rare address words, house number with rare address word). A pool record's
-   score for an S1 query is the sum of inverse document frequency over shared tokens; the top 30 per S1 are kept (about 30
-   candidates per S1; recall of true pairs 0.94 on a 20k-S1 check, ceiling for the current matcher).
-   Tokens with document frequency above 800 in the S2+S3 pool are ignored.
-4. **pairs** (`stages/pairs.py`): 63 features per candidate pair: blocking score per token type, rank and gap within
-   the S1's list and within the candidate record's list (competition between S1 entities for the same record), rapidfuzz
-   name and address similarities, Jaro-Winkler, Levenshtein, alias match, house-number and postal-code agreement or conflict,
-   legal-form agreement, script fractions, country agreement, name rarity (how many S1 and pool records share the name),
-   exact-name flag, token coverage, glued-name similarity (spaces removed), digit alignment, and similarities on
-   romanised text (offline transliteration with anyascii) plus a consonant skeleton to bridge Latin and Indic scripts.
-5. **train_gpu** (`stages/train_gpu.py`): XGBoost binary classifier (CUDA when available, CPU otherwise), 5-fold cross-validation
-   grouped by S1 entity, then the decision rule is tuned on the out-of-fold predictions.
-5b. **prune** (`stages/prune.py`, optional cascade, under evaluation): block with 100 candidates per S1 (`--k 100 --out-name <split>_raw`),
-   then a small XGBoost on S1-local blocking features (score, shared tokens, per-token-type scores, rank and gap inside the list)
-   keeps the best 30 per S1 before the expensive string features. The submitted files were produced with the plain top-30 blocking.
-6. **predict** (`stages/predict.py`, `decision.py`): scores all test candidates, keeps for every S2/S3 record only its
-   highest-probability S1 (records belong to at most one S1 in the training data), applies the tuned threshold, and writes
-   `matching_results.tsv` and `candidate_pairs.tsv` (the candidates are exactly the pairs the model scored), then validates.
+1. **prepare** (`stages/prepare.py`, `text.py`): rule-based text normalisation (HTML entities, Latin-only accent stripping, digit-for-letter
+   repair, DBA/alias and domain splitting, legal forms in their own field, country-specific address abbreviations incl. France,
+   offline romanisation of non-Latin scripts with anyascii), Parquet output, label table.
+2. **sample** (`stages/sample.py`): 250,000 training S1 as queries with 5 folds grouped by S1 (the full S2+S3 pool is kept, so competition
+   between S1 entities matches test time). `split.py` fixes the locked 150,000-S1 holdout used for all evaluation.
+3. **Candidate generation**, the union of three channels merged into the candidate shards:
+   - `block.py` + `prune.py`: weighted token index in DuckDB over the 10.3M pool records (name words, address words, 5-character prefixes,
+     composite rare-token keys; tokens with document frequency above 800 ignored), 100 raw candidates per S1, a learned first-stage
+     ranker keeps the best 30;
+   - `dense.py`: multilingual encoder over names; each non-Latin pool name gets its 5 nearest S1 names;
+   - `dense_all.py`: the same encoder over "name | address" of every record, fine-tuned with mined hard negatives; each pool record gets
+     its nearest S1 (top 1). Together the candidates contain 98.4% of the true pairs.
+4. **pairs** (`stages/pairs.py`): 67 features per pair (blocking scores, competition between S1 for the same record, name and address
+   similarities, house-number and postal-code agreement, legal forms, name rarity, coverage, glued names, digit alignment,
+   romanised similarities, dense cosines and ranks).
+5. **train_gpu** (`stages/train_gpu.py`, `score_rest.py`): first-stage XGBoost (CUDA when available) on 850,000 S1 (the sample plus 600,000
+   more), out-of-fold probabilities p1 for all of them; probabilities for the remaining train S1 come from `score_rest`.
+6. **Shortlist** (`stack.shortlist`): per S1 the best 10 candidates by p1 with p1 >= 0.005 (the best one always kept). This is the set that is
+   scored by the second stage and written to `candidate_pairs.tsv` (about 4.7 candidates per S1).
+7. **xenc** (`stages/xenc.py`): a cross-encoder (`multilingual-e5-small` with a one-logit head) reads both records of the uncertain band
+   (p1 between 0.02 and 0.98) and produces one score `xs` per pair; digit runs are tagged so a changed digit is a visible difference.
+8. **stack** (`stages/stack.py`): second-stage XGBoost on consensus evidence: how many confident records an S1 already has per source,
+   how strongly other S1 claim the same record, house-number and digit agreement with the S1's other confident records, TF-IDF cosine
+   of names and addresses, edit-type (decoy) features of the names, carried first-stage features and `xs`; trained on 1.5M S1.
+9. **Decision and outputs** (`predict.py`, `decision.py`): every S2/S3 record keeps only its highest-probability S1 (records have at most
+   one owner in the training data), a threshold tuned out-of-fold decides, and both TSV files are written and validated.
 
-Every S1 entity, including entities of a country never seen in training (France), gets exactly one row; empty list means no match.
+Every S1 entity, including entities of a country never seen in training (France), gets exactly one row; an empty list means no match.
 
 ## Reproduce
 
-Requirements: Python 3.12, about 60 GB of scratch disk, 15 GB RAM or more; a CUDA GPU makes training take under 3 minutes
-(CPU works, slower). Measured on an AWS g5.xlarge (4 vCPU, 15 GB RAM, NVIDIA A10G):
+Requirements: two Python 3.12 environments (`requirements.txt`; and `requirements-gpu.txt` with a CUDA build of torch for the dense
+retrieval and cross-encoder steps), a CUDA GPU (24 GB was used), 64 CPU cores and 256 GB RAM recommended (it also runs on smaller machines
+with smaller chunk sizes, only slower), about 120 GB of scratch disk.
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 export BER_DATA=/path/to/dataset     # folder containing train/ and test/ (the TSV files from the challenge)
 export BER_WORK=/path/to/work        # scratch and outputs
-make reproduce                       # runs every stage below; outputs in $BER_WORK/output/v1/
+TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh   # runs every stage in order; about 6 hours on 64 vCPU + A10G
 ```
 
-`make reproduce` runs, in order (timings measured on the g5):
-
-| Step | Command | Time |
-|---|---|---|
-| prepare + sample | `make sample` | about 9 min (24M records) |
-| block test | `python -m ber.stages.block --split test` | about 18 min (includes building the pool index) |
-| block train | `python -m ber.stages.block --split train --all-train` | about 13 min |
-| features train | `python -m ber.stages.pairs --split train` | about 6 min |
-| train | `python -m ber.stages.train_gpu --name v1` | about 3 min on GPU |
-| features test | `python -m ber.stages.pairs --split test` | about 35 min |
-| predict | `python -m ber.stages.predict --name v1` | about 2 min |
-
-Outputs: `$BER_WORK/output/v1/matching_results.tsv` (submitted to the leaderboard) and
-`$BER_WORK/output/v1/candidate_pairs.tsv`. Validate with the organisers' script and with the bundled checker, which tests every
-rule of the statement (format, one row per S1, ids exist, matches are a subset of candidates, one owner per record) and prints
-per-country statistics:
+The outputs are `$BER_WORK/output/s15/matching_results.tsv` (leaderboard file) and `$BER_WORK/output/s15/candidate_pairs.tsv`. Validate
+with the organisers' script and the bundled checker (every rule of the statement: format, one row per S1, ids exist, matches are a subset
+of candidates, one owner per record, per-country statistics):
 
 ```bash
-python3 utils/validate_submission.py --matching $BER_WORK/output/v1/matching_results.tsv \
-    --candidate $BER_WORK/output/v1/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
-python src/scripts/check_submission.py $BER_WORK/output/v1 $BER_DATA/test
+python3 utils/validate_submission.py --matching $BER_WORK/output/s15/matching_results.tsv \
+    --candidate $BER_WORK/output/s15/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids
+python src/scripts/check_submission.py $BER_WORK/output/s15 $BER_DATA/test
 ```
 
-`make` reruns a stage only when its parameters or source changed. Parameters for every stage are in `configs/params.yaml`.
-Run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl` and an MLflow sqlite database.
-Tests (`make test`, 17 tests) include end-to-end runs on a small synthetic dataset, including the output checker.
+Parameters for every stage are in `configs/params.yaml`; run tracking (parameters, metrics, timings) goes to `$BER_WORK/runs/runs.jsonl`
+and an MLflow sqlite database. `make test` runs the unit and end-to-end tests (28 tests, CPU only, on a small synthetic dataset).
+`make reproduce` runs the earlier, simpler pipeline (token blocking plus first-stage model only).
 
 ## Layout
 
-All Python source is under `src/`; `configs/`, `Makefile`, `README.md` and `requirements.txt` are at the package root.
-
 ```
-src/ber/                 package
-  text.py                text normalisation (entities, leetspeak, aliases, domains, legal forms, romanisation)
-  config.py stamp.py tracking.py   parameters, stage cache stamps, run logging
-  decision.py            exclusive assignment, threshold tuning, vectorised macro F_0.5
-  validate.py            local re-implementation of the format rules (raw-line parsing)
-  synth.py               small synthetic dataset used by the tests
-  stages/                prepare, sample, block, block_eval, prune, pairs, train_gpu, predict
-src/scripts/             qa_prepare.py (raw vs normalised text), error_analysis.py (loss decomposition and error
-                         taxonomy of a trained model), check_submission.py (rule checker for the output files)
-src/tests/               unit and end-to-end tests (`make test`)
-configs/params.yaml      all tunables (`block.types` selects the token types used for the submitted run)
-Makefile                 stage DAG and `make reproduce`
+src/ber/                 package: text.py, config.py, decision.py, split.py, tracking.py, validate.py, synth.py
+  stages/                prepare, sample, block, block_eval, prune, dense, dense_all, pairs, train_gpu, score_rest, xenc, stack, predict
+src/scripts/             error_analysis.py, noise_analysis.py, miss_analysis.py, country_expected.py, shortlist_eval.py,
+                         paired_models.py (paired bootstrap), check_submission.py, qa_prepare.py
+src/tests/               unit and end-to-end tests
+configs/params.yaml      all tunables
+reproduce_final.sh       the exact command sequence of the submitted model
 ```
 
-## Results (training data, cross-validated)
+## Results
 
-Out-of-fold macro F_0.5 on 250,000 training S1 entities: 0.9551 at threshold 0.65 (v0 with 42 features: 0.9377); recall ceiling of blocking 0.94. Test
-run: 51,892,359 candidate pairs for 1,732,544 S1 entities, 93.9% of S1 receive at least one match, mean 3.24 matches per S1
-(training truth: 94.4% and 3.46). Candidate recall by country on training: US 0.970, India 0.899. France has no training
-data, so its behaviour is unvalidated.
+Locked holdout of 150,000 training S1 that no model trained on (macro F_0.5, paired bootstrap against the previous model):
+
+| Model | Holdout F_0.5 |
+|---|---|
+| first pair model with cascade blocking | 0.9565 |
+| + consensus stacking, digit and TF-IDF features | 0.9677 |
+| + name dense channel | 0.9708 |
+| + name and address dense channel (first stage 0.9757) and stack | 0.9832 |
+| + cross-encoder score, more training data, deeper stack (final, `s15`) | **0.9894** |
+
+Test run: about 4.7 candidates per S1 (57M candidate pairs before the shortlist), about 94% of S1 receive at least one match. France has no
+training labels; its behaviour is only checked through the model's own probabilities and output statistics.
 
 ## Licences and constraints
 
-No pretrained model is used. Libraries and their licences: numpy (BSD-3), pandas (BSD-3), polars (MIT), duckdb (MIT),
-rapidfuzz (MIT), anyascii (ISC), xgboost (Apache-2.0), pyyaml (MIT), mlflow (Apache-2.0), pytest (MIT). The final model is an XGBoost
-gradient-boosted tree ensemble (Apache-2.0, far below 8B parameters). The abbreviation and legal-form tables in `text.py`
-are hand-written string rules, not external data lookups.
+Models: XGBoost (Apache-2.0) for both matching stages; `intfloat/multilingual-e5-small` (MIT, 118M parameters) as encoder for dense
+retrieval and as the cross-encoder base. Libraries: numpy, scikit-learn, pandas (BSD-3), polars, duckdb, rapidfuzz, pyyaml,
+mlflow, pytest (MIT/Apache-2.0), anyascii (ISC), torch (BSD-3), transformers (Apache-2.0). All far below 8B parameters. The abbreviation and
+legal-form tables in `text.py` are hand-written string rules, not external data lookups; the encoder weights are the only downloaded
+artifact and no data of the challenge is sent anywhere.
