@@ -9,6 +9,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   legalhouse:pmax       legal-form conflict and a different house number, p < pmax
   thr:t                 p < t
   thrp:t                p < t unless the pair is protected: equal names after removing spaced legal forms, or a pool name of at most 3 letters that is a subsequence of the S1's initials
+  thrpn:t               thrp that also spares one-word swaps into France's noise words (fils, groupe, services, developpement)
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
@@ -36,6 +37,7 @@ from ber.stages.predict import emit
 from word_swap import flag, strip_spaced, tok_df
 
 PID_BASE = 10_000_000
+NOISE_FR = ["fils", "groupe", "services", "developpement"]  # the words true France copies swap in (research.md 25; france_recall.py)
 
 
 def is_subseq(short: str, initials: str) -> bool:
@@ -127,6 +129,17 @@ def main() -> None:
             own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok"))
             own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
             c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok")
+        elif k[0] == "thrpn":  # thrp that also spares one-word swaps into France's noise words (true copies: research.md 25, france_recall.py)
+            if "ini_ok" not in own.columns:
+                tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ")).select("q", "pid", "a_core", "b_core")
+                ok = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if is_subseq(bc, "".join(t_[0] for t_ in ac.split()))]
+                ok_df = pl.DataFrame({"q": [x[0] for x in ok], "pid": [x[1] for x in ok]}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_ini"))
+                own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok")).drop("_ini")
+                own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
+            ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
+            own = own.with_columns(((ta.list.set_difference(tb).list.len() == 1) & (tb.list.set_difference(ta).list.len() == 1)
+                                    & tb.list.set_difference(ta).list.first().is_in(NOISE_FR)).alias("noise_swap"))
+            c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
         elif k[0] == "typeswap":
@@ -182,6 +195,7 @@ def main() -> None:
         fa = (pl.scan_parquet(sorted(str(f) for f in (P["work"] / "features" / "test").glob("part_*.parquet")))
                 .select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), "house_eq", "addr_tset").join(c.lazy().select("q", "pid"), on=["q", "pid"], how="semi").collect())
         c = c.join(fa, on=["q", "pid"], how="left").filter((pl.col("house_eq") > 0.5) & (pl.col("addr_tset") >= 90))
+        print(f"restore candidates at the S1's address by kind (p >= {pmin}, free slot): {sorted(c.group_by('kind').len().rows())}", flush=True)
         c = c.sort("p", descending=True).unique("pid", keep="first")  # one S1 per pool record
         c = c.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", "src"]).alias("_rk")).filter(pl.col("_rk") <= pl.col("cap") - pl.col("used"))
         print(f"restore {'+'.join(kinds)} p >= {pmin}: adds {c.height} pairs to {c['q'].n_unique()} {a.country} S1; by kind {sorted(c.group_by('kind').len().rows())}", flush=True)
