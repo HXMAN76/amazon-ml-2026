@@ -16,6 +16,9 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   tiny:pmax             pool name of at most 3 letters that is not a subsequence of the initials of the S1's core name, p < pmax
   typeins:pmax[:R]      the pool name is the S1's core name plus one inserted word that is a type word (the typeswap vocabulary), p < pmax
   xfr:DIR:t[:pmax]      the France-aware cross-encoder score in WORK/DIR/test_xs.parquet (stages/xenc_fr.py) is below t, p < pmax (default 1.01)
+  restore:KINDS:pmin    not a rule: add back shortlisted France pairs below the decision whose pool record nobody owns, whose name relation is one of KINDS
+                        (exact, spelled_legal, initials, glued, noise_swap; joined by +; france_recall.py), at the S1's address (same house number,
+                        address similarity >= 90), p >= pmin, within the S1's free slots (5 S2 / 6 S3), best p first
   protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
                         metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
 Prints the number of pairs each rule drops with its decoy share from the slot-limit fit (decoy_by_category.py; worth dropping above about 26%)
@@ -84,7 +87,8 @@ def main() -> None:
     own = own.join(exact, on="q", how="left").with_columns(pl.col("n_exact").fill_null(0))
     rules_list = [] if a.no_rules else a.rules.split(",")
     protect = [float(r.split(":")[1]) for r in rules_list if r.startswith("protect:")]
-    rules_list = [r for r in rules_list if not r.startswith("protect:")]
+    restore = [r.split(":") for r in rules_list if r.startswith("restore:")]
+    rules_list = [r for r in rules_list if not r.startswith(("protect:", "restore:"))]
     exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
     slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
     if any(s.startswith(("typeswap", "typeins")) for s in rules_list):
@@ -170,6 +174,19 @@ def main() -> None:
         dropped = pl.DataFrame({"q": [], "pid": []}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_drop"))
     print(f"total dropped {dropped.height} ({dropped.height / own.height:.4f} of {a.country}'s predicted pairs)", flush=True)
     out = pp.join(dropped, on=["q", "pid"], how="left").with_columns(pl.when(pl.col("_drop").is_not_null()).then(pl.min_horizontal(pl.col("p"), pl.lit(thr - 1e-6))).otherwise(pl.col("p")).alias("p")).drop("_drop")
+    if restore:
+        from france_recall import restore_candidates
+
+        kinds, pmin = restore[0][1].split("+"), float(restore[0][2])
+        c = restore_candidates(out, thr, s1, pool).filter((pl.col("ctry") == a.country) & pl.col("kind").is_in(kinds) & (pl.col("p") >= pmin) & pl.col("slot_free"))
+        fa = (pl.scan_parquet(sorted(str(f) for f in (P["work"] / "features" / "test").glob("part_*.parquet")))
+                .select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64), "house_eq", "addr_tset").join(c.lazy().select("q", "pid"), on=["q", "pid"], how="semi").collect())
+        c = c.join(fa, on=["q", "pid"], how="left").filter((pl.col("house_eq") > 0.5) & (pl.col("addr_tset") >= 90))
+        c = c.sort("p", descending=True).unique("pid", keep="first")  # one S1 per pool record
+        c = c.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", "src"]).alias("_rk")).filter(pl.col("_rk") <= pl.col("cap") - pl.col("used"))
+        print(f"restore {'+'.join(kinds)} p >= {pmin}: adds {c.height} pairs to {c['q'].n_unique()} {a.country} S1; by kind {sorted(c.group_by('kind').len().rows())}", flush=True)
+        out = (out.join(c.select("q", "pid").with_columns(pl.lit(True).alias("_add")), on=["q", "pid"], how="left")
+                  .with_columns(pl.when(pl.col("_add")).then(pl.max_horizontal(pl.col("p"), pl.lit(thr + 1e-4))).otherwise(pl.col("p")).cast(pl.Float32).alias("p")).drop("_add"))
     if a.cap:
         kept = decision.assign_exclusive(out).filter(pl.col("p") >= thr).with_columns(pl.when(pl.col("pid") < 3 * PID_BASE).then(5).otherwise(6).alias("cap_n"))
         kept = kept.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", pl.col("cap_n")]).alias("_rk"))
