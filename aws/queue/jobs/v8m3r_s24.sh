@@ -1,8 +1,8 @@
-# v8 (CPU lane jobs2, waits for the Qwen scores): stack s24 = s22's recipe + the Qwen3-0.6B score as xs3, trained on the same 1.5M S1, paired
+# v8 (GPU lane jobs, right after the Qwen scoring): stack s24 = s22's recipe + the Qwen3-0.6B score as xs3, trained on the same 1.5M S1, paired
 # holdout tests against s22 and s27, then the France recipes on s24.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
 export BER_WORK=$SM/work_t
-while [ ! -f $BER_WORK/xenc3Q_v7/train_xs.parquet ]; do sleep 60; done
+
 free -g | head -2; df -h $SM | tail -1
 A="--base v7 --tag _q --xenc --xcons --xenc-fit-more 300000 --decoy --extra --sub-q 1500000 --xenc-dir xenc2F_v7 --xenc-dir2 xenc_v7 --xenc-dir3 xenc3Q_v7"
 python -m ber.stages.stack build --split train $A

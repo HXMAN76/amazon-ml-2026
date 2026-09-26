@@ -1,4 +1,4 @@
-# v8 step r3 (CPU lane jobs2, protect fixed for thrpn): the recipe with France's noise-word swaps treated as true copies: typeswap + thrpn 0.995 (spares equal names,
+# v8 step r3 (on the GPU lane jobs before the Qwen scoring; CPU work; protect fixed for thrpn): the recipe with France's noise-word swaps treated as true copies: typeswap + thrpn 0.995 (spares equal names,
 # initials and noise-word swaps) + protect, then the restore of unowned noise-word swaps, initials, spelled legal forms and glued names at the S1's
 # address (exact names are not restored: on the holdout such restores are 0.4% true). On s27 and on s22F12n.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
