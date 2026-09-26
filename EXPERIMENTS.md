@@ -23,7 +23,10 @@ Team Nooglers. Last updated 26 Sep 2026 about 13:00 IST. Read this to see the ap
 | 8 | `s11`, `s13` | **cross-encoder score** on the uncertain band (e5-small, digit tags, hard negatives) | 0.98887, 0.98917 | not uploaded |
 | 9 | `s14` | stronger cross-encoder (e5-base, 700k fit S1, wider band) | 0.98986 | not uploaded |
 | 10 | `v7`, `s15`, `s16` | first stage on 850k S1 with depth 9; competition features on the refined probability | 0.97796, 0.98935, 0.98946 | not uploaded |
-| 11 | **`s17`** | base `v7` + e5-base cross-encoder rescored on `v7` bands + e5-small as a second feature + refined competition | **0.99025** | **0.981** |
+| 11 | `s17` | base `v7` + e5-base cross-encoder rescored on `v7` bands + e5-small as a second feature + refined competition | **0.99025** | **0.981** |
+
+| 12 | **`s22`** | cross-encoder on every shortlisted pair (catches confident look-alikes) | **0.99054** (+0.00029 [0.00018, 0.00039]) | not uploaded (next) |
+| probes | `s17pf`, `s17pu` | France-only and US-only versions of `s17` (26 Sep 15:56 and 15:57) | n/a | **France only 0.187, US only 0.453**: France F0.5 is about 0.92, US and India about 0.99 |
 
 What the ladder teaches: relative evidence (competition between S1 for the same record) was the first big gain; candidate recall (the two dense channels) was the second; **a model that reads both records jointly (the cross-encoder) was the third and the one that transfers best to the test set** (portal +0.009 for a holdout +0.005 from `s12` to `s17`). Small feature ideas, more data, depth and calibration each moved the holdout by at most 0.0005.
 
@@ -34,9 +37,10 @@ Extra token types in the blocker; higher document-frequency cap; calibration plu
 Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; precision 0.998; recall against all true pairs 0.972. 74% of the still-missed true pairs are pool records with an EMPTY address (4.4% of true pairs; 75% reach the candidates, 53% matched): name-only records, mostly ambiguous. Other misses: alias-only names 1.7k, injected or dropped words 2.7k, typos 2.2k. False positives 1,033, 58% look-alikes with no owner.
 
 ## 5. The holdout to portal gap: findings so far
-- The test is harder than the training data: 5.8 pool records per S1 against 4.7, about 40% of pool records unowned against 26%, 47% India against 40%, 15% France (no labels). The model-based estimate for `s15` gives US 0.9940, India 0.9951, France 0.9866 (France: 2.5 times more uncertain, 3.60 mean matches per S1 against 3.4).
-- **Adversarial validation (26 Sep):** a classifier separates holdout pairs from test pairs (US and India) with AUC 0.8716 using first-stage features. The drivers are the blocking scores (IDF sums computed inside each split's own pool), the competition features (`n_q_for_p` 12.0 against 9.9, `n_cand_q` 35.8 against 39.8) and name-rarity counts (`log_cnt_s1_b` 0.82 against 0.64, because the test has 21% fewer S1). These are set-size artifacts the first stage relies on.
-- Remedies being tested: joint name counts over train and test (`pairs.joint_counts`, model `v8`), a first stage that uses pair-level evidence only (`v9`: drops the blocking-score and competition features; the stack recomputes competition from the probabilities), cross-encoder coverage of every shortlisted pair (`s22`). France and per-country thresholds: `reemit.py` variants, and per-country probe files (see section 8).
+- **France is the gap (26 Sep 16:00).** Country probes on the portal: France only 0.187, US only 0.453 (all other S1 left empty). Solved with France's population share 0.15 and the singleton share 0.057: France F0.5 about 0.92 (range 0.90 to 0.95), US plus India about 0.991, which equals their holdout (0.990) and post-stratified (0.9905) estimates. France costs 0.15 * (0.99 - 0.92) = 0.010, the whole 0.0093 gap. Details and formulas: `research.md` sections 23 and 24.
+- **Why the model does not see it:** its own France estimate is 0.987. On the test it claims 63.8% of France's pool records (US 59.1%, India 58.0%), 3.53 matches per S1 (3.40, 3.37), has 14 times as many S1 with more than 5 S2 matches (impossible in training), and 5.9% of its predicted pairs sit below p 0.99 (US 2.0%). If France's real ownership matched the US, about 7% of the predicted France pairs are wrong (precision about 0.93). The errors are confident and spread over strata; shared addresses do not concentrate them.
+- **Ruled out as the main cause:** S1-side attributes (post-stratified test estimate 0.9905), distractor density (`s23`, the holdout inside a test-like universe loses only 0.0007), name ambiguity (test US and India are less ambiguous than train), row order (no signal).
+- **Adversarial validation (26 Sep):** AUC 0.8716 for US and India pairs, driven by set-size artefacts (blocking scores, competition counts, name counts); `s21` (features dropped) costs 0.00024 on the holdout; its portal effect is untested and now less relevant because US and India already transfer.
 
 ## 6. Experiment registry (add yours at the bottom)
 
@@ -114,20 +118,21 @@ Ideas ranked by expected effect on the portal gap:
 6. **Group-level decoding** (link pool records of one entity across S2 and S3 and assign the group to one S1): partly captured by the stack's similarity to the S1's best other record; a full version is not built.
 7. **Transductive use of the unlabelled test set** (pseudo-labels): not used; the rules say the model is built from the provided training data, so confirm with the organisers before trying it.
 
-## 10. Ranked plan (26 Sep 15:00, after the recall analysis in `research.md` section 23)
-Facts behind the ranking: 76.5% of the missed pairs have an empty pool address and about two thirds of all misses are name-ambiguous (several S1 share the name, the pool record has no address): not recoverable. The reducible recall is about 4,700 pairs (about +0.0028 at most, realistically a quarter of it). Precision loss is 0.0016. The threshold is flat. S1-side attributes explain none of the portal gap (post-stratified estimate 0.9905). Total realistic holdout headroom is +0.001 to +0.002.
+## 10. Ranked plan with gains (26 Sep 16:30, after the country probes; supersedes the 15:00 ranking)
+Facts: the portal gap is France (about 0.010 of score). US and India transfer from the holdout without loss. The holdout still has +0.001 to +0.002 of realistic headroom (about two thirds of the missed recall is name-ambiguous and unrecoverable, `research.md` section 23). So France work is worth five times any holdout work. Score arithmetic: overall = 0.15 * F(France) + 0.85 * F(US, India); every +0.01 of France F0.5 is +0.0015 overall; France 0.92 to 0.99 would be +0.0105 (portal 0.9915), which is the ceiling.
 
-| Rank | Idea | Expected holdout gain | Portal hope | Cost | Risk | State |
+| Rank | Idea | France F0.5 effect | Overall gain (portal) | Cost | Evidence and risk | State |
 |---|---|---|---|---|---|---|
-| 1 | **Per-country portal probes** (`s17pf` France only, `s17pu` US only, `s17pi` India only; `runs/<name>/output/matching_results.tsv`). Country score F = (portal - (1 - w) * 0.056) / w with w = 0.15, 0.383, 0.468 (public-subset mix is approximate) | 0 | steers the last day | 3 submission slots | none | files ready |
-| 2 | Ship **`s22`** (+0.00029, CI excludes 0) | +0.0003 | +0.0003 to +0.0006 | 1 slot | none | ready, `runs/s22/output/` |
-| 3 | **`v10`/`s23` test-like universe** and its holdout drop as a measure of the distractor-density effect | -0.001 to +0.0005 | +0.001 to +0.004 if the distractor rate is the cause | running | may hurt the holdout | `rq3` to `rq4` |
-| 4 | **More cross-encoder diversity**: `s20` e5-large (running), a Qwen3-0.6B or 1.7B (Apache-2.0) cross-encoder as a third score, order-swap averaging of scores, second seed | +0.0004 to +0.001 | same | 6 to 12 GPU hours | low | `s20` running; Qwen3 not built |
-| 5 | **France address-multiplicity features** (S1 sharing the exact address, pool records sharing the address, name margin inside an address group), retrain first stage and stack | +0.0003 (shared-address strata are 5% of holdout S1) | +0.001 or more if France is the gap | 4 to 6 h | moderate, cannot be validated on France | not built |
-| 6 | Small bundle: stack seed ensemble, cap 5 S2 and 6 S3, refit the stack with the holdout S1 after the model is chosen | +0.0002 to +0.0004 | same | 2 h | refit has no holdout number | not built |
-| 7 | Character n-gram or second dense channel for the 1,600 never-proposed pairs with an address (typos, glued names, non-Latin generic names) | +0.0002 to +0.0004 | same | 6 h+, new index | low | not built |
-| 8 | Density-ratio weights for the stack | -0.0002 to +0.0003 | unknown | 3 h | moderate | not built |
-| 9 | Pseudo-labels on the test set (France) | unknown | unknown | 6 h | confirmation bias; rules unclear | not recommended before asking the organisers |
-| 10 | `v8` joint name counts | about 0 | small | running | low | `rx3` running |
-| Not worth doing | more neighbours for empty-address records (`v6`, `s7`), expected-F0.5 decisions (`e1`), second consensus round (`s9`), threshold retuning, S1-attribute reweighting, small cross-encoder alone (`s18`) | | | | | measured, no gain |
+| 1 | **France threshold sweep on `s22`** (`s22f97`, `s22f985`, `s22f995`; portal reads the France curve, one slot each) | 0.92 to 0.93 to 0.95 if the wrong pairs sit in the low-probability tail | +0.001 to +0.003 | 1 to 3 slots | break-even correctness is about 0.74, France's model probabilities are over-confident, so the best model-p cut-off is 0.975 to 0.99; if the errors are spread over high p the gain is smaller | files ready, `runs/s22f97`, `runs/s22f985`, `runs/s22f995` |
+| 2 | **Cap of 5 S2 and 6 S3 per S1** (impossible extras: 186 France S1 against 35 US) | small | +0.0002 | 1 h | pure rule, safe | not built |
+| 3 | **France calibration by distribution matching**: choose France's cut-off (or a monotone remap of p) so its predicted ownership (63.8% of the pool) and matches per S1 (3.53) match the US and India (59% and 3.40) | up to 0.95 to 0.96 | +0.004 to +0.006 | 2 h, portal-checked | assumption: France's truth is as US-like as the generator suggests; use the sweep of rank 1 to confirm | after rank 1 |
+| 4 | **France-aware features and training**: pool-side evidence the model is over-trusting (see `france_profile.py`); `s25` (address multiplicity, running), name-length and generic-name features, France legal forms | 0.95 to 0.97 if a real cause is found | +0.004 to +0.008 | 4 to 8 h | cannot be validated on France without labels; only portal probes | `s25` running; more ideas need the sweep first |
+| 5 | Ship the best holdout model as the base for all France work: `s22` now, `s24` (Qwen3 third cross-encoder) or `s25` if they beat it | 0 | +0.0003 to +0.001 | running | paired test decides | `s24` about 02:00 IST, `s25` about 16:45, `s20` about 20:00 |
+| 6 | Small bundle: stack seeds, refit with the holdout S1 | 0 | +0.0002 to +0.0004 | 2 h | no holdout number after a refit | not built |
+| 7 | Extra channel for the 1,600 never-proposed pairs with an address | 0 | +0.0002 to +0.0004 | 6 h+ | new index | not built |
+| 8 | Density-ratio weights, test pseudo-labels | unknown | unknown | 3 to 6 h | pseudo-labels: ask the organisers first | not recommended |
+| Not worth doing | more neighbours for empty-address records, expected-F0.5 decisions, second consensus round, holdout threshold tuning, S1-attribute reweighting, small cross-encoder alone, further distractor-density work (`s23`) | | | | measured | |
 
+Expected portal outcome if ranks 1 to 5 land: 0.984 (threshold only) to 0.988 (calibration works) to 0.990 (a real France cause found). The 0.988 people on the leaderboard are consistent with a France fix.
+
+Portal probes of the day: `s17pf` 0.187 and `s17pu` 0.453 done; one slot left on 26 Sep, planned `s22f985`. Tomorrow: `s22f97`, `s22f995`, `s22` alone, then `s24` or the France-aware model.

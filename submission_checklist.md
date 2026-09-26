@@ -86,3 +86,9 @@ Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statemen
 
 ## I. Added 26 Sep about 13:00 IST
 - Portal log: **`s17` 0.981 (26 Sep 12:31 PM)**, `s12` 0.972 (09:49 AM). Next uploads: `s17f85` (France threshold 0.85) to read France's behaviour; final candidates come from `EXPERIMENTS.md` section 6.2.
+
+## J. Added 26 Sep about 16:30 IST
+- Portal log: v2 0.944 (25 Sep 13:46), s4 0.953 (22:21), s3all 0.949 (22:53), s12 0.971976 (26 Sep 09:49, rank 402), **s17 0.981 (12:31)**, s17pf (France only) **0.187** (15:56), s17pu (US only) **0.453** (15:57). Probe files are diagnostic only, never final.
+- Result: France F0.5 about 0.92, US and India about 0.99; the France threshold sweep on `s22` (`s22f985` first, then `s22f97`, `s22f995`) and a France calibration are the next uploads. `s24` or `s25` join if they beat `s22` on the holdout.
+- Freeze checklist unchanged (zip, official validator with `--check-ids`, methodology document, one clean reproduction). If the final model is `s22` or later, update `reproduce_final.sh` and `README.md` (two extra stack steps, cross-encoder scoring on every shortlisted pair; if `s24`, Qwen3-0.6B Apache-2.0, 0.6B parameters).
+

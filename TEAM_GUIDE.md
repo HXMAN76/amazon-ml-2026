@@ -1,6 +1,6 @@
 # Team guide: how we train, what the best model is, what is left to do
 
-Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 13:45 IST (best: `s17`, holdout 0.99025, portal 0.981). What runs on every GPU and the ideas still open: `EXPERIMENTS.md`. Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
+Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj) and any agent working for them. Last updated 26 Sep 2026 about 16:30 IST (best: `s17`, holdout 0.99025, portal 0.981). What runs on every GPU and the ideas still open: `EXPERIMENTS.md`. Full version history and component reference: `ARCHITECTURE.md`. Details behind every number are in `handoff.md` (infra, section 0 for the latest state), `research.md` (measurements, sections 12 to 19), `context.md` (data facts). Window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
 
@@ -20,7 +20,7 @@ Audience: the Nooglers teammates (Roshan T, Sai Nivedh V, Baranidharan Selvaraj)
 | **`s17`** base `v7`, e5-base and e5-small cross-encoders, refined competition | **0.981** (26 Sep 12:31) | **0.99025** | 4.74 | `runs/s17/output/` |
 | `s12` (uploaded 26 Sep) | **0.971976 (rank 402)** | 0.98505 | 4.9 | `runs/s12/output/` |
 
-**`s17` is the current best** (holdout 0.99025, portal 0.981). Next portal candidate: `s17f85` (France threshold 0.85, `runs/s17f85/output/`). The organisers rank `candidate_pairs.tsv` too and reward a smaller candidate set; all files above have 4.7 to 4.9 candidates per S1. All paths are under `s3://sagemaker-us-east-1-567503593043/`. Holdout = 150k train S1 that no model trains on (seed 2026, `ber.split.holdout_q`); every claim is a paired bootstrap on it. The portal has sat 0.009 to 0.018 below the holdout (adversarial validation AUC 0.87: the test has fewer S1, about 40% unowned pool records, 47% India, 15% France with no labels).
+**`s22` is the best by holdout (0.99054); `s17` is the best on the portal so far (0.981).** **The portal gap is France:** country probes gave France only 0.187 and US only 0.453, i.e. France F0.5 about 0.92 and US plus India about 0.99 (`research.md` sections 23 and 24). Next portal candidates: `s22f985`, `s22f97`, `s22f995` (`s22` with only France's threshold changed). The organisers rank `candidate_pairs.tsv` too and reward a smaller candidate set; all files above have 4.7 to 4.9 candidates per S1. All paths are under `s3://sagemaker-us-east-1-567503593043/`. Holdout = 150k train S1 that no model trains on (seed 2026, `ber.split.holdout_q`); every claim is a paired bootstrap on it. The portal has sat 0.009 to 0.018 below the holdout (adversarial validation AUC 0.87: the test has fewer S1, about 40% unowned pool records, 47% India, 15% France with no labels).
 
 **In flight (26 Sep 13:45):** `s18` small cross-encoder, `v8`/`s19` joint name counts, `v9`/`s21` shift-robust first stage, `s20` e5-large cross-encoder, `s22` cross-encoder on every shortlisted pair, `v10`/`s23` test-like universe. Live list and owners: `EXPERIMENTS.md` sections 6 and 7.
 
@@ -92,7 +92,8 @@ Everything runs on one SageMaker notebook instance, driven through an S3 job que
 | 5 | State-name normalisation (`OK` and `Oklahoma`, Indic state names) | to do; needs re-prepare | about +0.001 | teammate or pipeline |
 | 6 | Cross-encoders | done (`s11` to `s17`, +0.005 in total) | | pipeline |
 | 7 | Bigger first stage and stack | done (850k and 1.5M S1) | | pipeline |
-| 8 | Shift remedies: `v8` joint counts, `v9` drop blocking features, `v10` test-like universe, `s22` cross-encoder on all shortlisted pairs, `s20` e5-large | running | closes part of the 0.009 portal gap | pipeline |
+| 0 | **France** (about 0.010 of score): threshold sweep, calibration by distribution matching, France-aware features (see `EXPERIMENTS.md` section 10) | running and next | +0.001 to +0.009 | Hariheman and pipeline; teammates welcome (no France labels: only portal probes measure it) |
+| 8 | Shift remedies (mostly settled: the gap is France, not distractor density): `v8` joint counts, `v9` drop blocking features, `v10` test-like universe, `s22` cross-encoder on all shortlisted pairs, `s20` e5-large | running | closes part of the 0.009 portal gap | pipeline |
 | 9 | Untried: density-ratio weights, cross-encoder test-time augmentation, cross-fitted cross-encoder, learned per-S1 shortlist, cap 5 S2 and 6 S3 | open, good teammate tasks | +0.0002 to +0.001 each | anyone |
 | 10 | Portal probes: `s17f85`, per-country files (`reemit.py`), France threshold sweep | next slots, more may open tomorrow | up to +0.002 | Hariheman |
 | 11 | Freeze: rebuild code zip, one clean reproduction, official validator `--check-ids`, methodology document, final uploads | Sunday | none | all |
