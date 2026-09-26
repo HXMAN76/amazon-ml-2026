@@ -1,3 +1,5 @@
+> **ARCHIVED (26 Sep 2026): Baseline plan of 25 Sep. The baseline and everything after it are implemented; see ARCHITECTURE.md. Kept for history only; do not follow its instructions.**
+
 # Plan v1: baseline, evaluation and MLOps (approved 2026-09-25)
 
 Written 2026-09-25. Supersedes the informal plan in `research.md` section 4 and section 10. Facts about the data are in `context.md` section 2b. Nothing below is implemented yet except v0 (`code/business_entity_resolution/`), which this plan replaces at scale.

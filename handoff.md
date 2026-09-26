@@ -1,3 +1,5 @@
+- Archived docs (26 Sep): `docs/archive/` holds v1, v2, research-v2, plan, the teammate handoff, remote-setup and the SSH-client requirements; do not follow them.
+
 # Handoff: Amazon ML Challenge 2026 (Business Entity Resolution)
 
 Written 2026-09-25, refreshed 25 Sep about 14:00 IST, branch `sai`, repo `HXMAN76/amazon-ml-2026`. Audience: any other agent or person who must continue this work without the chat history. Read this first, then `context.md` (data facts, status), `plan.md` (approved design), `research.md` (literature and measurements), `code/business_entity_resolution/README.md` (how to run). Nothing here contains secrets; never add credentials to the repo.
@@ -87,7 +89,7 @@ Task: link each Source 1 (S1) business record to its S2/S3 records (entity resol
 - **Remaining loss (4.5 points on the train sample):** blocking recall 2.19 (pair recall 0.941) and matcher 2.30.
 - **Blocking upgrade result:** the token-type experiment (`g`, `x`, `k`) gave no gain and was reverted (`research.md` section 14). Truncation by the top-30 rule is the real limit (misses: 1.8% over the df cap, 3.4 to 4.5% truncated; K 60 gives recall 0.9473). The fix being run is **cascade blocking**: K 100 raw candidates, then a learned first-stage ranker (`stages/prune.py`) keeps the best 30. Jobs `zc1a`, `zc1b`, `zc1c` run the chain and produce model `v2` under `runs/v2/`.
 - **Code zip for the portal:** `dist/business_entity_resolution_code.zip` (local, git-ignored), all source under `src/`, README with run steps, pinned requirements. Rebuild from the final code at freeze (commands in section 9).
-- A teammate's plan (`v2.md`, layers L0 to L5 and a harness) was reviewed; agreed integration is in section 9.
+- A teammate's plan (`docs/archive/v2.md`, layers L0 to L5 and a harness) was reviewed; agreed integration is in section 9.
 
 ## 2. Access and identity
 
@@ -148,8 +150,8 @@ In the repo:
 | `code/business_entity_resolution/` | package `ber` (`src/ber`), `Makefile`, `configs/params.yaml`, `src/tests/`, `src/scripts/`, `requirements.txt`, `README.md` |
 | `aws/notebook/` | `onstart.sh`, `bootstrap.sh`, `jobrunner.sh` (the infra scripts, also copied to S3 `ber/`) |
 | `iam/hxman/` | IAM policy documents for the role |
-| `context.md`, `plan.md`, `research.md`, `handoff.md` | project documents |
-| `remote-setup.md`, `remote-ssh.remote.ipynb`, `iam/*.json` | the SageMaker SSH-helper path from a teammate (optional, superseded by the job queue) |
+| `context.md`, `research.md`, `handoff.md` | project documents |
+| `docs/archive/remote-setup.md`, `remote-ssh.remote.ipynb`, `iam/*.json` | the SageMaker SSH-helper path from a teammate (optional, superseded by the job queue) |
 | `main` branch | older generic pipeline (Modal, Kaggle, EC2 scripts); not wired to this task |
 
 ## 4. Running code on the notebook: the job queue (the main workflow)
@@ -268,7 +270,7 @@ AWS sessions expire: when a command prints "Your session has expired", the human
 
 ## 9. Design summary and next steps
 
-Approved design is `plan.md` (multi-channel blocking, feature matcher, calibration, exclusive assignment, expected-F0.5 per-S1 decision, Makefile + MLflow, single account, baseline first). A teammate proposed a **record-centric** v1 (each S2/S3 record picks its owner or none; sibling consensus; fine-tuned multilingual bi-encoder; Modal); review conclusions: adopt the record-level decision with a none class and calibrated owner probability, the forensics of noise operators from matched train pairs, the evaluation discipline (locked holdout, bootstrap CI, US to India transfer as France proxy, adversarial train-vs-test validation, an empty submission to measure the test singleton share), and sibling features as second-stage stacking; postpone dense-first retrieval, FAISS-GPU, Modal and the fine-tuned e5 until v0 shows where India is weak. Do not rebuild `prepare`, `block` or `features`: extend them.
+Original design is `docs/archive/plan.md` (archived) (multi-channel blocking, feature matcher, calibration, exclusive assignment, expected-F0.5 per-S1 decision, Makefile + MLflow, single account, baseline first). A teammate proposed a **record-centric** v1 (each S2/S3 record picks its owner or none; sibling consensus; fine-tuned multilingual bi-encoder; Modal); review conclusions: adopt the record-level decision with a none class and calibrated owner probability, the forensics of noise operators from matched train pairs, the evaluation discipline (locked holdout, bootstrap CI, US to India transfer as France proxy, adversarial train-vs-test validation, an empty submission to measure the test singleton share), and sibling features as second-stage stacking; postpone dense-first retrieval, FAISS-GPU, Modal and the fine-tuned e5 until v0 shows where India is weak. Do not rebuild `prepare`, `block` or `features`: extend them.
 
 Suggested order from here (evidence in `research.md`, sections 12 to 15):
 1. **Finish the cascade run** (`zc1a` to `zc1c`): check the pruner report first (pair recall of the best 30 versus the top 30 by blocking score; target above 0.9416, K 60 reaches 0.9473). If recall improves and out-of-fold F0.5 beats v1, `v2` replaces v1.

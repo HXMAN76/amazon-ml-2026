@@ -1,3 +1,5 @@
+> **ARCHIVED (26 Sep 2026): SSH and local-container setup, not used any more; we run jobs through the S3 queue (handoff.md section 4). Kept for history only; do not follow its instructions.**
+
 # SageMaker local-container remote development setup
 
 This runbook reproduces the SSH-based development environment used for the Amazon ML Challenge. It also describes how another developer or coding agent can inspect notebooks, modify code, execute experiments, and interpret results inside the SageMaker local-mode training container.

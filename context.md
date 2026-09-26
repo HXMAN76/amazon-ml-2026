@@ -1,6 +1,6 @@
 # Amazon ML Challenge 2026: implementation context
 
-Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Companion documents: `handoff.md` (access, infra, commands, pitfalls, current state; read first), `plan.md` (approved baseline, evaluation and MLOps design), `research.md` (literature and findings), `code/business_entity_resolution/README.md` (how to run). Update the "Status" section as work proceeds.
+Handoff notes for a new session (human or Claude). Written 2026-09-25 on branch `sai`. Companion documents: `handoff.md` (access, infra, commands, pitfalls, current state; read first), `docs/archive/plan.md` (archived; approved baseline, evaluation and MLOps design), `research.md` (literature and findings), `code/business_entity_resolution/README.md` (how to run). Update the "Status" section as work proceeds.
 
 ## 1. Challenge
 
@@ -88,7 +88,7 @@ Laptop is on a slow network. **Do not move big data through the laptop**; run ev
 6. The job queue only trusts the account-A working bucket. Do not point the runner at the shared team bucket (other accounts could then run code on the instance).
 7. Commands typed with `!`/`tail` in the desktop app terminal pane run on the laptop, not on the g5. To inspect the g5 directly, open Jupyter (presigned URL) and use its terminal.
 
-### SSH Helper path (optional, from `remote-setup.md`)
+### SSH Helper path (optional, from `docs/archive/remote-setup.md`, archived)
 
 Sai's SageMaker SSH Helper setup (local-mode container, `sm-ssh connect`). Laptop side is ready: `smssh-venv` (py3.12, `sagemaker==2.257.6`, `sagemaker-ssh-helper==2.3.0`, plus `botocore[crt]` needed for `aws login` creds), AWS CLI region patch applied, session-manager-plugin 1.2.835.0. `remote-ssh.remote.ipynb` was fixed (invalid JSON), uses `LOCAL_USER_ID=567503593043` and `instance_type='local_gpu'`. Caveat: the local-mode container is PyTorch 1.9.1 / py38, which is too old for modern libraries, so the job-queue path above is the working route.
 
@@ -136,7 +136,7 @@ Done:
 - Error analysis (`src/scripts/error_analysis.py`): v0 loss was 4.0 points matcher plus 2.2 blocking; v1 cut the matcher loss to 2.3 (`research.md` sections 12 and 13). Remaining errors: look-alike distractors (84% of false positives), non-Latin and empty-address matches, and blocking truncation.
 - Blocking experiment (`research.md` section 14): the new token types `g`, `x`, `k` gave no recall gain and were reverted; K 60 gives +0.6 points recall. **Cascade blocking** (`stages/prune.py`: K 100 raw candidates, learned first-stage ranker keeps the best 30) is built and tested on synthetic data.
 - Code zip for the portal built in the guideline layout (all source under `src/`, docstrings on every function, README with run steps, pinned requirements, unzip-and-test verified). It is stale relative to the repo after the cascade and vectorisation changes; rebuild at freeze.
-- Documents: `handoff.md`, `plan.md`, `research.md`, `submission_checklist.md`, code `README.md` updated.
+- Documents: `handoff.md`, `research.md`, `submission_checklist.md`, code `README.md` updated.
 - A teammate's plan (layers L0 to L5, harness, cross-encoder) was reviewed; agreed order and data contracts are in `handoff.md` section 9.
 
 **Leaderboard (public subset): v2 = 0.944** (first portal submission, 25 Sep 1:46 PM IST). v2 holdout on 150k unseen train S1: 0.9565 (95% CI [0.9559, 0.9572]); out-of-fold 0.9568. v2 = v1 features plus cascade blocking (K 100 to 30 by a learned ranker); pruner recall 0.9471 versus 0.9415 for the plain top 30. Consensus stacking (`stages/stack.py`) shipped: locked-holdout macro F0.5 0.9617 versus v2 0.9565, paired difference +0.0051, 95% CI [+0.0048, +0.0055]; best file so far is `runs/s1/output/matching_results.tsv` (validator and checker pass). Calibration and per-S1 expected-F0.5 selection (`stages/expf.py`) is a null result (+0.0001, CI includes 0) and is not shipped.

@@ -1,3 +1,5 @@
+> **ARCHIVED (26 Sep 2026): Second research pass on top of v0; later findings are in research.md sections 18 to 22 and EXPERIMENTS.md section 9. Kept for history only; do not follow its instructions.**
+
 # Research v2: approaches, models and priorities on top of v0
 
 Written 2026-09-25. It extends `research.md` with a second pass focused on our actual gaps, using the numbers the v0 owner reported. Everything here is a *layer on v0*: v0's `stages/` (prepare, token-index blocking, features, pair model) stays the backbone.

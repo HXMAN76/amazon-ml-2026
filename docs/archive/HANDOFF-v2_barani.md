@@ -1,3 +1,5 @@
+> **ARCHIVED (26 Sep 2026): A teammate's handoff of 25 Sep; the current handoff is handoff.md. Kept for history only; do not follow its instructions.**
+
 # Project Handoff
 
 Written 2026-09-25 ~05:20 IST by a Claude Code session on the laptop of the teammate (user `barani200`, git user `imbaraniii`). Companion to the lead's `handoff.md` (v0 infrastructure, tracked on `origin/sai`); read both.
