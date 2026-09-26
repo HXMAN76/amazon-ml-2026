@@ -49,7 +49,11 @@ Oracle on our candidates 0.9957; blocking loss 0.0043 and matcher loss 0.0064; p
 | `s14` | e5-base cross-encoder | +0.00069 over `s13` | `runs/s14` |
 | `v7`, `s15` | first stage on 850k S1, depth 9 | 0.97796 (`v7`), +0.00018 (`s15`) | `runs/v7`, `runs/s15` |
 | `s16` | competition on the refined probability | +0.00011 | `runs/s16` |
-| `s17` | everything above, both cross-encoders | **0.99025** | `runs/s17` |
+| `s17` | everything above, both cross-encoders | 0.99025 (portal 0.981) | `runs/s17` |
+| `s22` | cross-encoder on every shortlisted pair | **0.99054**, +0.00029 [0.00018, 0.00039] over `s17` | `runs/s22/output/` |
+| `s18` | small cross-encoder on the base model's data | 0.99010, -0.00014 against `s17` (no gain) | `runs/s18` |
+| `s21` (`v9`) | first stage without blocking-score and competition features | 0.99000, -0.00024 against `s17`; portal effect unknown | `runs/s21` |
+| analysis `ra1` to `ra5` | recall attrition, name ambiguity, ambiguity profile, post-stratification | see `research.md` section 23 | `jobs2/done/ra*.log` |
 
 ### 6.2 Running or queued now (26 Sep 13:00)
 | Id | Question | Notebook, lane, GPU | Expected |
@@ -106,3 +110,21 @@ Ideas ranked by expected effect on the portal gap:
 5. **Cross-encoder test-time augmentation** (score each pair with the two records swapped, or with the romanised name, and average): not built, cheap on the free GPU lanes.
 6. **Group-level decoding** (link pool records of one entity across S2 and S3 and assign the group to one S1): partly captured by the stack's similarity to the S1's best other record; a full version is not built.
 7. **Transductive use of the unlabelled test set** (pseudo-labels): not used; the rules say the model is built from the provided training data, so confirm with the organisers before trying it.
+
+## 10. Ranked plan (26 Sep 15:00, after the recall analysis in `research.md` section 23)
+Facts behind the ranking: 76.5% of the missed pairs have an empty pool address and about two thirds of all misses are name-ambiguous (several S1 share the name, the pool record has no address): not recoverable. The reducible recall is about 4,700 pairs (about +0.0028 at most, realistically a quarter of it). Precision loss is 0.0016. The threshold is flat. S1-side attributes explain none of the portal gap (post-stratified estimate 0.9905). Total realistic holdout headroom is +0.001 to +0.002.
+
+| Rank | Idea | Expected holdout gain | Portal hope | Cost | Risk | State |
+|---|---|---|---|---|---|---|
+| 1 | **Per-country portal probes** (`s17pf` France only, `s17pu` US only, `s17pi` India only; `runs/<name>/output/matching_results.tsv`). Country score F = (portal - (1 - w) * 0.056) / w with w = 0.15, 0.383, 0.468 (public-subset mix is approximate) | 0 | steers the last day | 3 submission slots | none | files ready |
+| 2 | Ship **`s22`** (+0.00029, CI excludes 0) | +0.0003 | +0.0003 to +0.0006 | 1 slot | none | ready, `runs/s22/output/` |
+| 3 | **`v10`/`s23` test-like universe** and its holdout drop as a measure of the distractor-density effect | -0.001 to +0.0005 | +0.001 to +0.004 if the distractor rate is the cause | running | may hurt the holdout | `rq3` to `rq4` |
+| 4 | **More cross-encoder diversity**: `s20` e5-large (running), a Qwen3-0.6B or 1.7B (Apache-2.0) cross-encoder as a third score, order-swap averaging of scores, second seed | +0.0004 to +0.001 | same | 6 to 12 GPU hours | low | `s20` running; Qwen3 not built |
+| 5 | **France address-multiplicity features** (S1 sharing the exact address, pool records sharing the address, name margin inside an address group), retrain first stage and stack | +0.0003 (shared-address strata are 5% of holdout S1) | +0.001 or more if France is the gap | 4 to 6 h | moderate, cannot be validated on France | not built |
+| 6 | Small bundle: stack seed ensemble, cap 5 S2 and 6 S3, refit the stack with the holdout S1 after the model is chosen | +0.0002 to +0.0004 | same | 2 h | refit has no holdout number | not built |
+| 7 | Character n-gram or second dense channel for the 1,600 never-proposed pairs with an address (typos, glued names, non-Latin generic names) | +0.0002 to +0.0004 | same | 6 h+, new index | low | not built |
+| 8 | Density-ratio weights for the stack | -0.0002 to +0.0003 | unknown | 3 h | moderate | not built |
+| 9 | Pseudo-labels on the test set (France) | unknown | unknown | 6 h | confirmation bias; rules unclear | not recommended before asking the organisers |
+| 10 | `v8` joint name counts | about 0 | small | running | low | `rx3` running |
+| Not worth doing | more neighbours for empty-address records (`v6`, `s7`), expected-F0.5 decisions (`e1`), second consensus round (`s9`), threshold retuning, S1-attribute reweighting, small cross-encoder alone (`s18`) | | | | | measured, no gain |
+
