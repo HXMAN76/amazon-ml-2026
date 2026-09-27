@@ -112,7 +112,7 @@ def main() -> None:
     pq = P["parquet"] / "test"
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1", "addr", "ctry"]).rename({"rid": "q", "core1": "a_core"}).with_columns(pl.col("q").cast(pl.Int64))
     s1 = s1.join(s1.group_by("addr").len().rename({"len": "addr_n"}), on="addr", how="left").drop("addr")
-    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1", "name1"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid"), pl.lit(s).alias("src")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core", "name1": "b_name"})
+    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1", "name1", "name2"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid"), pl.lit(s).alias("src")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core", "name1": "b_name", "name2": "b_alias"})
     df = tok_df(s1.rename({"a_core": "core1"}))
     pp = pl.read_parquet(P["work"] / "output" / a.name / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     own = decision.assign_exclusive(pp).filter(pl.col("p") >= thr).join(s1, on="q", how="left").join(pool, on="pid", how="left")
@@ -166,7 +166,9 @@ def main() -> None:
                 lb = pl.concat([pl.read_parquet(pq / f"source{s_}.parquet", columns=["rid", "name1", "legal"]).select((pl.col("rid").cast(pl.Int64) + s_ * PID_BASE).alias("pid"),
                                 legal_set(pl.col("name1"), pl.col("legal")).alias("_lb")) for s_ in (2, 3)])
                 own = own.join(la, on="q", how="left").join(lb, on="pid", how="left")
-            c = (pl.col("_la").list.len() > 0) & (pl.col("_lb").list.len() > 0) & (pl.col("_la").list.set_intersection(pl.col("_lb")).list.len() == 0) & (pl.col("p") < float(k[1]))
+            fr_forms = ["sarl", "sas", "sasu", "eurl", "sci", "snc", "ei", "eirl", "sa", "scop"]  # not "company": a coined "Xyz Co dba <S1 name>" alias carries it
+            la_, lb_ = pl.col("_la").list.set_intersection(fr_forms), pl.col("_lb").list.set_intersection(fr_forms)
+            c = (la_.list.len() > 0) & (lb_.list.len() > 0) & (la_.list.set_intersection(lb_).list.len() == 0) & (pl.col("p") < float(k[1]))
         elif k[0] == "legal":
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "legalhouse":  # a sibling next door: other legal form and another house number (research: emptied_samples.py examples)
@@ -277,7 +279,10 @@ def main() -> None:
             with pl.Config(tbl_rows=a.samples, fmt_str_lengths=40, tbl_width_chars=160):
                 print(x.sample(min(a.samples, x.height), seed=0).select("p", "src", "a_core", "b_core"), flush=True)
     if fired:
-        any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
+        # a pool record whose alias part ("Xyz Co dba <name>") holds every word of the S1's core is the S1's own copy: no rule drops it
+        alias_ok = (pl.col("b_alias") != "") & (pl.col("a_core").str.split(" ").list.set_difference(pl.col("b_alias").str.split(" ")).list.len() == 0)
+        print(f"alias protection: {own.filter(alias_ok & pl.any_horizontal([c.fill_null(False) for _, c in fired])).height} pairs a rule would drop are kept", flush=True)
+        any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired]) & ~alias_ok
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
         if protect:
             hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrpk", "thrx", "xfr", "kind"}]
