@@ -44,6 +44,14 @@ from word_swap import flag, strip_spaced, tok_df
 
 PID_BASE = 10_000_000
 NOISE_FR = ["fils", "groupe", "services", "developpement"]  # the words true France copies swap in (research.md 25; france_recall.py)
+SPACED_LEGAL = {"s a r l": "sarl", "s a s u": "sasu", "e u r l": "eurl", "s a s": "sas", "s c i": "sci", "s n c": "snc", "e i r l": "eirl", "e i": "ei", "s a": "sa"}
+
+
+def legal_set(name: pl.Expr, legal: pl.Expr) -> pl.Expr:
+    """Legal forms of a record: the joined ones of the `legal` field plus spaced ones in the name (`s a s` -> sas; `s a s` also yields sa)."""
+    s = pl.concat_str([pl.lit(" "), name, pl.lit(" ")])
+    found = [pl.when(s.str.contains(" " + k + " ")).then(pl.lit(v)) for k, v in SPACED_LEGAL.items()]
+    return pl.concat_list([legal.str.split(" ").list.eval(pl.element().filter(pl.element() != "")), pl.concat_list(found).list.drop_nulls()]).list.unique()
 
 
 def is_subseq(short: str, initials: str) -> bool:
@@ -146,6 +154,14 @@ def main() -> None:
             c = (pl.col("name_tset") < float(k[1])) & (pl.col("addr_tset") >= 90) & (pl.col("house_eq") > 0.5) & (pl.col("p") < float(k[2]))
             if len(k) > 3 and k[3] == "shared":
                 c = c & (pl.col("addr_n") >= 2)
+        elif k[0] == "legalx":  # legalx:pmax both names carry a legal form and the two sets share none (sarl / sas, sas / s a): a sibling company.
+            # Holdout: such candidates are 5-9% true and the model rejects them; France keeps 4x the US rate at a mean p of 0.91
+            if "_la" not in own.columns:
+                la = pl.read_parquet(pq / "source1.parquet", columns=["rid", "name1", "legal"]).select(pl.col("rid").cast(pl.Int64).alias("q"), legal_set(pl.col("name1"), pl.col("legal")).alias("_la"))
+                lb = pl.concat([pl.read_parquet(pq / f"source{s_}.parquet", columns=["rid", "name1", "legal"]).select((pl.col("rid").cast(pl.Int64) + s_ * PID_BASE).alias("pid"),
+                                legal_set(pl.col("name1"), pl.col("legal")).alias("_lb")) for s_ in (2, 3)])
+                own = own.join(la, on="q", how="left").join(lb, on="pid", how="left")
+            c = (pl.col("_la").list.len() > 0) & (pl.col("_lb").list.len() > 0) & (pl.col("_la").list.set_intersection(pl.col("_lb")).list.len() == 0) & (pl.col("p") < float(k[1]))
         elif k[0] == "legal":
             c = (pl.col("legal_conflict") > 0.5) & (pl.col("p") < float(k[1]))
         elif k[0] == "legalhouse":  # a sibling next door: other legal form and another house number (research: emptied_samples.py examples)
