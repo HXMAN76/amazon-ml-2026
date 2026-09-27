@@ -52,7 +52,7 @@ team's **best** public submission, and that unsupervised use of the test records
 | 9 | 27 Sep 06:15 | `v8u_s22F12n_AR` | 0.984136 | −0.0014 (the one step down) |
 | 10 | 27 Sep | `v8w_s29_AR` | 0.985875 | +0.0003 |
 | 11 | 27 Sep about 20:45 | **`v8w_s29_FIN`** | **0.987745** | +0.0019 (best) |
-| 12 | 27 Sep (last slot) | `v9_xF2_FIN` | not reported when written | built 23:20, expected about 0.9885 |
+| 12 | 27 Sep (last slot) | `v9_xF2_FIN` | 0.987208 | −0.0005 (below the best) |
 
 ---
 
@@ -238,7 +238,9 @@ Built for the last slot: **`v9_xF2_FIN`**, the FIN rules on `s28` plus two calib
 - restore 16,073 French copies it scores above 0.95 (97.8% true on the French-rewritten holdout);
 - drop 7,516 pairs where a type word was replaced by a noise word (`lille theatre sarl` / `lille sarl and associes`).
 
-It passed the official validator at 23:20. Its score was not known when this was written; expected about 0.9885.
+It passed the official validator at 23:20 and scored **0.987208**, 0.000537 below `v8w_s29_FIN`. It was built on `s28` instead of `s29`,
+which explains only a small part of that (`s29` is 0.00011 above `s28` on the holdout). So the two French-aware steps did not add score on
+the real French records: the French-rewritten holdout overstated how well they transfer.
 
 ---
 
@@ -261,7 +263,7 @@ It passed the official validator at 23:20. Its score was not known when this was
 | `v8u_s22F12n_AR` | 3 | French cross-encoder in the stack | Test (failed) | 0.99054 | 0.984136 |
 | `v8w_s29_AR` | 3 | `s29` (Qwen) + same recipe | Stronger base | 0.99088 | 0.985875 |
 | **`v8w_s29_FIN`** | 3 | FIN rules (43 type words, legal forms, namesakes, 0.9999 cut, re-adds, alias fix) | Rate-measured French decoys | 0.99088 | **0.987745** |
-| `v9_xF2_FIN` | 3 | FIN on `s28` + French-aware cross-encoder restores and drops | French reading ability | 0.990770 | not reported |
+| `v9_xF2_FIN` | 3 | FIN on `s28` + French-aware cross-encoder restores and drops | French reading ability | 0.990770 | 0.987208 |
 
 \* out-of-fold on the training sample; later rows use the locked 150,000-S1 holdout. Holdout scores cover only the US and India, because
 training has no French records.
@@ -287,9 +289,17 @@ training has no French records.
 
 ## 9. After the window closed
 
-The full version of the French-aware approach was still running when this was written: stack `s30F` with the new cross-encoder score built in
-as a feature, trained on the US/India labels, then tested on both the original and the French-rewritten holdout before the French rules are
-applied. On the French-rewritten holdout, `s28` scores 0.976026; the new stack has to close most of that gap to justify a file.
+The full version of the French-aware approach finished at 00:40 on 28 Sep: stack `s30F`, with the new cross-encoder score built in as a
+feature and trained on the US/India labels.
+
+| Stack | Original holdout | French-rewritten holdout |
+|---|---|---|
+| `s28` | 0.990770 | 0.976026 |
+| `s28L` (language-free features) | 0.990781 | 0.972780 |
+| **`s30F`** | 0.990776 | **0.986655** |
+
+Its file `v9_s30F_FIN` (the FIN rules on `s30F`) passed the official validator but could not be uploaded. `v9_xF2_FIN`'s result is a
+caution for it: gains on the French-rewritten holdout did not fully carry over to the real French records.
 
 ---
 
