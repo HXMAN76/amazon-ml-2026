@@ -394,6 +394,9 @@ def build(split: str, base: str, prm: dict) -> None:
     if xs_df is not None and prm.get("xenc_dir3"):  # a third cross-encoder (different family) as xs3, scored on the band pairs only
         x3 = pl.read_parquet(P["work"] / prm["xenc_dir3"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs3"))
         xs_df = xs_df.join(x3.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
+    if xs_df is not None and prm.get("xenc_dir4"):  # a fourth cross-encoder (e.g. Qwen3-0.6B on the band pairs) as xs4
+        x4 = pl.read_parquet(P["work"] / prm["xenc_dir4"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs4"))
+        xs_df = xs_df.join(x4.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
     if prm.get("addrmult"):
         s1_addr_n, pool_addr_n = addr_group_counts(s1_addr), addr_group_counts(pool_addr)
     have = set(scan.collect_schema().names())
@@ -552,6 +555,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--xenc-dir2", default="", help="build: WORK sub-folder of a second cross-encoder (feature xs2)")
     ap.add_argument("--addrmult", action="store_true", help="build: address multiplicity features (how many records share the address)")
     ap.add_argument("--xenc-dir3", default="", help="build: WORK sub-folder of a third cross-encoder (feature xs3)")
+    ap.add_argument("--xenc-dir4", default="", help="build: WORK sub-folder of a fourth cross-encoder (feature xs4)")
     ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
@@ -568,6 +572,7 @@ def main(argv: list[str] | None = None) -> None:
     prm["xcons"] = prm.get("xcons", False) or a.xcons
     prm["xenc_dir2"] = a.xenc_dir2
     prm["xenc_dir3"] = a.xenc_dir3
+    prm["xenc_dir4"] = a.xenc_dir4
     prm["addrmult"] = a.addrmult
     prm["xenc_fit_more"] = a.xenc_fit_more
     prm["ctry"] = a.ctry
