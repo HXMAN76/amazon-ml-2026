@@ -55,6 +55,20 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - Candidate for the team today (if the portal confirms the direction): `v8s_s27_AR` (s27 + typeswap + thrpn 0.995 + protect + restore), or its s24
   version if s24 beats s27 on the holdout. Copy from our bucket to the team folder with the laptop (the notebook role cannot write there).
 
+## 27 Sep 11:30 to 13:00: where s28 still loses (all measured, nothing shipped)
+- US/India threshold curve (s28 holdout): 0.66 0.990709, 0.70 0.990731, **0.72 0.990770**, 0.75 0.990761, 0.80 0.990719, 0.85 0.990619, 0.90 0.990362.
+  `v8u_s28_AR_t80` (US/India at 0.80) is validated in `ber/v8/runs/` but not worth a slot (world A: expected -0.00004).
+- Sub-group miscalibration search (`subgroups.py s28`): one drop group, holdout -0.000010 [-0.000041, +0.000015]; nothing to restore.
+- **Holdout error budget (`v8e4_budget`)**: 518,468 true pairs, 511,015 proposed (pair recall 0.9856); 505,396 kept, only 603 wrong
+  (precision 0.9988); 6,222 true candidates not kept. Oracle gains: no wrong pair +0.0011; every true candidate kept +0.0039; no blocking miss
+  +0.0043. US/India lose on recall, not precision.
+- **Lost true pairs by kind (`misses.py s28`)**: below threshold 5.9k (exact core name 3.3k at mean p 0.36, mostly **empty pool address**:
+  namesakes), blocking misses 7.5k (shared word + other/empty address 3.8k, exact core 2.3k, coined 0.9k, non-Latin 0.3k), lost to another S1 0.3k.
+  Mostly inherent ambiguity (an empty-address record with a generic name could belong to any namesake).
+- **France bands above the 0.995 cut (`--dry`, new rule option `thrpn:t:tmin`, rule `kind:KIND:SRC:hi[:lo]`)**: slot fit reads 0.2 to 0.55
+  decoys in [0.995, 0.9999), but the same fit on the US and India is biased by up to 0.4 to 1.0 for single kinds (US S3 coined names 0.41 to 0.72,
+  India S2 swaps 0.96, all about 99.9% true on the holdout). **The slot fit cannot decide a stricter French cut; no portal slot spent on it.**
+
 ## Infrastructure (our AWS, profile `barani`, account 645311222213)
 - Notebook `barani-v5` (ml.g5.16xlarge), two-lane runner: `jobs/` (GPU), `jobs2/` (CPU); lanes read their pending list once per loop (a job queued later waits until the lane's list is done). Laptop tool from this worktree: `smssh-venv/bin/python aws/sm/sm.py --profile barani {publish|enqueue <job> --queue jobs|jobs2|jobs|nb start|stop|status}`; read logs with `aws s3 cp s3://sagemaker-us-east-1-645311222213/<lane>/done/<job>.log -` (sm.py jlog output is hard to grep).
 - The notebook role cannot read the team bucket; the laptop user can: team files are copied server-side into `s3://sagemaker-us-east-1-645311222213/ber/team_work/`, then synced to `/home/ec2-user/SageMaker/work_t` (`BER_WORK` of every v8 job; our v6 `work/` untouched). Delivery: `v8w_deliver.sh` template (validator --check-ids, then `ber/v8/runs/<name>/output/`), then a laptop server-side copy to the team folder.

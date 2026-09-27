@@ -103,7 +103,7 @@ def main() -> None:
     pq = P["parquet"] / "test"
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1", "addr", "ctry"]).rename({"rid": "q", "core1": "a_core"}).with_columns(pl.col("q").cast(pl.Int64))
     s1 = s1.join(s1.group_by("addr").len().rename({"len": "addr_n"}), on="addr", how="left").drop("addr")
-    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid"), pl.lit(s).alias("src")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core"})
+    pool = pl.concat([pl.read_parquet(pq / f"source{s}.parquet", columns=["rid", "core1", "name1"]).with_columns((pl.col("rid").cast(pl.Int64) + s * PID_BASE).alias("pid"), pl.lit(s).alias("src")) for s in (2, 3)]).drop("rid").rename({"core1": "b_core", "name1": "b_name"})
     df = tok_df(s1.rename({"a_core": "core1"}))
     pp = pl.read_parquet(P["work"] / "output" / a.name / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     own = decision.assign_exclusive(pp).filter(pl.col("p") >= thr).join(s1, on="q", how="left").join(pool, on="pid", how="left")
@@ -190,6 +190,15 @@ def main() -> None:
         elif k[0] == "swapn":  # any one-word swap of two common words (word_swap.flag) that is not a France noise-word copy, p < pmax
             own = protect_cols(own)
             c = pl.col("swap") & ~pl.col("noise_swap") & (pl.col("p") < float(k[1] if len(k) > 1 else 1.01))
+        elif k[0] == "kind":  # kind:KIND:SRC:hi[:lo] one name relation of band_kinds.kinds (e.g. no_common_word, one_swap, one_typo) from source SRC
+            # (0 = both) with p in [lo, hi), never the thrpn-protected pairs
+            own = protect_cols(own)
+            if "kind" not in own.columns:
+                from band_kinds import kinds as rel_kinds
+
+                own = rel_kinds(own)
+            src_ok = pl.lit(True) if k[2] == "0" else pl.col("src") == int(k[2])
+            c = (pl.col("kind") == k[1]) & src_ok & (pl.col("p") < float(k[3])) & (pl.col("p") >= float(k[4]) if len(k) > 4 else pl.lit(True)) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
         elif k[0] == "typeswap":
@@ -226,7 +235,7 @@ def main() -> None:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
         if protect:
-            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrpk", "thrx", "xfr"}]
+            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrpk", "thrx", "xfr", "kind"}]
             o2 = own.with_columns(any_c.alias("_d"), (pl.any_horizontal(hard) if hard else pl.lit(False)).alias("_h"))
             alive = o2.filter(~pl.col("_d")).select("q").unique()
             back = (o2.filter(pl.col("_d") & ~pl.col("_h") & (pl.col("p") >= protect[0])).join(alive, on="q", how="anti")
