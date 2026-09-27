@@ -11,6 +11,9 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   thrp:t                p < t unless the pair is protected: equal names after removing spaced legal forms, or a pool name of at most 3 letters that is a subsequence of the S1's initials
   thrpn:t               thrp that also spares France's noise-word copies: one word swapped into, or noise words added (fils, groupe, services,
                         developpement, "and associes"), with at most one word dropped
+  thrpk:t[:alias]       like thrpn (use instead of it) but also spares glued names (fuzzy), reordered words, words dropped, noise or
+                        `france` added, initials up to 4 letters, several words changed with some shared; `alias` also spares a pair with no common
+                        word when the S1 is alone at its address. What remains dropped below t: one-word swaps and ambiguous coined aliases
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
@@ -21,7 +24,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   restore:KINDS:pmin    not a rule: add back shortlisted France pairs below the decision whose pool record nobody owns, whose name relation is one of KINDS
                         (exact, spelled_legal, initials, glued, noise_swap, noise_extra; joined by +; france_recall.py), at the S1's address (same house number,
                         address similarity >= 90), p >= pmin, within the S1's free slots (5 S2 / 6 S3), best p first
-  protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrpn, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
+  protect:pmin          not a rule: an S1 that the soft rules (thr, thrp, thrpn, thrpk, thrx, xfr) would leave with an empty list keeps its best such pair if p >= pmin. The
                         metric is per S1: emptying an S1 that has a true match costs it everything, one wrong extra pair on a full S1 costs about 0.1
 Prints the number of pairs each rule drops with its decoy share from the slot-limit fit (decoy_by_category.py; worth dropping above about 26%)
 and the total, then writes WORK/output/NEWNAME like reemit.py."""
@@ -59,6 +62,26 @@ def decoy_share(pairs: pl.DataFrame, slots: pl.DataFrame) -> list[float]:
         tot = float((w * r).sum())
         out.append(round(min(1.0, max(float(d), 0.0) * w.sum() / tot), 3) if tot > 0 else float("nan"))
     return out
+
+
+def protect_cols(own: pl.DataFrame) -> pl.DataFrame:
+    """Columns of the protected cut-offs: eq_norm (equal after spaced legal forms), ini_ok (initials of the S1's core), noise_swap (a France
+    noise-word copy: one word swapped into, or noise words added, with at most one word dropped). Computed once."""
+    if "noise_swap" in own.columns:
+        return own
+    if "ini_ok" not in own.columns:
+        tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ")).select("q", "pid", "a_core", "b_core")
+        ok = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if is_subseq(bc, "".join(t_[0] for t_ in ac.split()))]
+        ok_df = pl.DataFrame({"q": [x[0] for x in ok], "pid": [x[1] for x in ok]}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_ini"))
+        own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok")).drop("_ini")
+    if "eq_norm" not in own.columns:
+        own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
+    ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
+    extra = tb.list.set_difference(ta)
+    return own.with_columns((((ta.list.set_difference(tb).list.len() == 1) & (extra.list.len() == 1) & extra.list.first().is_in(NOISE_FR))
+                             | ((ta.list.set_difference(tb).list.len() <= 1) & (extra.list.len() >= 1)
+                                & extra.list.eval(pl.element().is_in(NOISE_FR + ["and", "et", "associes"])).list.all()
+                                & extra.list.eval(pl.element().is_in(NOISE_FR + ["associes"])).list.any())).alias("noise_swap"))
 
 
 def main() -> None:
@@ -130,20 +153,32 @@ def main() -> None:
             own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok"))
             own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
             c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok")
-        elif k[0] == "thrpn":  # thrp that also spares one-word swaps into France's noise words (true copies: research.md 25, france_recall.py)
-            if "ini_ok" not in own.columns:
-                tiny = own.filter((pl.col("b_core").str.len_chars() <= 3) & ~pl.col("b_core").str.contains(" ")).select("q", "pid", "a_core", "b_core")
-                ok = [(q, pid) for q, pid, ac, bc in tiny.iter_rows() if is_subseq(bc, "".join(t_[0] for t_ in ac.split()))]
-                ok_df = pl.DataFrame({"q": [x[0] for x in ok], "pid": [x[1] for x in ok]}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_ini"))
-                own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok")).drop("_ini")
-                own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
-            ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
-            extra = tb.list.set_difference(ta)
-            own = own.with_columns((((ta.list.set_difference(tb).list.len() == 1) & (extra.list.len() == 1) & extra.list.first().is_in(NOISE_FR))
-                                    | ((ta.list.set_difference(tb).list.len() <= 1) & (extra.list.len() >= 1)
-                                       & extra.list.eval(pl.element().is_in(NOISE_FR + ["and", "et", "associes"])).list.all()
-                                       & extra.list.eval(pl.element().is_in(NOISE_FR + ["associes"])).list.any())).alias("noise_swap"))
+        elif k[0] == "thrpn":  # thrp that also spares France's noise-word copies (true copies: research.md 25, france_recall.py)
+            own = protect_cols(own)
             c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
+        elif k[0] == "thrpk":  # thrpn plus the kinds that are 94-96% true on the holdout in this band (band_kinds.py); only one-word swaps and,
+            # with the option `alias`, coined aliases at an address shared with another S1 (whose tenant they belong to is ambiguous) are dropped
+            from difflib import SequenceMatcher
+
+            ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
+            miss, extra = ta.list.set_difference(tb), tb.list.set_difference(ta)
+            own = own.with_columns(miss.list.len().alias("_miss"), extra.list.len().alias("_extra"), ta.list.set_intersection(tb).list.len().alias("_common"),
+                                   extra.list.eval(pl.element().is_in(NOISE_FR + ["france", "and", "et", "associes", "cie"])).list.all().alias("_extra_noise"),
+                                   pl.col("a_core").str.split(" ").list.eval(pl.element().str.slice(0, 1)).list.join("").alias("_ini4"))
+            cand = own.filter((pl.col("p") < float(k[1])) & ~pl.col("b_core").str.contains(" ")).select("q", "pid", "a_core", "b_core")
+            fz = [(q, pid) for q, pid, ac, bc in cand.iter_rows() if SequenceMatcher(None, ac.replace(" ", ""), bc).ratio() >= 0.85]
+            fz_df = pl.DataFrame({"q": [x[0] for x in fz], "pid": [x[1] for x in fz]}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_gz"))
+            own = own.drop("_gz", strict=False).join(fz_df, on=["q", "pid"], how="left").with_columns(pl.col("_gz").fill_null(False))
+            own = protect_cols(own)
+            keep = (pl.col("eq_norm") | pl.col("ini_ok") | pl.col("noise_swap") | pl.col("_gz")
+                    | ((pl.col("_miss") == 0) & (pl.col("_extra") == 0))                                   # same words reordered
+                    | ((pl.col("_miss") == 0) & (pl.col("_extra") >= 1) & pl.col("_extra_noise"))          # noise words (incl. france) added
+                    | (pl.col("b_core").str.len_chars().is_between(2, 4) & ~pl.col("b_core").str.contains(" ") & pl.col("_ini4").str.starts_with(pl.col("b_core")))
+                    | ((pl.col("_miss") >= 1) & (pl.col("_extra") == 0))                                  # words dropped
+                    | ((pl.col("_miss") + pl.col("_extra") >= 3) & (pl.col("_common") >= 1)))               # several words changed, some shared
+            if len(k) > 2 and k[2] == "alias":
+                keep = keep | ((pl.col("_common") == 0) & (pl.col("addr_n") == 1))                         # coined alias of an S1 alone at its address
+            c = (pl.col("p") < float(k[1])) & ~keep
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
         elif k[0] == "typeswap":
@@ -178,7 +213,7 @@ def main() -> None:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
         if protect:
-            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrx", "xfr"}]
+            hard = [c.fill_null(False) for r, c in fired if r not in {"thr", "thrp", "thrpn", "thrpk", "thrx", "xfr"}]
             o2 = own.with_columns(any_c.alias("_d"), (pl.any_horizontal(hard) if hard else pl.lit(False)).alias("_h"))
             alive = o2.filter(~pl.col("_d")).select("q").unique()
             back = (o2.filter(pl.col("_d") & ~pl.col("_h") & (pl.col("p") >= protect[0])).join(alive, on="q", how="anti")
