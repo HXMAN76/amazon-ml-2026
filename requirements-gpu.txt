@@ -1,9 +1,0 @@
-# Environment for the steps that need a GPU encoder (dense retrieval and the cross-encoder). Use a CUDA build of torch that matches the driver.
-torch>=2.4
-transformers>=4.45
-sentencepiece
-polars==1.44.2
-duckdb==1.5.5
-pyyaml==6.0.3
-scikit-learn==1.9.1
-numpy==2.5.3
