@@ -94,6 +94,7 @@ def main() -> None:
     ap.add_argument("--country", default="france")
     ap.add_argument("--cap", action="store_true", help="after the rules, keep at most 5 S2 and 6 S3 pairs per S1 in EVERY country (the training maximum), lowest probability first")
     ap.add_argument("--no-rules", action="store_true", help="skip the country rules (use with --cap alone)")
+    ap.add_argument("--dry", action="store_true", help="print the rules' counts and decoy shares, write nothing")
     a = ap.parse_args()
     P = config.paths()
     t0 = time.time()
@@ -155,9 +156,10 @@ def main() -> None:
             own = own.join(ok_df, on=["q", "pid"], how="left").with_columns(pl.col("_ini").fill_null(False).alias("ini_ok"))
             own = own.with_columns((strip_spaced(pl.col("a_core")) == strip_spaced(pl.col("b_core"))).alias("eq_norm"))
             c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok")
-        elif k[0] == "thrpn":  # thrp that also spares France's noise-word copies (true copies: research.md 25, france_recall.py)
+        elif k[0] == "thrpn":  # thrpn:t[:tmin] thrp that also spares France's noise-word copies (true copies: research.md 25, france_recall.py);
+            # tmin limits it to the band [tmin, t)
             own = protect_cols(own)
-            c = (pl.col("p") < float(k[1])) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
+            c = (pl.col("p") < float(k[1])) & (pl.col("p") >= float(k[2]) if len(k) > 2 else pl.lit(True)) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
         elif k[0] == "thrpk":  # thrpn plus the kinds that are 94-96% true on the holdout in this band (band_kinds.py); only one-word swaps and,
             # with the option `alias`, coined aliases at an address shared with another S1 (whose tenant they belong to is ambiguous) are dropped
             from difflib import SequenceMatcher
@@ -216,8 +218,10 @@ def main() -> None:
         else:
             raise SystemExit(f"unknown rule {spec}")
         n = own.filter(c).height
+        new = c.fill_null(False) & ~pl.any_horizontal([x.fill_null(False) for _, x in fired]) if fired else c
         fired.append((k[0], c))
-        print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f}); decoy share S2, S3 {decoy_share(own.filter(c), slots)}", flush=True)
+        print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f}); decoy share S2, S3 {decoy_share(own.filter(c), slots)}; "
+              f"not fired by an earlier rule {own.filter(new).height}, decoy share {decoy_share(own.filter(new), slots)}", flush=True)
     if fired:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
@@ -255,6 +259,8 @@ def main() -> None:
         over = kept.filter(pl.col("_rk") > pl.col("cap_n")).select("q", "pid").with_columns(pl.lit(True).alias("_cap"))
         print(f"cap 5 S2 / 6 S3 (all countries): drops {over.height} pairs", flush=True)
         out = out.join(over, on=["q", "pid"], how="left").with_columns(pl.when(pl.col("_cap").is_not_null()).then(pl.min_horizontal(pl.col("p"), pl.lit(thr - 1e-6))).otherwise(pl.col("p")).alias("p")).drop("_cap")
+    if a.dry:
+        return
     (P["work"] / "output" / a.newname).mkdir(parents=True, exist_ok=True)
     out.write_parquet(P["work"] / "output" / a.newname / "pair_p.parquet", compression="zstd")
     emit(a.newname, P, out, {"threshold": thr, "exclusive": cfg["exclusive"]}, t0)
