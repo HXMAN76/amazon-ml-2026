@@ -12,12 +12,14 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
                         the S1 already has three or more exact copies (ratio A/B >= R, default 0.75; see swap_words.py): decoys draw their new word from that vocabulary, true
                         swaps from generic suffix words (services, groupe, france); p < pmax
+  protect:p0            after the rules: an S1 whose France list is empty gets back its best pair that only a threshold rule (thr, thrp, thrx) dropped, if p >= p0
   tiny:pmax             pool name of at most 3 letters that is not a subsequence of the initials of the S1's core name, p < pmax
 Prints the number of pairs each rule drops and the total, then writes WORK/output/NEWNAME like reemit.py."""
 
 import argparse
 import json
 import time
+from functools import reduce
 
 import polars as pl
 
@@ -76,8 +78,13 @@ def main() -> None:
         own = own.with_columns(pl.col("b_core").alias("_b"))
         print(f"typeswap: slots A {nA}, B {nB}; words with ratio >= 0.75 and at least 100 pairs: {rr.filter((pl.col('ratio') >= 0.75) & (pl.col('nA') + pl.col('nB') >= 100)).height}", flush=True)
     fired = []
+    fired_specs = []
+    protect_p = None
     for spec in rules_list:
         k = spec.split(":")
+        if k[0] == "protect":
+            protect_p = float(k[1])
+            continue
         if k[0] == "swap_exact":
             c = pl.col("swap") & (pl.col("n_exact") >= 1) & (pl.col("p") < float(k[1] if len(k) > 1 else 0.9999))
         elif k[0] == "swap_all":
@@ -115,6 +122,7 @@ def main() -> None:
             raise SystemExit(f"unknown rule {spec}")
         n = own.filter(c).height
         fired.append(c)
+        fired_specs.append(k[0])
         print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f})", flush=True)
     if fired:
         any_c = fired[0]
@@ -123,6 +131,17 @@ def main() -> None:
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
     else:
         dropped = pl.DataFrame({"q": [], "pid": []}, schema={"q": pl.Int64, "pid": pl.Int64}).with_columns(pl.lit(True).alias("_drop"))
+    if protect_p is not None and fired:
+        thr_c = [c for c, sp in zip(fired, fired_specs) if sp.startswith("thr")]
+        oth_c = [c for c, sp in zip(fired, fired_specs) if not sp.startswith("thr")]
+        if thr_c:
+            or_all = lambda cs: reduce(lambda x, y: x | y, cs)
+            flags = own.with_columns(or_all(fired).alias("_dr"), or_all(thr_c).alias("_thr"), (or_all(oth_c) if oth_c else pl.lit(False)).alias("_oth"))
+            kept_n = flags.filter(~pl.col("_dr")).group_by("q").len().rename({"len": "kept"})
+            cand = flags.filter(pl.col("_thr") & ~pl.col("_oth") & (pl.col("p") >= protect_p)).join(kept_n, on="q", how="left").filter(pl.col("kept").is_null())
+            best = cand.sort("p", descending=True).group_by("q").first().select("q", "pid").with_columns(pl.lit(True).alias("_res"))
+            print(f"protect {protect_p}: restores {best.height} pairs of S1 whose list is empty after the rules", flush=True)
+            dropped = dropped.join(best, on=["q", "pid"], how="left").filter(pl.col("_res").is_null()).drop("_res")
     print(f"total dropped {dropped.height} ({dropped.height / own.height:.4f} of {a.country}'s predicted pairs)", flush=True)
     out = pp.join(dropped, on=["q", "pid"], how="left").with_columns(pl.when(pl.col("_drop").is_not_null()).then(pl.min_horizontal(pl.col("p"), pl.lit(thr - 1e-6))).otherwise(pl.col("p")).alias("p")).drop("_drop")
     if a.cap:

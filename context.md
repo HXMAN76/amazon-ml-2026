@@ -115,6 +115,10 @@ The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed f
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
+## 5c. Update 2026-09-27 about 13:10 IST (newest, wins over sections 5b and below)
+
+Best base: `s29` (`s27` + Qwen3-0.6B cross-encoder score, holdout 0.99088, +0.00025 [+0.00015,+0.00034] over `s27`). Best submitted portal score: `v8u_s27_AR` **0.985578** (barani's recipe `typeswap` + `thrpn:0.995` + `protect:0.9` + `restore` on `s27`); the same recipe on `s29` (`v8w_s29_AR`, downloaded to `~/Downloads/`, not yet submitted) is estimated ~0.9858. Extending Qwen's coverage past the band, a 4th cross-encoder feature, stack hyperparameter/learner sweeps, per-country thresholds and an `mDeBERTa-v3-base` cross-encoder (failed: optimizer makes its parameters non-finite in this torch/transformers build) all found nothing further — see `EXPERIMENTS.md` section 11 for the full account. The France-aware cross-encoder approach (`v8u_s22F12n_AR`, portal 0.984136) is a net loss; do not repeat. Organiser Q&A confirms unsupervised test-file statistics, self-training and synthetic pairs from provided records are allowed, and the private leaderboard scores the best public submission (not the last upload). Barani continues independently on account 767397931665 (branch `v8/france`, deployed read-only to `s3://sagemaker-us-east-1-567503593043/ber/code_v8` on our side rather than merged). Window closes 27 Sep 23:59 IST; freeze (code zip, `reproduce_final.sh`, methodology doc, validator `--check-ids`) is next.
+
 ## 5b. Update 2026-09-26 about 02:00 IST
 
 Best: `s5` holdout 0.9832 (India 0.9812, US 0.9845), `s6` = `s5` with a per-S1 candidate shortlist (4.9 candidates per S1, same score). Team-facing guide with architecture, AWS how-to and optimization list: `TEAM_GUIDE.md`.

@@ -391,6 +391,9 @@ def build(split: str, base: str, prm: dict) -> None:
     if xs_df is not None and prm.get("xenc_dir3"):  # a third cross-encoder (different family) as xs3, scored on the band pairs only
         x3 = pl.read_parquet(P["work"] / prm["xenc_dir3"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs3"))
         xs_df = xs_df.join(x3.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
+    if xs_df is not None and prm.get("xenc_dir4"):  # a fourth cross-encoder as xs4 (band pairs only)
+        x4 = pl.read_parquet(P["work"] / prm["xenc_dir4"] / f"{split}_xs.parquet").select("q", "pid", pl.col("xs").alias("xs4"))
+        xs_df = xs_df.join(x4.with_columns(pl.col("q").cast(xs_df["q"].dtype), pl.col("pid").cast(xs_df["pid"].dtype)), on=["q", "pid"], how="full", coalesce=True)
     if prm.get("addrmult"):
         s1_addr_n, pool_addr_n = addr_group_counts(s1_addr), addr_group_counts(pool_addr)
     have = set(scan.collect_schema().names())
@@ -462,30 +465,55 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     device = pick_device(prm["device"])
     p = {"objective": "binary:logistic", "eval_metric": "aucpr", "device": device, "tree_method": "hist", "max_depth": prm["max_depth"],
          "eta": prm["eta"], "subsample": 0.8, "colsample_bytree": 0.8, "min_child_weight": 1, "seed": prm["seed"]}
-    tr_mask = ~is_hold
+    tr_mask = np.ones(len(y), dtype=bool) if prm.get("refit_all") else ~is_hold  # refit_all: the locked holdout joins the training rows (its scores below are then in-sample)
     oof = np.zeros(len(y), dtype=np.float32)
     iters = []
+    labels = pl.read_parquet(P["parquet"] / "train" / "labels.parquet").group_by("s1_rid").len().rename({"s1_rid": "q", "len": "n_true"})
+    learner = str(prm.get("learner", "xgb"))
+    wsing = float(prm.get("w_singleton", 1.0))
+    wgt = None
+    if wsing != 1.0:  # a false alarm on an S1 without a true match costs its whole score: weight the pairs of those S1
+        nq = pl.DataFrame({"q": qa.astype(np.int64)}).join(labels.with_columns(pl.col("q").cast(pl.Int64)), on="q", how="left", maintain_order="left")["n_true"].fill_null(0).to_numpy()
+        wgt = np.where(nq == 0, wsing, 1.0).astype(np.float32)
+        print(f"singleton weight {wsing}: {float((nq == 0).mean()):.3f} of the pairs belong to S1 without a true match", flush=True)
+    W = (lambda idx: wgt[idx]) if wgt is not None else (lambda idx: None)
+    if learner == "lgb":
+        import lightgbm as lgb
+
+        lp = {"objective": "binary", "metric": "average_precision", "learning_rate": prm["eta"], "num_leaves": 255, "min_data_in_leaf": 50, "feature_fraction": 0.8, "bagging_fraction": 0.8,
+              "bagging_freq": 1, "lambda_l2": 1.0, "num_threads": 64, "verbose": -1, "seed": int(prm["seed"])}
     for k in range(prm["folds"]):
         tr, va = tr_mask & (fold != k), tr_mask & (fold == k)
-        dtr = xgb.QuantileDMatrix(x[tr], label=y[tr], feature_names=feats)
+        if learner == "lgb":
+            dtr = lgb.Dataset(x[tr], label=y[tr], weight=W(tr), feature_name=feats, free_raw_data=False)
+            dva = lgb.Dataset(x[va], label=y[va], weight=W(va), reference=dtr, feature_name=feats)
+            m = lgb.train(lp, dtr, num_boost_round=int(prm["rounds"]), valid_sets=[dva], callbacks=[lgb.early_stopping(int(prm["early_stop"]), verbose=False)])
+            oof[va] = m.predict(x[va], num_iteration=m.best_iteration)
+            iters.append(m.best_iteration)
+            print(f"fold {k}: {iters[-1]} rounds (lightgbm)", flush=True)
+            del dtr, dva
+            continue
+        dtr = xgb.QuantileDMatrix(x[tr], label=y[tr], weight=W(tr), feature_names=feats)
         m = xgb.train(p, dtr, prm["rounds"],
-                      evals=[(xgb.QuantileDMatrix(x[va], label=y[va], feature_names=feats, ref=dtr), "val")], early_stopping_rounds=prm["early_stop"], verbose_eval=False)
+                      evals=[(xgb.QuantileDMatrix(x[va], label=y[va], weight=W(va), feature_names=feats, ref=dtr), "val")], early_stopping_rounds=prm["early_stop"], verbose_eval=False)
         del dtr
         oof[va] = m.predict(xgb.DMatrix(x[va], feature_names=feats), iteration_range=(0, m.best_iteration + 1))
         iters.append(m.best_iteration + 1)
         print(f"fold {k}: {iters[-1]} rounds, aucpr {m.best_score:.4f}", flush=True)
-    labels = pl.read_parquet(P["parquet"] / "train" / "labels.parquet").group_by("s1_rid").len().rename({"s1_rid": "q", "len": "n_true"})
     tune = pl.DataFrame({"q": qa[tr_mask], "pid": pida[tr_mask], "p": oof[tr_mask], "label": y[tr_mask]})
     nt_tune = tune.select("q").unique().join(labels, on="q", how="left").with_columns(pl.col("n_true").fill_null(0))
     thr, score_oof, _ = decision.tune_threshold(tune, nt_tune, True)
     print(f"stacked OOF macro F0.5 on the non-holdout subsample: {score_oof:.4f} at threshold {thr:.2f}", flush=True)
-    dfinal = xgb.QuantileDMatrix(x[tr_mask], label=y[tr_mask], feature_names=feats)
-    model = xgb.train(p, dfinal, int(np.mean(iters) * 1.1) + 1)
-    del dfinal
+    if learner == "lgb":
+        model = lgb.train(lp, lgb.Dataset(x[tr_mask], label=y[tr_mask], weight=W(tr_mask), feature_name=feats), num_boost_round=int(np.mean(iters) * 1.1) + 1)
+    else:
+        dfinal = xgb.QuantileDMatrix(x[tr_mask], label=y[tr_mask], weight=W(tr_mask), feature_names=feats)
+        model = xgb.train(p, dfinal, int(np.mean(iters) * 1.1) + 1)
+        del dfinal
 
     # locked holdout: baseline (first-stage p1 with its own threshold) versus stacked, on the same S1
     hq, hp, hy = qa[is_hold], pida[is_hold], y[is_hold]
-    p2 = model.predict(xgb.DMatrix(x[is_hold], feature_names=feats))
+    p2 = model.predict(x[is_hold]) if learner == "lgb" else model.predict(xgb.DMatrix(x[is_hold], feature_names=feats))
     base_cfg = json.loads((P["work"] / "models" / base / "config.json").read_text())
     nt_h = hold.join(labels, on="q", how="left").with_columns(pl.col("n_true").fill_null(0))
     a = pl.DataFrame({"q": hq, "pid": hp, "p": x[is_hold][:, feats.index("p")], "label": hy})
@@ -495,15 +523,17 @@ def train(name: str, base: str, prm: dict, drop: tuple[str, ...] = ()) -> None:
     delta, lo, hi = decision.paired_bootstrap_delta(ea, eb)
     rep = {"base": base, "base_holdout_f05": float(ea.mean()), "stack_holdout_f05": float(eb.mean()), "delta": delta,
            "delta_ci95": [lo, hi], "ship": bool(lo > 0), "stack_threshold": thr, "oof_subsample_f05": score_oof, "holdout_s1": hold.height}
+    if prm.get("refit_all"):
+        rep.update({"refit_all": True, "ship": False, "note": "holdout rows were in the training data: stack_holdout_f05 and delta are in-sample, use oof_subsample_f05 (out-of-fold over train plus holdout S1)"})
     out = P["work"] / "models" / name
     out.mkdir(parents=True, exist_ok=True)
     tune.write_parquet(out / "oof_tune.parquet", compression="zstd")   # out-of-fold p on the non-holdout S1 (calibration, tuning)
     b.write_parquet(out / "holdout_pred.parquet", compression="zstd")  # stacked p on the locked holdout
-    model.save_model(str(out / "xgb.json"))
-    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):]}, indent=2))
+    model.save_model(str(out / ("lgb.txt" if learner == "lgb" else "xgb.json")))
+    (out / "config.json").write_text(json.dumps({"features": feats, "threshold": thr, "exclusive": True, "device_trained": device, "base": base, "tag": STACK_DIR[len("stack"):], "learner": learner}, indent=2))
     (out / "holdout.json").write_text(json.dumps(rep, indent=2))
     print("HOLDOUT paired comparison:", json.dumps(rep), flush=True)
-    imp = model.get_score(importance_type="gain")
+    imp = dict(zip(feats, model.feature_importance(importance_type="gain"))) if learner == "lgb" else model.get_score(importance_type="gain")
     print("top features:", sorted(imp.items(), key=lambda kv: -kv[1])[:12], flush=True)
     log_stage("stack_train", prm, {"holdout_base": float(ea.mean()), "holdout_stack": float(eb.mean()), "delta": delta, "delta_lo": lo,
                                    "seconds": time.time() - t0})
@@ -517,14 +547,21 @@ def predict(name: str) -> None:
     cfg = json.loads((mdl / "config.json").read_text())
     global STACK_DIR
     STACK_DIR = "stack" + cfg.get("tag", "")
-    model = xgb.Booster()
-    model.load_model(str(mdl / "xgb.json"))
-    if cfg.get("device_trained") == "cuda":
-        model.set_param({"device": "cuda"})
+    lgbm = cfg.get("learner") == "lgb"
+    if lgbm:
+        import lightgbm as lgb
+
+        model = lgb.Booster(model_file=str(mdl / "lgb.txt"))
+    else:
+        model = xgb.Booster()
+        model.load_model(str(mdl / "xgb.json"))
+        if cfg.get("device_trained") == "cuda":
+            model.set_param({"device": "cuda"})
     parts = []
     for f in sorted((P["work"] / STACK_DIR / "test").glob("chunk_*.parquet")):
         d = pl.read_parquet(f)
-        pp = model.predict(xgb.DMatrix(d.select(cfg["features"]).to_numpy().astype(np.float32), feature_names=cfg["features"]))
+        xt = d.select(cfg["features"]).to_numpy().astype(np.float32)
+        pp = model.predict(xt) if lgbm else model.predict(xgb.DMatrix(xt, feature_names=cfg["features"]))
         parts.append(d.select("q", "pid").with_columns(pl.Series("p", pp)))
     df = pl.concat(parts)
     (P["work"] / "output" / name).mkdir(parents=True, exist_ok=True)
@@ -549,6 +586,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--xenc-dir2", default="", help="build: WORK sub-folder of a second cross-encoder (feature xs2)")
     ap.add_argument("--addrmult", action="store_true", help="build: address multiplicity features (how many records share the address)")
     ap.add_argument("--xenc-dir3", default="", help="build: WORK sub-folder of a third cross-encoder (feature xs3)")
+    ap.add_argument("--xenc-dir4", default="", help="build: WORK sub-folder of a fourth cross-encoder (feature xs4)")
+    ap.add_argument("--learner", choices=["xgb", "lgb"], default="xgb", help="train: second-stage learner (lgb = LightGBM on CPU)")
     ap.add_argument("--xcons", action="store_true", help="build: consensus features on the cross-encoder refined probability (needs --xenc)")
     ap.add_argument("--xenc-fit-more", type=int, default=0, help="build: the cross-encoder was fitted on this many more S1 (exclude them)")
     ap.add_argument("--xenc-dir", default="xenc", help="build: WORK sub-folder with the cross-encoder scores")
@@ -564,6 +603,8 @@ def main(argv: list[str] | None = None) -> None:
     prm["xcons"] = prm.get("xcons", False) or a.xcons
     prm["xenc_dir2"] = a.xenc_dir2
     prm["xenc_dir3"] = a.xenc_dir3
+    prm["xenc_dir4"] = a.xenc_dir4
+    prm["learner"] = a.learner
     prm["addrmult"] = a.addrmult
     prm["xenc_fit_more"] = a.xenc_fit_more
     if a.sub_q:

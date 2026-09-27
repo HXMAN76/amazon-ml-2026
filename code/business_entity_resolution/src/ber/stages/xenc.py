@@ -167,12 +167,13 @@ def train() -> None:
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
     model = model.cuda()
-    amp = torch.bfloat16 if dec else torch.float16
+    bf = dec or "deberta" in str(MODEL).lower() or bool(int(prm.get("bf16", 0)))  # DeBERTa overflows in fp16
+    amp = torch.bfloat16 if bf else torch.float16
     opt = torch.optim.AdamW(model.parameters(), lr=prm["lr"], weight_decay=0.01)
     bs, epochs = prm["batch"], prm["epochs"]
     steps = epochs * (len(y) // bs)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / (0.06 * steps)) * max(0.0, 1 - i / steps))
-    scaler = torch.amp.GradScaler(enabled=not dec)
+    scaler = torch.amp.GradScaler(enabled=not bf)
     rng = np.random.default_rng(seed)
     model.train()
     step = 0
@@ -185,7 +186,7 @@ def train() -> None:
                 flip = rng.random(len(idx)) < 0.5
                 xa, xb = [b if f else a for a, b, f in zip(xa, xb, flip)], [a if f else b for a, b, f in zip(xa, xb, flip)]
             enc = encode_pairs(tok, xa, xb, prm["max_len"], dec)
-            with torch.autocast("cuda", dtype=amp):
+            with torch.autocast("cuda", dtype=amp, enabled=not bool(int(prm.get("fp32", 0)))):
                 logit = model(**enc).logits.squeeze(-1)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logit.float(), torch.from_numpy(y[idx]).cuda())
             opt.zero_grad()
@@ -194,8 +195,11 @@ def train() -> None:
             scaler.update()
             sched.step()
             step += 1
-            if step % 200 == 0:
-                print(f"epoch {ep} step {step}/{steps} loss {loss.item():.4f} ({time.time() - t0:.0f}s)", flush=True)
+            if step <= 5 or step % 200 == 0:
+                lv = loss.item()
+                print(f"epoch {ep} step {step}/{steps} loss {lv:.4f} ({time.time() - t0:.0f}s)", flush=True)
+                if not np.isfinite(lv):
+                    raise RuntimeError(f"non-finite loss at step {step}: stop instead of training a broken model")
     out = P["work"] / MODEL_DIR
     model.save_pretrained(out)
     tok.save_pretrained(out)
@@ -214,7 +218,9 @@ def score(split: str) -> None:
         d = d.head(int(OVERRIDES["max_rows"]))
     tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR)
     dec = is_decoder(json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", ""))
-    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().to(torch.bfloat16 if dec else torch.float16).eval()
+    mtype = json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", "")
+    bf = dec or "deberta" in mtype or bool(int(prm.get("bf16", 0)))
+    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().to(torch.bfloat16 if bf else torch.float16).eval()
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)
