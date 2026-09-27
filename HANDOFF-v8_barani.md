@@ -16,6 +16,22 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - Model 2 (`xencFR2/model`) adds 100k "other tenant" negatives. Bases built by swapping France's xs and rebuilding the s22 stack for France only (US/India unchanged): `s22F1n`, `s22F2n`, `s22F12n` (mean logit), `s22F1s` (new score only on one-word swaps). On them `typeswap` fires on 3.5-6k pairs (s22: 25k) and `thrp` still drops 24-25k pairs at 44-46%/38-39% decoy share.
 
 
+
+## Morning of 27 Sep (after the portal readings)
+- Branch `v8/france` is checked out in the main folder `/Users/barani200/amazon-ml-2026` and **pushed after every commit** (user request, about 06:10).
+  The `-v8` worktree was switched to `sai` by the user: never commit there.
+- Portal: `v8u_s27_AR` **0.985578** (best); `v8u_s22F12n_AR` 0.984136 (France cross-encoders inside the stack cost about 0.009 of France F0.5:
+  the roughly 31k France pairs they removed were essentially all true). The cross-encoder route is dropped; everything builds on s27.
+- Label-free checks that came back negative or neutral (do not repeat): dropping the swaps France still predicts (88% are noise-word copies:
+  fils, services, developpement, groupe, france), `exactfar` (equal names at another address: France's decoy share is below the US reference),
+  `thrpk` (the extra protected kinds are about 34% decoys by the slot fit, above break-even; its `alias` option about 60%), per-country
+  thresholds for US and India (the single 0.74 is already best), stack blends, a restore driven by the cross-encoder score.
+- France's match-count profile per S1 equals US/India's (profile_counts.py) except about 1% more S1 with one match, mostly confident exact names
+  (single_pair.py): the remaining France error is in which records are matched, not how many; no label-free lever left there.
+- Running: Qwen3-0.6B scoring of 2.46M test + 2.13M train band pairs (about 200 pairs/s; done about 12:00), then `v8n3_s28` (s28 = s27's stack +
+  the Qwen score as xs4, paired test against s27, France recipe, validation, upload of `v8u_s28_AR`; about 13:30 to 14:00).
+- Final package: `bash submission/make_package.sh <RUN>` (zip in the organisers' layout); methodology draft updated in `submission/Documentation_template.md`.
+
 ## Portal readings
 - 27 Sep about 06:00: **`v8u_s27_AR` 0.985578** (+0.001076 over `s22t2c` 0.984502).
 - About 06:15: **`v8u_s22F12n_AR` 0.984136**: the France cross-encoders in the stack hurt (about -0.009 France F0.5). Drop that route; build on s27. Next: `v8k_s27_KA` (thrpk).
