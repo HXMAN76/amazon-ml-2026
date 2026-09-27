@@ -33,6 +33,7 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - Final package: `bash submission/make_package.sh <RUN>` (zip in the organisers' layout); methodology draft updated in `submission/Documentation_template.md`.
 
 ## s28 (27 Sep 09:40)
+- Tried after s28 (holdout, paired against s28, all intervals include 0; not used): s28b deeper/slower stack +0.000041, blend s28+s28b +0.000026, blend s28+s27 -0.000038. s28 is the final model.
 - `s28` = s27's stack + Qwen3-0.6B score as xs4: holdout 0.990770, paired +0.000135 [+0.000047, +0.000226] over s27. `v8u_s28_AR` validated (--check-ids), in the team folder and at `output/v8u_s28_AR/` on the laptop. Next upload suggested.
 
 ## Portal readings
