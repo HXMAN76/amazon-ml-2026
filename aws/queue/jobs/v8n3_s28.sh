@@ -1,14 +1,8 @@
-# v8 (GPU lane jobs, after s24): s28 = s27's stack recipe (symmetric cross-encoder seeds as xs/xs_asym/xs_seed_gap, e5-small band score xs2, e5-base
-# score xs3) plus the Qwen3-0.6B score as xs4, trained on the same 1.5M S1; only if s24 showed that the Qwen score helps s22 on the holdout.
+# v8 (GPU lane jobs, right after the Qwen scoring): s28 = s27's stack recipe (symmetric cross-encoder seeds as xs/xs_asym/xs_seed_gap, e5-small band score xs2, e5-base
+# score xs3) plus the Qwen3-0.6B score as xs4, trained on the same 1.5M S1 (s24, the same test on s22, is skipped to save time: the paired test against s27 decides).
 # Paired tests against s27, the portal-best France recipe on s28, validation --check-ids and upload.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
 export BER_WORK=$SM/work_t
-python - <<PY || { echo "s24 did not beat s22 on the holdout: s28 skipped"; exit 0; }
-import json, sys
-h = json.load(open("$BER_WORK/models/s24/holdout.json"))["stack_holdout_f05"]
-print("s24 holdout", h)
-sys.exit(0 if h > 0.99054 + 0.00005 else 1)
-PY
 aws s3 sync s3://$B/ber/team_work/xenc2SymE_v7 $BER_WORK/xenc2SymE_v7 --only-show-errors
 A="--base v7 --tag _eq --xenc --xcons --xenc-fit-more 300000 --decoy --extra --sub-q 1500000 --xenc-dir xenc2SymE_v7 --xenc-dir2 xenc_v7 --xenc-dir3 xenc2F_v7 --xenc-dir4 xenc3Q_v7"
 python -m ber.stages.stack build --split train $A
