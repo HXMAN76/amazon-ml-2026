@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution: Amazon ML Challenge 2026, Team Nooglers. Best leaderboard score 0.987745, locked holdout 0.99088.">
+  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution, Amazon ML Challenge 2026, Team Nooglers: leaderboard error (1 − F0.5) fell from 0.056 at the first upload (v2, 0.944) to 0.0123 at the best upload (v8w_s29_FIN, 0.987745), 78% less.">
 </p>
 
 <p align="center">
@@ -190,31 +190,6 @@ The jobs kept in `aws/queue/jobs/` are:
 | `docs/archive/team-guide.md` | How the team trained and ran jobs |
 | `docs/archive/submission-checklist.md` | Rules from the problem statement and guidelines |
 | `docs/archive/v1-…` to `v8-…` | Plans, architecture notes, handoffs and build notes of each earlier version |
-
-Some documents still mention files by their old names:
-
-| Old name | New name |
-|---|---|
-| `code/business_entity_resolution/` (`src/`, `configs/`, `Makefile`, `reproduce_final.sh`, requirements) | the repository root |
-| `code/business_entity_resolution/README.md` | `docs/pipeline.md` |
-| `src/scripts/<name>.py` (France and stack scripts) | `src/scripts/france/<name>.py`, `src/scripts/stack/<name>.py` |
-| `NOOGLERS_BUILD_LOG.md` | `docs/build-log.md` |
-| `handoff.md` | `docs/handoffs/team-handoff.md` |
-| `TEAMMATE_HANDOFF.md` | `docs/handoffs/team-aws-handoff.md` |
-| `HANDOFF-v8_barani.md` | `docs/handoffs/v8-france-handoff.md` |
-| `ARCHITECTURE.md` | `docs/archive/architecture-reference.md` |
-| `EXPERIMENTS.md` | `docs/archive/experiments-registry.md` |
-| `research.md` | `docs/archive/research-notes.md` |
-| `context.md` | `docs/archive/implementation-context.md` |
-| `TEAM_GUIDE.md` | `docs/archive/team-guide.md` |
-| `submission_checklist.md` | `docs/archive/submission-checklist.md` |
-| `understanding.md` | `docs/archive/problem-and-data-overview.md` |
-| `plan.md` | `docs/archive/v1-plan.md` |
-| `v1.md`, `v2.md`, `research-v2.md` | `docs/archive/v1-record-centric-assignment.md`, `v2-plan-of-record.md`, `v2-research.md` |
-| `HANDOFF-v2_barani.md`, `HANDOFF-v4_roshan.md`, `HANDOFF-v7_barani.md` | `docs/archive/v2-handoff.md`, `v4-handoff.md`, `v7-france-handoff.md` |
-| `ARCHITECTURE_v4.md`, `ARCHITECTURE_v5.md`, `v5.md` | `docs/archive/v4-architecture.md`, `v5-architecture.md`, `architecture-reference-draft.md` |
-| `S29_FIN_BUILD_barani.md`, `V8_FILES_barani.md` | `docs/archive/v8-s29-fin-build.md`, `v8-portal-files.md` |
-| `remote-setup.md` | `docs/archive/sagemaker-ssh-setup.md` |
 
 ## 7. Models and licences
 
