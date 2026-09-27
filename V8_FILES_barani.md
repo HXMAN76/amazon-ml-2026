@@ -11,6 +11,14 @@ branch `v8/france` (local, barani): `src/scripts/france_variants.py` (rules `typ
 `s28` = s27's stack + the team's Qwen3-0.6B cross-encoder score (xs4; Apache-2.0, scored tonight on 4.6M band pairs): holdout **0.990770**, paired
 **+0.000135 [+0.000047, +0.000226]** over s27. Same France recipe as `v8u_s27_AR`. Validator PASS with --check-ids. Expected portal about 0.9857.
 
+## Extended type-word rule (14:15): `v8u_s28_ARt`
+`v8u_s28_AR` + `typeswap:1.01:0.6:30:300`: the type-word list grows from 30 to 43 learned words (lycee, pharmacie, danse, institut, musique, gestion,
+groupement, patrimoine, soins, elementaire, ...; same slot test with slot ratio >= 0.6 over >= 30 pairs, both swapped words in >= 300 France S1 names,
+noise words and abbreviations such as st / saint excluded). It drops 1,382 more France pairs beyond the current rules at a 0.86 / 0.91 decoy share
+(the original rule reads 0.84 / 0.92). Expected about +0.0001. Validated (--check-ids). **On s29** (better base), the whole recipe is one line
+(branch v8/france, `src/scripts/france_variants.py`):
+`python src/scripts/france_variants.py s29 v8w_s29_ARt --rules "typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.995,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap`
+
 ## France cut-off test (13:45): `v8u_s28_AR9` and `v8u_s28_AR99`
 Same as `v8u_s28_AR`, with France's protected cut-off (`thrpn`) raised from 0.995 to **0.9999** (`AR9`: about 25k more France pairs dropped,
 2.8% of France's pairs) or **0.999** (`AR99`: about 10k more). Both pass the validator with --check-ids. Upload `v8u_s28_AR` first; then `AR9`

@@ -78,6 +78,11 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - Rule `typeconf:pmax[:rmin]` (a learned type word replaced, other words may change too; `--samples N` prints examples): 22k France pairs but only
   190 not already dropped by typeswap + thrpn 0.995 (rmin 0.5 pulls in the noise words: wrong). `france` swaps/additions behave like the noise words
   (typeswap ratio 0.50 like fils/groupe/services) but protecting them is worth about +0.00006. France levers are exhausted label-free.
+- 13:00 to 14:15 (all measured): recall rescue of exact-name empty-address records outside the shortlist fails (holdout -0.000036: 170k such pairs
+  are generic names, 1.2% true); Qwen xs4 cannot flag French decoys (scores 9% of France pairs, 2.3k of 27k typeswap pairs below 0.5); generator
+  suffix words (US southside/eastgate/... are 0% owned in train; France participations/holding/distribution/international) are already left
+  unclaimed (France 0.6%); country labels are clean. **Extended typeswap** (`typeswap:1.01:0.6:30:300`, 43 words): +1,382 France drops at 0.86 / 0.91
+  decoy share -> `v8u_s28_ARt` (validated, team folder). The teammate's s29 (Qwen in the xs2 slot, holdout 0.99088, +0.00025 over s27) is the best base.
 - **Portal test files (validated, team folder and `output/` on the laptop)**: `v8u_s28_AR9` (France thrpn 0.9999) and `v8u_s28_AR99` (0.999).
 
 ## Infrastructure (our AWS, profile `barani`, account 645311222213)
