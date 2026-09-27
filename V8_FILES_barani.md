@@ -11,6 +11,14 @@ branch `v8/france` (local, barani): `src/scripts/france_variants.py` (rules `typ
 `s28` = s27's stack + the team's Qwen3-0.6B cross-encoder score (xs4; Apache-2.0, scored tonight on 4.6M band pairs): holdout **0.990770**, paired
 **+0.000135 [+0.000047, +0.000226]** over s27. Same France recipe as `v8u_s27_AR`. Validator PASS with --check-ids. Expected portal about 0.9857.
 
+## Current best candidate (17:40): `v8u_s28_FIN` (validated --check-ids; team folder; laptop output/)
+Recipe (s28): typeswap + larger type-word list (43 words) + thrpn 0.9999 + legalx (French legal forms only) + refined namesake drop
+(`fb_ns_ref`: exact core on another street, name on 11+ France S1 and p < 0.9999, or 6+ and p < 0.99; +`fb_nsnear_ref`) + protect + restore
++ re-add of coined/glued copies in [0.995, 0.9999) (`fb_coined_hi`, no French excess there) + alias protection (pool "dba/aka" part naming the S1).
+All rules chosen by the per-1,000-S1 rate comparison France vs US/India, anchored on the labelled holdout. Expected about +0.001 to +0.0015 over
+`v8u_s28_AR`. **Do not use the other session's `coined` restore** (below 0.995 those names are 5-14x the US rate: mostly decoys) or its buggy
+legalx (dropped "Xyz Co DBA <S1 name>" true copies). Lists are built by jobs `v8xb_nsref.sh`, `v8xb_coined2.sh`; build job `v8h5_fin.sh`.
+
 ## Extended type-word rule (14:15): `v8u_s28_ARt`
 `v8u_s28_AR` + `typeswap:1.01:0.6:30:300`: the type-word list grows from 30 to 43 learned words (lycee, pharmacie, danse, institut, musique, gestion,
 groupement, patrimoine, soins, elementaire, ...; same slot test with slot ratio >= 0.6 over >= 30 pairs, both swapped words in >= 300 France S1 names,
