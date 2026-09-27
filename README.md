@@ -119,11 +119,7 @@ Training uses only the provided labels.
 ├── requirements.txt           CPU environment; requirements-gpu.txt for the torch steps
 ├── aws/
 │   ├── sm/                    job client: publish code, enqueue jobs, follow logs (sm.py)
-│   ├── queue/                 SageMaker notebook job runner (GPU and CPU lanes) and the build jobs
-│   ├── notebook/              runner of the team's shared notebook
-│   └── jobs/                  Qwen scoring job templates
-├── iam/                       IAM policy documents for the notebook role and teammates
-├── submission/                methodology document for the organisers and the packaging script
+│   └── queue/                 SageMaker notebook job runner (GPU and CPU lanes) and the build jobs
 ├── docs/
 │   ├── build-log.md           the full three-day story
 │   ├── pipeline.md            the pipeline in detail: stages, France decoding, reproduction, licences
@@ -144,7 +140,7 @@ TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh
 ```
 
 `reproduce_final.sh` rebuilds the submitted file `v8w_s29_FIN` (stack `s29` with the final France decoding) into `$BER_WORK/output/final/`; the
-`s28` variant `v8u_s28_FIN` is built on the way. `bash submission/make_package.sh <RUN_NAME>` packs a run into the organisers' zip layout. Expect about 6 hours on 64 vCPU and one A10G GPU.
+`s28` variant `v8u_s28_FIN` is built on the way. Expect about 6 hours on 64 vCPU and one A10G GPU.
 
 On AWS, the same steps ran as queued jobs on a SageMaker notebook: `python aws/sm/sm.py publish`, then `python aws/sm/sm.py enqueue aws/queue/jobs/<job>.sh`.
 
@@ -159,7 +155,6 @@ The jobs kept in `aws/queue/jobs/` are:
 |---|---|
 | `docs/build-log.md` | Every version, every leaderboard reading, why each step was taken, what we learned |
 | `docs/pipeline.md` | The pipeline in detail: every stage, the France decoding rules, reproduction, holdout results, licences |
-| `submission/Documentation_template.md` | The methodology document for the organisers |
 | `docs/handoffs/v8-france-handoff.md` | State of the France work on day 3 (v8 recipe, delivered files, open questions) |
 | `docs/handoffs/team-handoff.md` | The team's running handoff: infrastructure, status, data facts |
 | `docs/handoffs/team-aws-handoff.md` | Handoff for teammates continuing on their own AWS accounts |

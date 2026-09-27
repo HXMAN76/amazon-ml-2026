@@ -1,5 +1,5 @@
 #!/bin/bash
-# The team's runner (aws/notebook/jobrunner.sh) for this account, with two lanes polled in parallel: s3://$B/jobs/ (GPU jobs) and
+# The team runner (formerly aws/notebook/jobrunner.sh, see git history) for this account, with two lanes polled in parallel: s3://$B/jobs/ (GPU jobs) and
 # s3://$B/jobs2/ (CPU jobs that may run at the same time). Each lane runs its pending *.sh one at a time (alphabetical) in the `ber` env from
 # /home/ec2-user/SageMaker, streams the log to <lane>/live/ every 30 s and uploads <lane>/done/<name>.log ending with exit=<code>.
 # /tmp/job.lock exists while any lane is busy (the idle auto-stop skips then); jobs/runner.txt is the liveness beacon.

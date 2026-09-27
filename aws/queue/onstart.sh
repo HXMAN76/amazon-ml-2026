@@ -1,6 +1,6 @@
 #!/bin/bash
 # Notebook lifecycle on-start (root, 5-minute limit): job-aware idle auto-stop, then the bootstrap in the background as ec2-user.
-# Same design as the team's aws/notebook/onstart.sh; bootstrap runs in a login shell (`-i`), which on this platform is what carries the
+# Same design as the team runner (formerly aws/notebook/onstart.sh); bootstrap runs in a login shell (`-i`), which on this platform is what carries the
 # execution-role credentials.
 B=sagemaker-us-east-1-645311222213
 IDLE=3600
