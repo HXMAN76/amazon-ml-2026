@@ -75,6 +75,9 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
   predicts fewer pairs than the US/India level with lower precision: both about 25k wrong and about 40k missing French pairs. Recovering true pairs is
   worth only +0.0022 France F0.5 per 1% of France's pairs; removing wrong ones +0.0063. Unclaimed same-address "other" candidates with p >= 0.3:
   France 35k against US 2.1k (`v8f2_recall`), mostly type-word siblings (decoys).
+- Rule `typeconf:pmax[:rmin]` (a learned type word replaced, other words may change too; `--samples N` prints examples): 22k France pairs but only
+  190 not already dropped by typeswap + thrpn 0.995 (rmin 0.5 pulls in the noise words: wrong). `france` swaps/additions behave like the noise words
+  (typeswap ratio 0.50 like fils/groupe/services) but protecting them is worth about +0.00006. France levers are exhausted label-free.
 - **Portal test files (validated, team folder and `output/` on the laptop)**: `v8u_s28_AR9` (France thrpn 0.9999) and `v8u_s28_AR99` (0.999).
 
 ## Infrastructure (our AWS, profile `barani`, account 645311222213)

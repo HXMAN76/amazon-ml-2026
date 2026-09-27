@@ -95,6 +95,7 @@ def main() -> None:
     ap.add_argument("--cap", action="store_true", help="after the rules, keep at most 5 S2 and 6 S3 pairs per S1 in EVERY country (the training maximum), lowest probability first")
     ap.add_argument("--no-rules", action="store_true", help="skip the country rules (use with --cap alone)")
     ap.add_argument("--dry", action="store_true", help="print the rules' counts and decoy shares, write nothing")
+    ap.add_argument("--samples", type=int, default=0, help="print this many random examples of each rule's pairs not fired by an earlier rule")
     a = ap.parse_args()
     P = config.paths()
     t0 = time.time()
@@ -120,7 +121,7 @@ def main() -> None:
     rules_list = [r for r in rules_list if not r.startswith(("protect:", "restore:"))]
     exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
     slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
-    if any(s.startswith(("typeswap", "typeins")) for s in rules_list):
+    if any(s.startswith(("typeswap", "typeins", "typeconf")) for s in rules_list):
         nA, nB = slots.filter(pl.col("k") >= 3).height, slots.filter(pl.col("k") == 0).height
         sw = own.filter(pl.col("swap")).join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
         sw = sw.with_columns(pl.col("a_core").str.split(" ").list.unique().alias("ta"), pl.col("b_core").str.split(" ").list.unique().alias("tb"))
@@ -132,6 +133,8 @@ def main() -> None:
         rr_all = rr
         own = own.with_columns(pl.col("b_core").alias("_b"))
         print(f"typeswap: slots A {nA}, B {nB}; words with ratio >= 0.75 and at least 100 pairs: {rr.filter((pl.col('ratio') >= 0.75) & (pl.col('nA') + pl.col('nB') >= 100)).height}", flush=True)
+        with pl.Config(tbl_rows=80):
+            print(rr.filter(pl.col("nA") + pl.col("nB") >= 100).sort("ratio", descending=True).head(80) if a.samples else "", flush=True)
     fired = []
     for spec in rules_list:
         k = spec.split(":")
@@ -207,6 +210,13 @@ def main() -> None:
             own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
             own = own.with_columns(pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().alias("_xb"))
             c = pl.col("swap") & pl.col("_xb").is_in(words) & (pl.col("p") < float(k[1]))
+        elif k[0] == "typeconf":  # typeconf:pmax[:rmin] a learned type word of the S1 is gone and another learned type word is in the pool name, whatever
+            # else changed (typeswap needs exactly one swapped word): a sibling of another type (`pompiers agence lycee` / `... collectif sasu`)
+            rmin = float(k[2]) if len(k) > 2 else 0.75
+            words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()
+            ta, tb = pl.col("a_core").str.split(" ").list.unique(), pl.col("b_core").str.split(" ").list.unique()
+            c = (ta.list.set_difference(tb).list.eval(pl.element().is_in(words)).list.any() & tb.list.set_difference(ta).list.eval(pl.element().is_in(words)).list.any()
+                 & (pl.col("p") < float(k[1])))
         elif k[0] == "typeins":
             rmin = float(k[2]) if len(k) > 2 else 0.75
             words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()
@@ -231,6 +241,10 @@ def main() -> None:
         fired.append((k[0], c))
         print(f"rule {spec}: fires on {n} of {own.height} predicted {a.country} pairs ({n / own.height:.4f}); decoy share S2, S3 {decoy_share(own.filter(c), slots)}; "
               f"not fired by an earlier rule {own.filter(new).height}, decoy share {decoy_share(own.filter(new), slots)}", flush=True)
+        if a.samples:
+            x = own.filter(new)
+            with pl.Config(tbl_rows=a.samples, fmt_str_lengths=40, tbl_width_chars=160):
+                print(x.sample(min(a.samples, x.height), seed=0).select("p", "src", "a_core", "b_core"), flush=True)
     if fired:
         any_c = pl.any_horizontal([c.fill_null(False) for _, c in fired])
         dropped = own.filter(any_c).select("q", "pid").with_columns(pl.lit(True).alias("_drop"))
