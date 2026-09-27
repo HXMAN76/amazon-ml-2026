@@ -16,6 +16,9 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - Model 2 (`xencFR2/model`) adds 100k "other tenant" negatives. Bases built by swapping France's xs and rebuilding the s22 stack for France only (US/India unchanged): `s22F1n`, `s22F2n`, `s22F12n` (mean logit), `s22F1s` (new score only on one-word swaps). On them `typeswap` fires on 3.5-6k pairs (s22: 25k) and `thrp` still drops 24-25k pairs at 44-46%/38-39% decoy share.
 
 
+## Portal readings
+- 27 Sep about 06:00: **`v8u_s27_AR` 0.985578** (+0.001076 over `s22t2c` 0.984502). Next suggested: `v8u_s22F12n_AR` (reads the France cross-encoders).
+
 ## Overnight work after 03:45 (user asleep; target 0.990 / top 50)
 - Findings: (1) France's noise-word swaps (fils, groupe, services, developpement) are true copies the model scores low: `thrpn` (thrp that also
   spares them) raises the decoy share of what it drops from 48% to 54% (the spared 7.8k pairs are about 16% decoys); 8.6k unowned noise-swap records
