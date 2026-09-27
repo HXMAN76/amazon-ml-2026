@@ -1,0 +1,107 @@
+# Every tunable lives here. Stages read only their own section; `ber.stamp` hashes that section
+# (plus the stage source files) so `make` reruns a stage exactly when its params or code change.
+prepare:
+  workers: 4
+  chunk_rows: 100000
+sample:
+  seed: 13
+  n_s1: 250000
+  folds: 5
+block:
+  k: 30                # candidates kept per S1
+  cap_df: 800          # tokens more frequent than this in the S2+S3 pool are ignored
+  per_type: {n: 4, a: 4, p: 3, c: 6, m: 3, d: 3, h: 3}   # rarest tokens kept per query and token type
+  prefix_len: 5
+  min_prefix_len: 7
+  comp:                # composite keys from the rarest words of each record
+    c: [2, 3]          # rarest 2 name words x rarest 3 address words
+    m: 3               # pairs among the rarest 3 name words
+    d: 3               # pairs among the rarest 3 address words
+    h: 3               # house/number token x rarest 3 non-numeric address words
+  types: [n, a, p, c, m, d, h]
+  batch_q: 100000
+  memory_limit: 10GB
+  threads: 4
+block_eval:
+  n_s1: 20000
+  seed: 7
+  runs:                # each run overrides block params; index for the pool is cached across runs
+    - {name: k30,   types: [n, a, p, c, m, d, h], over: {}}
+    - {name: k60,   types: [n, a, p, c, m, d, h], over: {k: 60}}
+    - {name: k100,  types: [n, a, p, c, m, d, h], over: {k: 100}}
+train_gpu:
+  device: auto         # cuda when a GPU is visible, else cpu
+  folds: 5
+  rounds: 600
+  early_stop: 30
+  max_depth: 8
+  eta: 0.1
+  subsample: 0.8
+  colsample: 0.8
+  min_child_weight: 1
+  seed: 0
+prune:                 # cascade blocking: block with k_raw candidates, keep the k_keep best by a learned first-stage ranker
+  k_raw: 100
+  k_keep: 30
+  rounds: 300
+  max_depth: 6
+  eta: 0.1
+  seed: 0
+stack:                 # consensus stacking on top of the first-stage probabilities p1
+  base: v2             # first-stage model whose p1 (oof + p1_rest + pair_p) feed the consensus features
+  sub_q: 400000        # training S1 drawn from the non-holdout S1 (holdout = 150k S1, seed 2026, see score_rest)
+  chunk_q: 100000
+  folds: 5
+  rounds: 500
+  early_stop: 30
+  max_depth: 7
+  eta: 0.08
+  device: auto
+  seed: 0
+  extra_features: false  # carry more first-stage columns (dense channel columns, coverage, skeleton, length) into the stack
+  decoy: false         # edit-type features of the core names (substitution vs indel, Hamming ...)
+  shortlist_k: 10      # candidate shortlist by first-stage p1: best K per S1 ...
+  shortlist_pmin: 0.005  # ... with p1 at least this (the best pair of every S1 is always kept); see zo8 report
+expf:                  # calibration and per-S1 expected-F0.5 selection on the stacked probabilities
+  base: s1
+  J: 12                # candidates per S1 modelled exactly; the rest enter as a Poisson term
+  tune_q: 100000
+  mu_grid: [0.0, 0.1, 0.2, 0.3]     # expected true matches outside the candidate list, per S1 (blocking misses)
+  shift_grid: [-0.4, -0.2, 0.0, 0.2]
+  seed: 0
+dense:                 # multilingual name embeddings for non-Latin pool records (see stages/dense.py)
+  k: 10                # nearest S1 names retrieved per non-Latin pool record (report)
+  k_merge: 5           # of these, the pairs added to the candidate shards
+  ft_s1: 300000        # India S1 used to fine-tune the encoder (outside the stage-1 sample and the locked holdout)
+  ft_epochs: 3
+  ft_batch: 512
+  ft_lr: 0.00003
+  ft_temp: 0.05
+  seed: 5
+dense_all:             # name + address embeddings for EVERY pool record (see stages/dense_all.py)
+  ft_s1: 250000        # S1 (all countries with labels) used to fine-tune; outside the stage-1 sample and the locked holdout
+  ft_epochs: 3
+  ft_batch: 384
+  ft_lr: 0.00003
+  ft_temp: 0.05
+  max_len: 48
+  k: 5                 # S1 neighbours retrieved per pool record
+  k_merge: 1           # of these, pairs that may be added (top-1 owner candidate of each pool record: zn2 report)
+  k_merge_empty: 3     # neighbours for pool records with an empty address (name-only records; zr1: 50% recall, 71% in candidates)
+  tau: 0.0             # no cosine cut-off: the threshold discards most of the recovered pairs (zn2 report)
+  seed: 11
+xenc:                  # cross-encoder on the uncertain band (see stages/xenc.py)
+  seed: 21
+  fit_s1: 400000       # S1 used to fit it (outside the sample, the holdout and the dense-encoder fitting sets)
+  band_lo: 0.02        # uncertain band of the first-stage probability p1
+  band_hi: 0.98
+  easy_pos_frac: 0.1   # share of confident positives added to the fit set
+  lr: 0.00003
+  batch: 128
+  epochs: 3
+  max_len: 128
+  score_batch: 512
+  symmetric: 0         # 1: random A/B order in training, both orders averaged (logits) when scoring, plus the column xs_asym
+pairs:
+  drop_frac: 0.0       # test-like universe: share of ALL train S1 dropped (outside the sample and holdout) before the competition and count features (0.21 mimics the test)
+  joint_counts: false  # name-rarity counts over train and test records together (removes the set-size shift between the splits)

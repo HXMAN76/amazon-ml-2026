@@ -1,0 +1,96 @@
+# Submission checklist (from the problem statement and the guidelines PDFs)
+
+Written 2026-09-25. Sources: `6ab5628d5a817_amazon_ml_challenge_problem_statement.pdf` and `6ab56657b4f1a_guidelines_and_key_instructions_amazon_ml_challenge_2026.pdf`. Status is what the repo does today; "owner" says who has to act. Update this file as items close.
+
+## A. Leaderboard file: `matching_results.tsv`
+
+| Requirement | Status | Owner |
+|---|---|---|
+| Tab-separated, exact columns `source1_entity_id`, `matched_entity_ids` | Done (checked by official validator header rule) | done |
+| Exactly one row per test S1 entity (1,732,544 rows), no duplicate S1 rows | Done (1,732,544 rows written from `test_source1`) | done |
+| Empty `matched_entity_ids` for singletons | Fixed: empty lists were once written as the two characters `""`, which the official validator rejects. Writer now uses `quote_style="never"`; verified on v0 and v1 outputs | done |
+| No duplicate IDs inside a list | Done by construction (one row per (S1, pool id) after grouping) | done |
+| IDs are S2-/S3- only, exist in the test set, no self-matches | Official validator with `--check-ids` passes on v0 (matching file) and on both v1 files (9,969,589 valid ids); bundled checker `src/scripts/check_submission.py` agrees | done |
+| Final matches are a subset of candidates | Verified by the bundled checker on v0 and v1: 0 violations; each S2/S3 record is matched to at most one S1 | done |
+| Format: UTF-8, plain TSV | Done | done |
+| Official validator prints PASS before every upload | PASS for v0 and v1 (v1 both files, with `--check-ids`); rerun for every new candidate file | done for v0 and v1 |
+| Upload in the portal, expect status `SCORED` | Human action, from one laptop or desktop only (see D). v1 is the recommended file (`runs/v1/output/matching_results.tsv`); on test France is matched at 94.8% of S1 (US 94.3%, India 92.9%) | human |
+
+## B. Final package: `<team_name>_submission.zip`
+
+```
+<team_name>_submission.zip
+├── output/matching_results.tsv        # same file as the leaderboard upload
+├── output/candidate_pairs.tsv         # the candidate set the model ran inference on
+├── code/business_entity_resolution/{src/, README.md, requirements.txt}
+└── Documentation_template.md          # filled in (a .pdf export is also allowed)
+```
+
+| Requirement | Status | Owner |
+|---|---|---|
+| `candidate_pairs.tsv` is the exact set fed to the model; every matched ID appears in it | Done for v0 (all 51.9M scored pairs are the candidates) | done |
+| Candidate file size | **Risk:** 691 MB raw (95 MB matching); gzip about 290 MB and 41 MB. Portal or zip size limits are unknown. If too large, lower K or keep only candidates above a low probability (must remain the exact set the model scored, so the model would also have to be rerun on that set) | ask organisers if a limit exists |
+| Code self-contained and runnable; anyone can regenerate both outputs from the training and test data | Done: `make reproduce` runs every stage; README lists steps and measured runtimes. The zip was unpacked in a clean virtualenv built from `requirements.txt` and its 14 tests pass. The full reproduction on the g5 was not rerun from the cleaned code (the v0 outputs came from the same logic before the unused legacy modules were removed) | done; rerun once before the final freeze |
+| All source under `src/`, plus `README.md` and pinned `requirements.txt` | `src/ber` exists; `configs/`, `Makefile`, `src/tests/`, `src/scripts/` sit beside `src/` (allowed as long as the README explains it). Legacy v0 modules removed | done |
+| Source code has proper comments describing the functions | Done: docstring audit shows every public function, class and module documented | done |
+| Code zip for the portal | `dist/business_entity_resolution_code.zip` (top folder `business_entity_resolution/`): all source under `src/` (`ber`, `scripts`, `tests`), README with run steps, pinned requirements including `anyascii` (ISC), docstrings on every function, unzip and 17 tests verified. Built before the cascade and vectorised-feature changes, so **rebuild from the final code before the last upload** (commands in `handoff.md` section 9) | rebuild at freeze |
+| Methodology document filled from `Documentation_template.md` (template is in S3 `docs/`) | **Not done.** Sections needed: executive summary, problem analysis, solution strategy, blocking (keys, number of candidate pairs, how true matches were kept), matching model (features, model, threshold method), results and error analysis, conclusion, appendix (code structure and entry points) | agent drafts, team reviews |
+| Guidelines say a 1 to 2 page document; the statement says no page limit | Keep the main body about 2 pages and move detail to the appendix | agent |
+| Team name, members, date for the template and zip name | Team `Nooglers`, four members recorded; date set at freeze. Draft methodology document at `submission/Documentation_template.md` | agent refreshes at freeze |
+
+## C. Rules that can disqualify
+
+| Rule | How we comply | Note |
+|---|---|---|
+| No external lookup of business identities: no commercial ER APIs, no government registries, no geocoding APIs, no internet data augmentation | Pipeline uses only the provided TSVs. Rules (abbreviations, legal forms) are hand-written in `text.py`, not fetched | State this in the methodology document, including that no pretrained model was used in v0 |
+| Final model MIT or Apache-2.0 and at most 8B parameters | v0 uses XGBoost (Apache-2.0); LightGBM (MIT) only in legacy code; no neural model yet | List every library and any pretrained model with licence in the document; later models (bge-m3 MIT, multilingual-e5 MIT, Qwen3 Apache-2.0) must be logged the same way |
+| Top teams' packages are reviewed in detail; results must reproduce | Needs the reproduce entry point (section B) and pinned versions | agent |
+| Multiple registrations or IDs: instant disqualification | Team members use one registration each | humans, confirm |
+
+## D. Operating limits and portal rules
+
+| Rule | What it means for us |
+|---|---|
+| Challenge window 25 Sep 2026 00:00 IST to 27 Sep 2026 23:59 IST | Freeze the final run well before the end; leave the last 6 hours for the package and re-validation |
+| Maximum **5 submissions per day**, 3 days | Plan uploads (v0 first, then only changes that beat the holdout); do not tune on the public leaderboard, which uses a subset of test. The private leaderboard decides the final ranking |
+| Maintain the version history of all submissions | `work/runs/runs.jsonl` and MLflow log every run; record the leaderboard score and file hash next to each upload |
+| Desktop or laptop only, no mobile; **no simultaneous logins** (one device per participant at a time, otherwise the challenge can be terminated) | Only one person uploads at a time from one device; never keep two sessions open |
+| Portal uploads are done by a human | The agent never automates portal actions; it only prepares and validates files |
+| Queries go through the organisers' Google Form; technical problems go to support@unstop.com with a screenshot and registered email | Human |
+| Top 100 teams later submit methodology, candidate generation strategy, model architecture and features, and possibly the final source code | Keep the code and document consistent with the final run |
+
+## E. Open items to close now
+
+1. Team name Nooglers; members Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj (given; names only, no contact details in the package). Final zip name `Nooglers_submission.zip`; submission date to be set at the final freeze (human).
+2. Portal: v2 **0.944** (25 Sep 1:46 PM IST), s4 **0.953** (10:21 PM), s3all **0.949** (10:53 PM). Upload only files that beat v2 on the locked holdout by more than the paired bootstrap interval; tell the agent every score (human).
+3. Ask the organisers, if unsure, whether the portal limits upload size (matching 95 MB, candidates 691 MB raw, about 290 MB gzipped) (human).
+4. Draft the methodology document with real numbers (agent): out-of-fold macro F0.5 0.9551 (v1) on the 250k train sample (not a holdout), blocking recall 0.9416, 51,892,359 test candidate pairs, error analysis; update after the holdout run and the final model.
+5. Rebuild the code zip from the final code, rerun the full reproduction once from scratch, and rerun the official validator on the final files (agent).
+6. Confirm each team member has a single registration (humans).
+
+## F. Added 25 Sep evening
+
+- Organisers' email: `candidate_pairs.tsv` and the code that generates it count toward the final ranking; a smaller candidate set per Source 1 entity ranks higher. Current sets average 32 per S1. The shortlist stage is being evaluated (`handoff.md` section 0); the file must list exactly the pairs the final model scored, and every matched id must be inside it (checked by `check_submission.py`).
+- Portal log for the methodology document (version history): v2 0.944 (25 Sep 13:46 IST), s4 0.953 (22:21), s3all 0.949 (22:53). Record every later upload here with time and score.
+- Cap of at most 5 S2 and 6 S3 matches per S1 (the training maximum): apply at the freeze if it does not lose on the holdout.
+- Run the official validator with `--check-ids` on the final files on the notebook (from the laptop the test sources download at about 1 MiB/s).
+
+## G. Added 26 Sep about 06:45 IST
+- Best files by holdout (none uploaded to the portal yet): `s15` 0.98935, `s13` 0.98917, `s11` 0.98887, `s12` 0.98505, all with 4.7 to 4.9 candidates per S1, all pass `check_submission.py` and the official validator (without `--check-ids`; run `--check-ids` on the notebook for the final file).
+- The final file must come from the pipeline that a clean reproduction rebuilds: `s15` needs `v7`, the cross-encoder model and its scores, the dense encoders and the stack; the reproduction budget is about 5 hours on the 16xlarge (blocking indexes have to be rebuilt).
+
+## H. Added 26 Sep about 12:10 IST
+- Portal log: v2 0.944 (13:46), s4 0.953 (22:21), s3all 0.949 (22:53), **s12 0.971976 (26 Sep, rank 402)**. Best by holdout not yet uploaded: `s14` 0.98986, `s16`, `s15`, `s13`.
+- Submissions left on 26 Sep: 4 (more tomorrow, possibly unlimited). Planned uses: `s14` as baseline, `s14f85`/`s14f95` (France threshold variants from `runs/s14f85/` and `runs/s14f95/` with `runs/s14/output/candidate_pairs.tsv`), then the final model.
+- Candidate file rule: every variant reuses the candidate file of its parent model (matches are a subset of it).
+
+## I. Added 26 Sep about 13:00 IST
+- Portal log: **`s17` 0.981 (26 Sep 12:31 PM)**, `s12` 0.972 (09:49 AM). Next uploads: `s17f85` (France threshold 0.85) to read France's behaviour; final candidates come from `EXPERIMENTS.md` section 6.2.
+
+## J. Added 26 Sep about 16:30 IST
+- Portal log: v2 0.944 (25 Sep 13:46), s4 0.953 (22:21), s3all 0.949 (22:53), s12 0.971976 (26 Sep 09:49, rank 402), **s17 0.981 (12:31)**, s17pf (France only) **0.187** (15:56), s17pu (US only) **0.453** (15:57). Probe files are diagnostic only, never final.
+- Result: France F0.5 about 0.92, US and India about 0.99; the France threshold sweep on `s22` (`s22f985` first, then `s22f97`, `s22f995`) and a France calibration are the next uploads. `s24` or `s25` join if they beat `s22` on the holdout.
+- Freeze checklist unchanged (zip, official validator with `--check-ids`, methodology document, one clean reproduction). If the final model is `s22` or later, update `reproduce_final.sh` and `README.md` (two extra stack steps, cross-encoder scoring on every shortlisted pair; if `s24`, Qwen3-0.6B Apache-2.0, 0.6B parameters).
+- Portal log addition (26 Sep evening): **`s22sx` 0.982477** (France swap rule on `s22`, best so far). Five submissions tomorrow; plan in `research.md` section 25.1 and `EXPERIMENTS.md` section 10.
+- Portal log addition (26 Sep, last slot): **`s22t2c` 0.984502** (`runs/s22t2c/output/`; France rules on `s22`: type-word swap rule, threshold 0.985, caps). Best so far. Corrected: `s17` 0.980502.
+

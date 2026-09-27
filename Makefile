@@ -1,35 +1,52 @@
-SHELL := /bin/bash
-BUCKET ?= $(AMLC_BUCKET)
+# Stage DAG with hash-based caching. A stage reruns exactly when its params section or its source changes.
+#   make prepare sample        (BER_DATA=dataset BER_WORK=work by default)
+PY ?= python
+export PYTHONPATH := src
+WORK ?= $(or $(BER_WORK),work)
+export BER_WORK := $(WORK)
+STAMPS := $(WORK)/.stamps
+DONE := $(WORK)/.done
 
-.PHONY: setup test lint mlflow push-code pull-data push-images push-artifacts pull-artifacts
+.PHONY: all prepare sample block_eval reproduce test clean-stamps FORCE
+all: sample
+FORCE:
 
-setup:            ## local env (GPU torch + HF + tracking)
-	uv sync --all-extras
+$(STAMPS)/prepare.hash: FORCE
+	@$(PY) -m ber.stamp prepare src/ber/text.py src/ber/stages/prepare.py
+$(STAMPS)/sample.hash: FORCE
+	@$(PY) -m ber.stamp sample src/ber/stages/sample.py
 
+$(STAMPS)/block_eval.hash: FORCE
+	@$(PY) -m ber.stamp block_eval --sections=block,block_eval src/ber/stages/block.py src/ber/stages/block_eval.py
+
+$(DONE)/prepare: $(STAMPS)/prepare.hash
+	$(PY) -m ber.stages.prepare
+	@mkdir -p $(DONE) && touch $@
+$(DONE)/sample: $(DONE)/prepare $(STAMPS)/sample.hash
+	$(PY) -m ber.stages.sample
+	@mkdir -p $(DONE) && touch $@
+
+$(DONE)/block_eval: $(DONE)/sample $(STAMPS)/block_eval.hash
+	$(PY) -m ber.stages.block_eval
+	@mkdir -p $(DONE) && touch $@
+
+prepare: $(DONE)/prepare
+sample: $(DONE)/sample
+block_eval: $(DONE)/block_eval
 test:
-	uv run pytest -q
+	$(PY) -m pytest -q src/tests
+clean-stamps:
+	rm -rf $(STAMPS) $(DONE)
 
-lint:
-	uv run ruff check src tests
-
-mlflow:           ## local experiment UI at http://127.0.0.1:5000
-	uv run mlflow ui --backend-store-uri sqlite:///mlflow.db
-
-push-code:        ## snapshot of HEAD for EC2 boxes (aws/40_launch_gpu.sh pulls it)
-	git archive --format=tar.gz HEAD | aws s3 cp - s3://$(BUCKET)/code/amlc.tar.gz
-
-pull-data:        ## raw dataset from hub
-	aws s3 sync s3://$(BUCKET)/00-raw/ data/raw/ --only-show-errors
-
-push-images:      ## downloaded images + manifest -> hub
-	aws s3 sync data/images/ s3://$(BUCKET)/01-images/ --only-show-errors
-
-pull-images:
-	aws s3 sync s3://$(BUCKET)/01-images/ data/images/ --only-show-errors
-
-push-artifacts:   ## features, preds, runs log -> hub
-	aws s3 sync artifacts/ s3://$(BUCKET)/03-features/artifacts/ --only-show-errors --exclude "runs.jsonl"
-	aws s3 cp artifacts/runs.jsonl s3://$(BUCKET)/07-experiments/runs-$${AMLC_MEMBER:-$$(hostname)}.jsonl
-
-pull-artifacts:
-	aws s3 sync s3://$(BUCKET)/03-features/artifacts/ artifacts/ --only-show-errors
+# End-to-end reproduction of output/matching_results.tsv and output/candidate_pairs.tsv from the raw TSVs.
+# Needs BER_DATA (folder with train/ and test/), BER_WORK (scratch, about 60 GB) and, for speed, a CUDA GPU
+# (XGBoost falls back to CPU automatically). Model name defaults to v0; outputs land in $(WORK)/output/$(NAME).
+NAME ?= v1
+reproduce: sample
+	$(PY) -m ber.stages.block --split test
+	$(PY) -m ber.stages.block --split train --all-train
+	$(PY) -m ber.stages.pairs --split train
+	$(PY) -m ber.stages.train_gpu --name $(NAME)
+	$(PY) -m ber.stages.pairs --split test
+	$(PY) -m ber.stages.predict --name $(NAME)
+	@echo "outputs: $(WORK)/output/$(NAME)/matching_results.tsv and candidate_pairs.tsv"

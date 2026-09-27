@@ -1,0 +1,10 @@
+# Tested client stack for Python 3.12.
+# Keep SageMaker on v2: sagemaker-ssh-helper 2.3.0 imports the legacy
+# top-level sagemaker.Session API, which is not available in SageMaker SDK v3.
+# AWS CLI v2 and Session Manager Plugin are system tools documented in
+# docs/archive/remote-setup.md; they are intentionally not installed from this file.
+sagemaker==2.257.6
+sagemaker-core==1.0.78
+sagemaker-ssh-helper==2.3.0
+boto3==1.43.101
+botocore==1.43.101

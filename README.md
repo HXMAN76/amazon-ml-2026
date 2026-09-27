@@ -1,131 +1,227 @@
-# Amazon ML Challenge 2026: team pipeline
+<p align="center">
+  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution: Amazon ML Challenge 2026, Team Nooglers. Best leaderboard score 0.987745, locked holdout 0.99088, 10.3M pool records, 12 uploads in 3 days.">
+</p>
 
-The challenge window runs from **24 Sep 18:30 UTC to 27 Sep 18:29 UTC**, which is 25 Sep 00:00 IST to 27 Sep 23:59 IST.
-Ranking uses the best score. Ties go to whoever submitted earlier, so a valid baseline submitted early is worth a lot.
-Before submitting you also need a 1–2 page approach document and a zip of the code.
+<p align="center">
+  <img alt="Leaderboard 0.987745" src="https://img.shields.io/badge/leaderboard-0.987745-e3b341?style=for-the-badge"> <img alt="Holdout F0.5 0.99088" src="https://img.shields.io/badge/holdout%20F0.5-0.99088-56d4c4?style=for-the-badge">
+</p>
+<p align="center">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-cross--encoders-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
+  <img alt="Hugging Face" src="https://img.shields.io/badge/Hugging%20Face-e5%20%7C%20Qwen3-FFD21E?style=flat-square&logo=huggingface&logoColor=black">
+  <img alt="XGBoost" src="https://img.shields.io/badge/XGBoost-2%20stages-189FDD?style=flat-square">
+  <img alt="DuckDB" src="https://img.shields.io/badge/DuckDB-blocking-FFF000?style=flat-square&logo=duckdb&logoColor=black">
+  <img alt="Polars" src="https://img.shields.io/badge/Polars-dataframes-CD792C?style=flat-square&logo=polars&logoColor=white">
+  <img alt="AWS SageMaker" src="https://img.shields.io/badge/AWS-SageMaker-FF9900?style=flat-square">
+</p>
 
-Rule of the stack: **cheap first, GPU only when needed, and every expensive output cached and sharded.**
+For every business record in Source 1 (S1), the task is to find the records in Source 2 and Source 3 (S2, S3) that describe the same business.
+Our solution has several stages:
+- candidate generation, first from a token index and then from two dense retrieval channels;
+- an XGBoost pair model;
+- fine-tuned multilingual cross-encoders;
+- a consensus stack that weighs the evidence from competing records;
+- a decoding step for France, the one country with no training data.
 
-```
-raw csv ──> downloader (async, resumable) ──> images + manifest ──> attach-images ──> *_img.parquet
-                                                                              │
-             text ──> tfidf/svd, numeric stats, sentence-embeddings ──┐       ├─> image embeddings (SigLIP/CLIP)
-                                                                      ├──> GBM k-fold (OOF) ──> blend ──> post-process ──> validator ──> submission.csv
-             VLM (4-bit, sharded, chunk-checkpointed) ─> parsed values ┘
-```
+Everything was built in three days (25 to 27 September 2026, IST) from the provided training data only.
 
-Compute pools, in order of use (budget: $200 of AWS credits per account, but GPU quota starts at 0):
-
-| Pool | What | Cost | Use for |
-|---|---|---|---|
-| Laptop | RTX 4060 8GB, 24 cores, 30GB RAM | $0 | GBMs, TF-IDF, small models, debugging |
-| Kaggle ×4 | T4×2 (32GB) or P100; 30 h/week each; the quota **resets Saturday 00:00 UTC**, which falls inside the window | $0 | long training, embeddings. Setup: [notebooks/kaggle_bootstrap.py](notebooks/kaggle_bootstrap.py) |
-| Modal ×4 | $30/month free credit per workspace (card required: set spend limit **$0** so only credits are used); L4/A10G/A100; up to 10 GPUs in parallel | $0 | big sharded inference (VLM or embeddings over the whole test set). Setup: [src/amlc/modal_app.py](src/amlc/modal_app.py) |
-| AWS hub | `s3://amlc-2026-hub-567503593043`, us-east-1 | ~$1–3 | shared data, images, features, predictions |
-| AWS GPU | account A is on the Paid plan; 4 vCPU of G-type quota requested (on-demand + spot) | g4dn spot ≈ $0.19/h, g6 ≈ $0.97/h | bonus, only if the quota is approved. [aws/40_launch_gpu.sh](aws/40_launch_gpu.sh) auto-terminates |
-
-### Modal setup (each member, ~5 min)
-
-```bash
-uv sync --all-extras
-uv run modal token new                      # browser login, creates your own workspace
-# Modal dashboard > Usage & Billing: add card, set custom spend limit $0 (credits only, card never charged)
-uv run modal secret create amlc-aws AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
-    AWS_DEFAULT_REGION=us-east-1 AMLC_BUCKET=amlc-2026-hub-567503593043 HF_TOKEN=hf_...
-# keys: amlc-external user. Create/paste them in a terminal OUTSIDE Claude so secrets never land in a transcript.
-uv run modal app list                       # anything 'ephemeral'/'deployed' still running is billing
-uv run modal app stop <app-id>
-```
-
-## Before the dataset drops (each member)
-
-- [ ] Accept the GitHub invite and clone. Run `make setup`, then `make test`.
-- [ ] **Kaggle**: create an account, **verify your phone** (needed for GPU and internet), and add Secrets: `GITHUB_TOKEN`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AMLC_BUCKET`.
-- [ ] **Hugging Face**: create an account and a read token, then run `huggingface-cli login`. Some models (Llama, Gemma, PaliGemma) need you to accept a license on the model page first.
-- [ ] **AWS**: work in your own account's CloudShell (console, top bar `>_`), region **us-east-1**:
-  ```bash
-  git clone https://github.com/HXMAN76/amazon-ml-2026.git && cd amazon-ml-2026
-  bash aws/00_account_check.sh                    # paste output in team chat
-  ALERT_EMAIL=you@x.com bash aws/02_budget.sh     # cost alarm
-  bash aws/01_request_quotas.sh                   # GPU quotas (Paid plan only, see below)
-  bash aws/20_compute_role.sh                     # role for EC2/SageMaker (needs env.sh filled)
-  ```
-- [ ] **Account A only**: fill the account ids in [aws/env.sh](aws/env.sh) and commit. Then run `bash aws/10_hub_bucket.sh` and `bash aws/15_external_user.sh`.
-- [ ] **B, C, D**: run `bash aws/30_verify_hub_access.sh`. It should print PASS for list, write, read, and the 00-raw denial.
-- [ ] **Laptop AWS access**: run `aws login --profile amlc`, then `export AWS_PROFILE=amlc AMLC_BUCKET=amlc-2026-hub-567503593043`.
-
-### Free plan vs Paid plan
-
-Free plan accounts **cannot launch GPU instances**, and GPU quota requests are usually denied.
-Upgrading to Paid (Billing console > Free Tier > Upgrade) keeps the remaining credits.
-After upgrading, usage beyond the credits is billed to your card. The budget from `02_budget.sh` counts usage *before* credits are applied, so its emails show real burn.
-Recommendation: upgrade one or two accounts at most. The others stay Free plan and are used for S3 and CPU work.
-**Do not join AWS Organizations.** Doing so forces the Paid plan on every account and merges Free Tier benefits.
-
-## Hour 0–3 playbook
-
-1. **Read the rules twice.** Note the allowed model params and license (2025 capped this), whether external data is allowed, the metric, the submission format, and the daily submission limit.
-2. Fill in [configs/submission.yaml](configs/submission.yaml) and add the metric to [src/amlc/evaluation.py](src/amlc/evaluation.py) if it is new.
-3. Upload the raw dataset once: `aws s3 sync data/raw/ s3://$AMLC_BUCKET/00-raw/`. This folder is immutable.
-4. Split image downloads across the four machines using row ranges. Example for the test set with N rows:
-   ```bash
-   python -m amlc.data.downloader --input data/raw/test.csv --url-col image_link \
-       --out data/images --max-side 512 --start 0 --end 40000        # member 1: 0-40k, member 2: 40k-80k ...
-   make push-images                                                  # everyone syncs to 01-images/
-   ```
-5. **Submit a baseline within about 2 hours.** Use TF-IDF plus a GBM for tabular/text tasks, or a regex/unit parser for extraction tasks. That gives real leaderboard feedback and a timestamp.
-6. Then run the parallel tracks. Suggested split:
-
-| Member | Track |
+| | |
 |---|---|
-| A | data hub, downloads, validator, submissions, write-up |
-| B | text features, GBMs, CV, blending |
-| C | image embeddings (SigLIP/CLIP), MLP heads |
-| D | VLM / LoRA fine-tune (quantized), post-processing |
+| Best leaderboard score | **0.987745** (`v8w_s29_FIN`, 27 Sep) |
+| Locked holdout (US and India), first model → best stack | 0.9565 → 0.99088 |
+| France F0.5 (estimated from leaderboard probes) | about 0.92 (day 2) → about 0.977 (`v8w_s29_FIN`) |
 
-## Commands
+The full story, version by version, is in **[docs/build-log.md](docs/build-log.md)**.
+
+<p align="center">
+  <img src="docs/assets/leaderboard.svg" width="100%" alt="Line chart of the 12 leaderboard uploads over three days, from 0.944 (v2) to the best 0.987745 (v8w_s29_FIN), against the leader at 0.991829. Two uploads went down: v8u_s22F12n_AR (0.984136) and v9_xF2_FIN (0.987208).">
+</p>
+<p align="center"><sub>Two diagnostic uploads on 26 Sep (France only 0.187, US only 0.453) are left out: they were country probes, not candidate solutions.</sub></p>
+
+---
+
+## 1. The task
+
+- **Input:** 1.73M test S1 records against 4.89M S2 and 5.08M S3 records, all noisy.
+  - The noise includes typos, digit-for-letter swaps, dropped or reordered words, legal-form variants, "doing business as" aliases, missing addresses and non-Latin scripts.
+  - Training has 2.21M labelled S1.
+- **Output:**
+  - `matching_results.tsv`: the matches of every S1;
+  - `candidate_pairs.tsv`: the candidate set that was scored.
+- **Metric:** F0.5 per S1, averaged, so precision counts four times as much as recall.
+  - An S1 with no true match scores 1 only if its list is empty.
+- **Structure found in the data:**
+  - each S1 has at most 5 S2 and 6 S3 matches;
+  - every pool record belongs to at most one S1;
+  - 5.6% of S1 have no match.
+- **The catch:** the test mix is US 38%, India 47%, France 15%, and **France has no records in training at all**. France turned out to be the largest source of lost score.
+- **Rules:** open models under MIT or Apache-2.0 with at most 8B parameters, no external data or lookups, five leaderboard uploads a day.
+
+## 2. The final pipeline
+
+<p align="center">
+  <img src="docs/assets/pipeline.svg" width="100%" alt="Pipeline: normalise, candidates, pair model, cross-encoders, consensus stack, decision, France decoding, then matching_results.tsv.">
+</p>
+
+| Stage | What it does | Code |
+|---|---|---|
+| 1. Normalise | HTML entities, accents, digit-for-letter repair, alias and legal-form fields, romanisation of non-Latin names | `ber/stages/prepare.py`, `ber/text.py` |
+| 2. Candidates | Weighted token index in DuckDB (100 per S1, pruned to 30 by a learned ranker), plus two dense channels from a fine-tuned `multilingual-e5-small`: one over names, one over "name \| address". 98.4% of true pairs are found. | `block.py`, `prune.py`, `dense.py`, `dense_all.py` |
+| 3. Pair model | XGBoost on 67 features: similarity, rarity, digits, legal forms, competition between S1. Keeps about 4.7 candidates per S1, the submitted candidate file. | `pairs.py`, `train_gpu.py`, `score_rest.py` |
+| 4. Cross-encoders | Models that read both records together: e5-small, e5-base (symmetric, two seeds averaged) and Qwen3-0.6B, fine-tuned on training pairs | `xenc.py`, `xenc_fr.py` |
+| 5. Consensus stack | Second XGBoost (depth 9, 1.5M S1) over the cross-encoder scores and evidence from the S1's other candidates and from rival S1 | `stack.py` |
+| 6. Decision | Each pool record goes to at most one S1, an F0.5-tuned threshold, at most 5 S2 and 6 S3 matches per S1 | `predict.py`, `decision.py` |
+| 7. France decoding | Rules for the unlabelled country, each backed by a measurement (see below) | `src/scripts/france/` |
+
+**France decoding.** Every rule was accepted only when France kept far more pairs of that kind per 1,000 S1 than the US and India do. On the labelled holdout those kinds are 99%+ true, so a large French excess is decoys.
+- Sibling decoys that swap the business-type word, from a learned vocabulary of 43 words (`nje ecole` against `nje centre`).
+- Legal-form conflicts (`SARL` against `SAS`).
+- Namesakes on another street.
+- A 0.9999 cut-off for France's over-confident probabilities, with exceptions for French copy forms: noise words (`fils`, `groupe`, `et associes`), initials, spaced legal forms (`s a r l`) and glued names.
+- Re-adding unowned copies at the S1's own address.
+
+The leaderboard gave a break-even point: a French rule helps when more than 26% of what it drops is wrong.
+
+## 3. How we got there
+
+| Version | Day | Main change | Holdout | Leaderboard |
+|---|---|---|---|---|
+| `v0` | 1 | Token blocking and XGBoost, 42 features | 0.9377* | – |
+| `v2` | 1 | Cascade blocking with a learned pruner, locked 150k-S1 holdout | 0.9565 | 0.944 |
+| `s1`–`s4` | 1 | Consensus stack, dense name channel | 0.9708 | 0.953 |
+| `s6` | 1–2 | Name-and-address dense channel, short list | 0.9832 | – |
+| `s12` | 2 | Decoy features, 1.5M S1, deeper stack | 0.98505 | 0.971976 |
+| `s17` | 2 | Cross-encoders (e5-small and e5-base) | 0.99025 | 0.980502 |
+| `s22sx`, `s22t2c` | 2 | First France rules: word swap, type swaps, French threshold, caps | 0.99054 | 0.984502 |
+| `v8u_s27_AR` | 3 | Symmetric cross-encoder, France cut-off with protections | 0.99063 | 0.985578 |
+| `v8w_s29_AR` | 3 | Qwen3-0.6B cross-encoder | 0.99088 | 0.985875 |
+| **`v8w_s29_FIN`** | 3 | France rules measured per 1,000 S1 (type words, legal forms, namesakes, 0.9999 cut, alias fix) | 0.99088 | **0.987745** |
+| `v9_xF2_FIN` | 3 | French-aware cross-encoder restores and drops on `s28` | 0.990770 | 0.987208 |
+| `v9_s30F_FIN` | after close | Stack `s30F` with the French-aware cross-encoder as a feature | 0.990776 | not uploaded |
+
+\* Out-of-fold on the training sample. The holdout covers only the US and India, because training has no French records.
+
+**Turning points**
+- **Day 1: recall first.** The first loss analysis showed that candidate generation capped the score at 0.978. The learned pruner and the two dense channels moved the holdout from 0.9565 to 0.9832.
+- **Day 2: cross-encoders.** These were the biggest modelling gain, and the one that transferred best to the test.
+  - Two diagnostic uploads (France only, US only) then showed that the US and India were at about 0.99 but France only at about 0.92.
+  - The focus moved to France.
+- **Day 3: measure France without labels.** Comparing France's pairs per 1,000 S1 with the US/India rates replaced a biased estimate and gave the FIN rules, our best score.
+  - A French-rewritten copy of the holdout (training records rewritten in French form, labels kept) then measured the real cause: the cross-encoder's average precision fell from 0.9993 to 0.9710 on French-form names.
+- **After the window closed.** An e5-base cross-encoder trained on original plus French-rewritten training pairs (`xencFZ`) scores 0.9992 average precision on the French-rewritten pairs.
+  - The stack built on it (`s30F`) raises the French-rewritten holdout from 0.976026 (`s28`) to **0.986655**, with the US/India holdout unchanged (0.990776).
+  - Its file `v9_s30F_FIN` passes the official validator but could not be uploaded.
+  - A caution: `v9_xF2_FIN`, which used the same cross-encoder for restores and drops on top of the FIN rules, scored 0.987208 on the leaderboard, below the best. Gains on the French-rewritten holdout did not fully carry over to the real French records.
+
+**Tried and dropped:**
+- per-country and rank-dependent thresholds;
+- sub-group recalibration;
+- matching "twin" names between pool records;
+- raw spelling before normalisation;
+- a French cross-encoder trained on synthetic pairs (it cost 0.0014 on the leaderboard);
+- self-training on French pseudo-labels (it only reproduced the existing rules).
+
+Training uses only the provided labels.
+
+## 4. Repository layout
+
+```
+.
+├── README.md                  this file
+├── src/
+│   ├── ber/                   the pipeline package: text normalisation, config, decision, split, tracking, validation
+│   │   └── stages/            prepare, sample, block, prune, dense, dense_all, pairs, train_gpu, score_rest,
+│   │                          xenc, xenc_fr, stack, predict
+│   ├── scripts/france/        France decoding and French adaptation (france_variants.py, france_lists.py,
+│   │                          frenchify.py, stack_langfree.py, xfz*.py and their helpers)
+│   ├── scripts/stack/         score and stack tools (avg_xenc.py, xs_merge.py, blend_stacks.py, paired_models.py, ...)
+│   ├── scripts/check_submission.py
+│   └── tests/                 unit and end-to-end tests
+├── configs/params.yaml        every tunable
+├── Makefile                   stage targets with hash-based caching, `make test`
+├── reproduce_final.sh         the exact command sequence of the submitted model
+├── requirements.txt           every dependency (pipeline, torch steps, SageMaker client)
+├── aws/
+│   ├── sm/                    job client: publish code, enqueue jobs, follow logs (sm.py)
+│   └── queue/                 SageMaker notebook job runner (GPU and CPU lanes) and the build jobs
+├── docs/
+│   ├── build-log.md           the full three-day story
+│   ├── pipeline.md            the pipeline in detail: stages, France decoding, reproduction, licences
+│   ├── assets/                README figures (banner, leaderboard chart, pipeline diagram)
+│   ├── handoffs/              handoff notes between sessions and teammates
+│   └── archive/               plans, architecture notes and handoffs of earlier versions
+└── output/                    downloaded submission files (git-ignored)
+```
+
+## 5. Reproducing
+
+[docs/pipeline.md](docs/pipeline.md) gives the requirements, the environment setup and the checks. In short, from the repository root:
 
 ```bash
-# attach local image paths (after download)
-python -m amlc.data.io --input data/raw/train.csv --images data/images --out data/train_img.parquet
-
-# image / text embeddings, sharded (--shard i --num-shards n), resumable
-python -m amlc.features.embed image --input data/train_img.parquet --col image_path \
-    --model google/siglip2-base-patch16-224 --out artifacts/emb/train/siglip2 --shard 0 --num-shards 1
-python -m amlc.features.embed text --input data/raw/train.csv --col catalog_content \
-    --model BAAI/bge-small-en-v1.5 --out artifacts/emb/train/bge-small
-python -m amlc.inference.shard artifacts/emb/train/siglip2 --to artifacts/emb/train/siglip2.parquet --expected-rows N
-
-# VLM, 4-bit, chunk-checkpointed, prompt filled from row columns
-python -m amlc.inference.vlm --input data/test_img.parquet --model Qwen/Qwen2.5-VL-3B-Instruct --load-in-4bit \
-    --prompt "What is the {entity_name}? Answer '<number> <unit>' only." --out artifacts/vlm/test/q3b --shard 0 --num-shards 4
-
-# LoRA fine-tune (auto-resumes from latest checkpoint)
-python -m amlc.training.finetune_text --train data/raw/train.csv --text-col catalog_content --label-col price \
-    --task reg --target log1p --model microsoft/deberta-v3-small --output-dir checkpoints/deb-lora --bf16
-
-# validate before EVERY upload
-python -m amlc.submission.validator outputs/submission.csv --test data/raw/test.csv
-
-make mlflow        # experiment UI (local sqlite)
-make push-artifacts / pull-artifacts
-bash aws/99_stop_all.sh   # cost panic button
+pip install -r requirements.txt            # one environment; use a CUDA build of torch for the GPU steps
+export BER_DATA=/path/to/dataset BER_WORK=/path/to/work
+bash reproduce_final.sh                     # set TORCH_PYTHON=<python> only if torch lives in another environment
 ```
 
-GBM plus blend, used from a notebook:
+`reproduce_final.sh` rebuilds the submitted file `v8w_s29_FIN` (stack `s29` with the final France decoding) into `$BER_WORK/output/final/`; the
+`s28` variant `v8u_s28_FIN` is built on the way. Expect about 6 hours on 64 vCPU and one A10G GPU.
 
-```python
-from amlc.models.gbm import cv_train, blend
-from amlc.tracking import track
-with track("EXP-003", params={"feats": "tfidf+siglip"}, tags={"dataset": "v1"}) as run:
-    r = cv_train(X, y, X_test, model="lgbm", metric="smape", target="log1p", name="EXP-003")
-    run.log_metrics({"cv_smape": r["score"]})
-```
+On AWS, the same steps ran as queued jobs on a SageMaker notebook: `python aws/sm/sm.py publish`, then `python aws/sm/sm.py enqueue aws/queue/jobs/<job>.sh`.
 
-## Cost rules
+The jobs kept in `aws/queue/jobs/` are:
+- the FIN build: `v8h5_fin`;
+- delivery: `v8w_deliver`;
+- the v9 chain: `v9a2_frenchify` (French-rewritten training copy), `v9a4_xfz` (French-aware cross-encoder), `v9a6_scoreFZ` (scoring) and `v9a7_s30F` (stack, holdout tests, final file).
 
-1. No GPU runs while nobody is watching it. `40_launch_gpu.sh` always sets an auto-terminate.
-2. Use CPU (laptop or Kaggle CPU) for EDA, TF-IDF and GBMs.
-3. Cache every expensive output (images, embeddings, VLM answers) in S3 once, and let everyone reuse it.
-4. Prefer spot instances. Chunk checkpoints mean an interruption loses at most 500 rows.
-5. Run `aws/99_stop_all.sh` before sleeping.
+## 6. Documents
+
+| Document | What it holds |
+|---|---|
+| `docs/build-log.md` | Every version, every leaderboard reading, why each step was taken, what we learned |
+| `docs/pipeline.md` | The pipeline in detail: every stage, the France decoding rules, reproduction, holdout results, licences |
+| `docs/handoffs/v8-france-handoff.md` | State of the France work on day 3 (v8 recipe, delivered files, open questions) |
+| `docs/handoffs/team-handoff.md` | The team's running handoff: infrastructure, status, data facts |
+| `docs/handoffs/team-aws-handoff.md` | Handoff for teammates continuing on their own AWS accounts |
+| `docs/archive/architecture-reference.md` | Architecture reference up to `s17`–`s22`, with component details |
+| `docs/archive/experiments-registry.md` | Registry of experiments and runs |
+| `docs/archive/research-notes.md` | Measurements and research notes |
+| `docs/archive/implementation-context.md` | Data facts and infrastructure context |
+| `docs/archive/team-guide.md` | How the team trained and ran jobs |
+| `docs/archive/submission-checklist.md` | Rules from the problem statement and guidelines |
+| `docs/archive/v1-…` to `v8-…` | Plans, architecture notes, handoffs and build notes of each earlier version |
+
+## 7. Models and licences
+
+- XGBoost (Apache-2.0).
+- `intfloat/multilingual-e5-small` and `-base` (MIT; 118M and 278M parameters).
+- `Qwen/Qwen3-0.6B` (Apache-2.0).
+- The libraries are numpy, pandas, scikit-learn, polars, duckdb, rapidfuzz, anyascii, torch and transformers, all under MIT, BSD, ISC or Apache licences.
+
+Every model is far below the 8B limit. No external data or lookups are used. The legal-form, abbreviation and French-rewrite tables are hand-written string rules.
+
+## Team Nooglers
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%">
+      <a href="https://github.com/SaiNivedh26"><img src="https://github.com/SaiNivedh26.png?size=200" width="100" alt="Sai Nivedh V"></a><br>
+      <b>Sai Nivedh V</b><br>
+      <a href="https://github.com/SaiNivedh26">@SaiNivedh26</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/Git-Roshan09"><img src="https://github.com/Git-Roshan09.png?size=200" width="100" alt="Roshan T"></a><br>
+      <b>Roshan T</b><br>
+      <a href="https://github.com/Git-Roshan09">@Git-Roshan09</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/HXMAN76"><img src="https://github.com/HXMAN76.png?size=200" width="100" alt="Hari Heman V K"></a><br>
+      <b>Hari Heman V K</b><br>
+      <a href="https://github.com/HXMAN76">@HXMAN76</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/imbaraniii"><img src="https://github.com/imbaraniii.png?size=200" width="100" alt="Baranidharan S"></a><br>
+      <b>Baranidharan S</b><br>
+      <a href="https://github.com/imbaraniii">@imbaraniii</a>
+    </td>
+  </tr>
+</table>

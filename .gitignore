@@ -1,25 +1,8 @@
-.venv/
+smssh-venv/
+.venv-ber/
 __pycache__/
 *.pyc
+dist/
 .pytest_cache/
 .ruff_cache/
-.ipynb_checkpoints/
-
-# data and artifacts never go to git; they live in S3 / Kaggle datasets
-data/
-!data/.gitkeep
-artifacts/
-mlruns/
-mlflow.db
-outputs/
-checkpoints/
-*.parquet
-*.npy
-*.csv
-!configs/*.csv
-*.zip
-
-# secrets
-.env
-*.pem
-aws/out/
+/output

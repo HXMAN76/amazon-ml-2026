@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420">
+<rect width="960" height="420" rx="14" fill="#161b22"/>
+<text x="28" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#e6edf3">Three days, day by day</text>
+<text x="28" y="64" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8b949e">What each day built, and the best leaderboard score at its end</text>
+<line x1="48" y1="92" x2="912" y2="92" stroke="#30363d" stroke-width="2"/>
+<circle cx="48" cy="92" r="7" fill="#56d4c4"/>
+<rect x="28" y="110" width="288" height="288" rx="12" fill="#0d1117" stroke="#56d4c4" stroke-opacity="0.6"/>
+<text x="46" y="136" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#56d4c4">DAY 1  <tspan fill="#8b949e" letter-spacing="0.5" font-weight="400">Thu 25 Sep</tspan></text>
+<text x="46" y="158" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Candidates and a first model</text>
+<text x="46" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">morning</text>
+<text x="120" y="188" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">v0: token blocking + XGBoost</text>
+<text x="46" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">13:46</text>
+<text x="120" y="211" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">v2: learned pruner, locked holdout,</text>
+<text x="120" y="234" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">first upload 0.944</text>
+<text x="46" y="257" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">afternoon</text>
+<text x="120" y="257" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s1: consensus stacking</text>
+<text x="46" y="280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">evening</text>
+<text x="120" y="280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s4: dense name channel</text>
+<text x="46" y="303" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">night</text>
+<text x="120" y="303" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s6: name + address channel</text>
+<line x1="46" y1="344" x2="298" y2="344" stroke="#30363d"/>
+<text x="46" y="368" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">best at the end of the day</text>
+<text x="298" y="368" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="800" fill="#56d4c4">0.953</text>
+<circle cx="356" cy="92" r="7" fill="#6cb6ff"/>
+<rect x="336" y="110" width="288" height="288" rx="12" fill="#0d1117" stroke="#6cb6ff" stroke-opacity="0.6"/>
+<text x="354" y="136" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#6cb6ff">DAY 2  <tspan fill="#8b949e" letter-spacing="0.5" font-weight="400">Fri 26 Sep</tspan></text>
+<text x="354" y="158" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Cross-encoders; France is the gap</text>
+<text x="354" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">morning</text>
+<text x="428" y="188" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s12: stronger stack, 0.971976</text>
+<text x="354" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">noon</text>
+<text x="428" y="211" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">e5 cross-encoders</text>
+<text x="354" y="234" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">afternoon</text>
+<text x="428" y="234" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s17: 0.980502</text>
+<text x="354" y="257" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">15:56</text>
+<text x="428" y="257" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">country probes: France ≈ 0.92</text>
+<text x="354" y="280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">evening</text>
+<text x="428" y="280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s22sx, s22t2c: first French rules</text>
+<line x1="354" y1="344" x2="606" y2="344" stroke="#30363d"/>
+<text x="354" y="368" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">best at the end of the day</text>
+<text x="606" y="368" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="800" fill="#6cb6ff">0.984502</text>
+<circle cx="664" cy="92" r="7" fill="#e3b341"/>
+<rect x="644" y="110" width="288" height="288" rx="12" fill="#0d1117" stroke="#e3b341" stroke-opacity="0.6"/>
+<text x="662" y="136" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="2" fill="#e3b341">DAY 3  <tspan fill="#8b949e" letter-spacing="0.5" font-weight="400">Sat 27 Sep</tspan></text>
+<text x="662" y="158" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#e6edf3">Measured France rules</text>
+<text x="662" y="188" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">06:00</text>
+<text x="736" y="188" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">v8 recipe on s27: 0.985578</text>
+<text x="662" y="211" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">morning</text>
+<text x="736" y="211" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">s29: Qwen3-0.6B cross-encoder</text>
+<text x="662" y="234" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">afternoon</text>
+<text x="736" y="234" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">France rates per 1,000 S1</text>
+<text x="662" y="257" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">20:45</text>
+<text x="736" y="257" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">v8w_s29_FIN: 0.987745 (best)</text>
+<text x="662" y="280" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#8b949e">23:20</text>
+<text x="736" y="280" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#e6edf3">v9 French-aware: 0.987208</text>
+<line x1="662" y1="344" x2="914" y2="344" stroke="#30363d"/>
+<text x="662" y="368" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">best at the end of the day</text>
+<text x="914" y="368" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="800" fill="#e3b341">0.987745</text>
+</svg>
