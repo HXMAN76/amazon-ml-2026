@@ -99,8 +99,13 @@ py ber.stages.stack predict --name s28
 #    (learned vocabulary, from slot occupancy), a stricter cut-off for France's over-confident probabilities, and the training maximum of 5 S2 and 6 S3 matches per S1.
 #    The candidate file is unchanged; only matches are removed.
 python src/scripts/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.985" --cap
-#    Version 8 of the decoding (README "Decoding (France)") on s28: the final file (v8u_s28_AR)
-python src/scripts/france_variants.py s28 final --rules "typeswap:1.01,thrpn:0.995,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
+#    Version 8 of the decoding (README "Decoding (France)") on s28. Every rule was chosen by comparing France's pairs per 1,000 S1 with the US / India
+#    rates of the same kind (the labelled holdout keeps those kinds 99%+ true): a French excess is decoys. First the rule-based run, then the pair lists
+#    built on it (namesakes on another street, coined copies the 0.9999 cut over-drops), then the final file (v8u_s28_FIN).
+R="typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01"
+python src/scripts/france_variants.py s28 v8u_s28_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
+python src/scripts/france_lists.py v8u_s28_ALL2
+python src/scripts/france_variants.py s28 final --rules "$R,droplist:fb_ns_ref,droplist:fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:fb_coined_hi" --cap
 
 # 10. checks (the official validator is also run by `emit` when work/official/validate_submission.py exists)
 python src/scripts/check_submission.py "$BER_WORK/output/final" "$BER_DATA/test"
