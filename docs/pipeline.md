@@ -70,15 +70,15 @@ training data never shows and the model therefore scores low:
 
 ## Reproduce
 
-Requirements: two Python 3.12 environments (`requirements.txt`; and `requirements-gpu.txt` with a CUDA build of torch for the dense
-retrieval and cross-encoder steps), a CUDA GPU (24 GB was used), 64 CPU cores and 256 GB RAM recommended (it also runs on smaller machines
+Requirements: Python 3.12 with `requirements.txt` (use a CUDA build of torch for the dense retrieval and cross-encoder
+steps), a CUDA GPU (24 GB was used), 64 CPU cores and 256 GB RAM recommended (it also runs on smaller machines
 with smaller chunk sizes, only slower), about 120 GB of scratch disk.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 export BER_DATA=/path/to/dataset     # folder containing train/ and test/ (the TSV files from the challenge)
 export BER_WORK=/path/to/work        # scratch and outputs
-TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh   # runs every stage in order; about 6 hours on 64 vCPU + A10G
+bash reproduce_final.sh   # runs every stage in order; about 6 hours on 64 vCPU + A10G
 ```
 
 The outputs are `$BER_WORK/output/s17/matching_results.tsv` (leaderboard file) and `$BER_WORK/output/s17/candidate_pairs.tsv`. Validate

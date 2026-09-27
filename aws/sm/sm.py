@@ -43,7 +43,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 PKG_NAME = "business_entity_resolution"   # name of the code directory on the job (/opt/code/<PKG_NAME>) and the notebook
-PKG_ITEMS = ["src", "configs", "Makefile", "reproduce_final.sh", "requirements.txt", "requirements-gpu.txt"]   # repo-root paths shipped
+PKG_ITEMS = ["src", "configs", "Makefile", "reproduce_final.sh", "requirements.txt"]   # repo-root paths shipped
 ENTRY = Path(__file__).resolve().parent / "entry.py"
 REGION = "us-east-1"
 IMAGE = "763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.7.1-gpu-py312"   # AWS PyTorch DLC, Python 3.12, CUDA

@@ -53,7 +53,7 @@ s3://ml-challenge-nooglers/ml-challenge-2026/checkpoints/<owner = profile name>/
 ## Notes
 
 - The image is the AWS PyTorch training DLC `pytorch-training:2.7.1-gpu-py312`: CUDA matched to the host, Python 3.12 for the pins.
-  `entry.py` installs `requirements.txt` + `requirements-gpu.txt` on top. The models (multilingual-e5-small, the cross-encoder) download
+  `entry.py` installs `requirements.txt` on top. The models (multilingual-e5-small, the cross-encoder) download
   from Hugging Face inside the job, and the job's quota allows one ml.g5.4xlarge at a time.
 - Rebuildable large files (DuckDB pool indexes, the raw K-150 candidate lists) are not saved to S3.
 - If a job fails, fix the code and resubmit the same `--run` with the remaining stages: `make` skips stages whose outputs and

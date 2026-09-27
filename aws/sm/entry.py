@@ -2,7 +2,7 @@
 """GPU-side entry point of a SageMaker training job that runs BER pipeline stages (started by aws/sm/sm.py).
 
 Inside the job container (AWS PyTorch DLC, Python 3.12, CUDA matched to the host):
-  1. print the machine (GPU, CPUs, RAM, disk) and install requirements.txt + requirements-gpu.txt into the image's Python;
+  1. print the machine (GPU, CPUs, RAM, disk) and install requirements.txt into the image's Python;
   2. restore WORK from S3 (BER_WORK_S3), so every job continues where the previous one stopped;
   3. run each stage in BER_STAGES with `make <stage>` (or `smoke`: GPU check + the test suite), printing timestamped markers;
   4. after every stage, save WORK to S3 (mirror, deletions included; rebuildable large files excluded), so a failure keeps finished work;

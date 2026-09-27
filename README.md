@@ -140,7 +140,7 @@ Training uses only the provided labels.
 ├── configs/params.yaml        every tunable
 ├── Makefile                   stage targets with hash-based caching, `make test`
 ├── reproduce_final.sh         the exact command sequence of the submitted model
-├── requirements.txt           CPU environment; requirements-gpu.txt for the torch steps
+├── requirements.txt           every dependency (pipeline, torch steps, SageMaker client)
 ├── aws/
 │   ├── sm/                    job client: publish code, enqueue jobs, follow logs (sm.py)
 │   └── queue/                 SageMaker notebook job runner (GPU and CPU lanes) and the build jobs
@@ -150,7 +150,6 @@ Training uses only the provided labels.
 │   ├── assets/                README figures (banner, leaderboard chart, pipeline diagram)
 │   ├── handoffs/              handoff notes between sessions and teammates
 │   └── archive/               plans, architecture notes and handoffs of earlier versions
-├── data/                      place for the challenge dataset (not committed)
 └── output/                    downloaded submission files (git-ignored)
 ```
 
@@ -159,9 +158,9 @@ Training uses only the provided labels.
 [docs/pipeline.md](docs/pipeline.md) gives the requirements, the environment setup and the checks. In short, from the repository root:
 
 ```bash
-pip install -r requirements.txt            # plus requirements-gpu.txt in a second environment for the torch steps
+pip install -r requirements.txt            # one environment; use a CUDA build of torch for the GPU steps
 export BER_DATA=/path/to/dataset BER_WORK=/path/to/work
-TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh
+bash reproduce_final.sh                     # set TORCH_PYTHON=<python> only if torch lives in another environment
 ```
 
 `reproduce_final.sh` rebuilds the submitted file `v8w_s29_FIN` (stack `s29` with the final France decoding) into `$BER_WORK/output/final/`; the

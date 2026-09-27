@@ -15,7 +15,7 @@ aws s3 sync s3://$B/ber/tools $SM/tools --exact-timestamps --only-show-errors
 source /home/ec2-user/anaconda3/etc/profile.d/conda.sh
 [ -x $ENV/bin/python ] || conda create -y -q -p $ENV python=3.12
 conda activate $ENV
-python -m pip install -q -r $SM/ber/requirements.txt -r $SM/ber/requirements-gpu.txt \
+python -m pip install -q -r $SM/ber/requirements.txt \
   && python -c "import polars, duckdb, xgboost, rapidfuzz, torch; print('env ok, torch', torch.__version__, 'cuda', torch.cuda.is_available())" \
   && echo ready > $SM/queue/.env_ready
 echo "[$(date '+%F %T')] env done: $(cat $SM/queue/.env_ready 2>/dev/null || echo NOT READY)"; up
