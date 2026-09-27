@@ -69,6 +69,14 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
   decoys in [0.995, 0.9999), but the same fit on the US and India is biased by up to 0.4 to 1.0 for single kinds (US S3 coined names 0.41 to 0.72,
   India S2 swaps 0.96, all about 99.9% true on the holdout). **The slot fit cannot decide a stricter French cut; no portal slot spent on it.**
 
+- US/India loss by kind: the namesake groups (exact name, empty pool address) are calibrated (true share = mean p in every group, `v8e9_namesake`).
+  Rank-dependent threshold (first pick 0.5, others 0.76): OOF +0.000042, holdout +0.000045 [-0.000048, +0.000142]; not used.
+- France assignment (`v8f1_assigned`): pairs per S1 train truth 3.46; test US 3.39, India 3.37; France s28 raw 3.47, **v8u_s28_AR 3.31**. France now
+  predicts fewer pairs than the US/India level with lower precision: both about 25k wrong and about 40k missing French pairs. Recovering true pairs is
+  worth only +0.0022 France F0.5 per 1% of France's pairs; removing wrong ones +0.0063. Unclaimed same-address "other" candidates with p >= 0.3:
+  France 35k against US 2.1k (`v8f2_recall`), mostly type-word siblings (decoys).
+- **Portal test files (validated, team folder and `output/` on the laptop)**: `v8u_s28_AR9` (France thrpn 0.9999) and `v8u_s28_AR99` (0.999).
+
 ## Infrastructure (our AWS, profile `barani`, account 645311222213)
 - Notebook `barani-v5` (ml.g5.16xlarge), two-lane runner: `jobs/` (GPU), `jobs2/` (CPU); lanes read their pending list once per loop (a job queued later waits until the lane's list is done). Laptop tool from this worktree: `smssh-venv/bin/python aws/sm/sm.py --profile barani {publish|enqueue <job> --queue jobs|jobs2|jobs|nb start|stop|status}`; read logs with `aws s3 cp s3://sagemaker-us-east-1-645311222213/<lane>/done/<job>.log -` (sm.py jlog output is hard to grep).
 - The notebook role cannot read the team bucket; the laptop user can: team files are copied server-side into `s3://sagemaker-us-east-1-645311222213/ber/team_work/`, then synced to `/home/ec2-user/SageMaker/work_t` (`BER_WORK` of every v8 job; our v6 `work/` untouched). Delivery: `v8w_deliver.sh` template (validator --check-ids, then `ber/v8/runs/<name>/output/`), then a laptop server-side copy to the team folder.

@@ -11,6 +11,15 @@ branch `v8/france` (local, barani): `src/scripts/france_variants.py` (rules `typ
 `s28` = s27's stack + the team's Qwen3-0.6B cross-encoder score (xs4; Apache-2.0, scored tonight on 4.6M band pairs): holdout **0.990770**, paired
 **+0.000135 [+0.000047, +0.000226]** over s27. Same France recipe as `v8u_s27_AR`. Validator PASS with --check-ids. Expected portal about 0.9857.
 
+## France cut-off test (13:45): `v8u_s28_AR9` and `v8u_s28_AR99`
+Same as `v8u_s28_AR`, with France's protected cut-off (`thrpn`) raised from 0.995 to **0.9999** (`AR9`: about 25k more France pairs dropped,
+2.8% of France's pairs) or **0.999** (`AR99`: about 10k more). Both pass the validator with --check-ids. Upload `v8u_s28_AR` first; then `AR9`
+answers whether France's over-confidence continues above 0.995: the portal change of `AR9` against `AR` is about +0.0005 if 40% of those pairs are
+wrong, 0 at 26% (break-even) and about -0.0005 if 10% are wrong. The label-free slot fit reads 0.2 to 0.55 there but is biased in the US and India,
+so only the portal can tell. Keep whichever of `AR` / `AR9` scores higher as the final (`AR99` sits between them).
+Measured today and not worth a slot: US/India threshold 0.80 (holdout -0.00005), a lower threshold for each S1's first pick (holdout +0.000045,
+interval across 0), sub-group recalibration, namesake evidence for empty-address records (the model is already calibrated there).
+
 ## Earlier recommendation: `v8u_s27_AR` (portal 0.985578)
 `s27` (team; holdout 0.99063, paired +0.00009 [+0.000004, +0.00019] over s22) + France decoding:
 1. `typeswap` (team rule): drop one-word swaps into a type word (26k pairs; slot-fit decoy share 86% / 92%).
