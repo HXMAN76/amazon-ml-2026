@@ -32,6 +32,9 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
   the Qwen score as xs4, paired test against s27, France recipe, validation, upload of `v8u_s28_AR`; about 13:30 to 14:00).
 - Final package: `bash submission/make_package.sh <RUN>` (zip in the organisers' layout); methodology draft updated in `submission/Documentation_template.md`.
 
+## s28 (27 Sep 09:40)
+- `s28` = s27's stack + Qwen3-0.6B score as xs4: holdout 0.990770, paired +0.000135 [+0.000047, +0.000226] over s27. `v8u_s28_AR` validated (--check-ids), in the team folder and at `output/v8u_s28_AR/` on the laptop. Next upload suggested.
+
 ## Portal readings
 - 27 Sep about 06:00: **`v8u_s27_AR` 0.985578** (+0.001076 over `s22t2c` 0.984502).
 - About 06:15: **`v8u_s22F12n_AR` 0.984136**: the France cross-encoders in the stack hurt (about -0.009 France F0.5). Drop that route; build on s27. Next: `v8k_s27_KA` (thrpk).

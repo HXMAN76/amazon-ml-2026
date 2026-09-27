@@ -7,7 +7,11 @@ Base to beat: `s22t2c` **0.984502**. Files: `s3://ml-challenge-nooglers/ml-chall
 (upload only `matching_results.tsv`). Every file passes the official validator **with `--check-ids`** and keeps its base's candidate file. Code:
 branch `v8/france` (local, barani): `src/scripts/france_variants.py` (rules `typeswap`, `thrpn`, `protect`, `restore`), `src/scripts/france_recall.py`.
 
-## Recommended first upload: `v8u_s27_AR`
+## New best candidate (09:45): `v8u_s28_AR`
+`s28` = s27's stack + the team's Qwen3-0.6B cross-encoder score (xs4; Apache-2.0, scored tonight on 4.6M band pairs): holdout **0.990770**, paired
+**+0.000135 [+0.000047, +0.000226]** over s27. Same France recipe as `v8u_s27_AR`. Validator PASS with --check-ids. Expected portal about 0.9857.
+
+## Earlier recommendation: `v8u_s27_AR` (portal 0.985578)
 `s27` (team; holdout 0.99063, paired +0.00009 [+0.000004, +0.00019] over s22) + France decoding:
 1. `typeswap` (team rule): drop one-word swaps into a type word (26k pairs; slot-fit decoy share 86% / 92%).
 2. `thrpn 0.995` (new): drop France pairs with p < 0.995 **except** equal names after spaced legal forms, initials, and France's noise-word copies
