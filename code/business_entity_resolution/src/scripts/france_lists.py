@@ -1,5 +1,5 @@
 """Pair lists for france_variants.py's droplist / addlist rules, chosen by comparing France's rate per 1,000 S1 with the US and India rates
-(the labelled holdout keeps these kinds 99%+ true, so a French excess over the US/India rate is decoys). Usage: python src/scripts/france_lists.py RUN [OUTDIR]
+(the labelled holdout keeps these kinds 99%+ true, so a French excess over the US/India rate is decoys). Usage: python src/scripts/france_lists.py RUN [OUTDIR [MODEL]]
 RUN is a France-variant run (e.g. v8u_s28_ALL2) whose kept pairs the lists refer to; writes WORK/v8x/{fb_ns_ref, fb_nsnear_ref, fb_coined_hi}.parquet.
   fb_ns_ref      drop: exact core name on another street, the name shared by 11+ France S1 and raw p < 0.9999, or by 6+ and raw p < 0.99
                  (France 58 and 44 per 1,000 S1 against at most 5 for the US / India; no excess at p >= 0.9999 or for rarer names).
@@ -25,8 +25,9 @@ def main() -> None:
     pq = P["parquet"] / "test"
     out = P["work"] / (sys.argv[2] if len(sys.argv) > 2 else "v8x")
     out.mkdir(parents=True, exist_ok=True)
-    thr = json.loads((P["work"] / "models" / "s28" / "config.json").read_text())["threshold"]
-    raw = pl.read_parquet(P["work"] / "output" / "s28" / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
+    model = sys.argv[3] if len(sys.argv) > 3 else "s28"  # the stacked model whose raw probabilities RUN was decoded from
+    thr = json.loads((P["work"] / "models" / model / "config.json").read_text())["threshold"]
+    raw = pl.read_parquet(P["work"] / "output" / model / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     pa = pl.read_parquet(P["work"] / "output" / run / "pair_p.parquet").with_columns(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64))
     kept = decision.assign_exclusive(pa).filter(pl.col("p") >= thr).select("q", "pid")
     s1 = pl.read_parquet(pq / "source1.parquet", columns=["rid", "core1", "addr", "ctry"]).filter(pl.col("ctry") == "france").select(
