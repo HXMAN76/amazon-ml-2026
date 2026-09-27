@@ -204,12 +204,22 @@ def main() -> None:
             c = (pl.col("kind") == k[1]) & src_ok & (pl.col("p") < float(k[3])) & (pl.col("p") >= float(k[4]) if len(k) > 4 else pl.lit(True)) & ~pl.col("eq_norm") & ~pl.col("ini_ok") & ~pl.col("noise_swap")
         elif k[0] == "thrx":
             c = (pl.col("p") < float(k[1])) & ~pl.col("core_eq")
-        elif k[0] == "typeswap":
+        elif k[0] == "typeswap":  # typeswap:pmax[:rmin[:nmin[:dfmin]]] learned type words: slot ratio >= rmin over >= nmin pairs; dfmin also asks both
+            # swapped words to name >= dfmin S1 (real category words, not abbreviations such as st / saint) and leaves out the noise words
             rmin = float(k[2]) if len(k) > 2 else 0.75
-            words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= 100))["xb"].to_list()
+            nmin = int(k[3]) if len(k) > 3 else 100
+            dfmin = int(k[4]) if len(k) > 4 else 0
+            words = rr_all.filter((pl.col("ratio") >= rmin) & (pl.col("nA") + pl.col("nB") >= nmin))["xb"].to_list()
             own = own.with_columns(pl.col("b_core").str.split(" ").list.unique().alias("_tb"), pl.col("a_core").str.split(" ").list.unique().alias("_ta"))
             own = own.with_columns(pl.col("_tb").list.set_difference(pl.col("_ta")).list.first().alias("_xb"))
             c = pl.col("swap") & pl.col("_xb").is_in(words) & (pl.col("p") < float(k[1]))
+            if dfmin:
+                abbr = {"st", "saint", "ste", "sainte", "frs", "freres", "ets", "etablissement", "etablissements"}  # expansions: true copies
+                common = set(tok_df(s1.filter(pl.col("ctry") == a.country).rename({"a_core": "core1"})).filter(pl.col("df") >= dfmin)["t"].to_list()) - abbr
+                words = [w for w in words if w in common and w not in NOISE_FR + ["france", "associes", "cie"]]
+                print(f"typeswap {spec}: {len(words)} words: {sorted(words)}", flush=True)
+                own = own.with_columns(pl.col("_ta").list.set_difference(pl.col("_tb")).list.first().alias("_xa"))
+                c = pl.col("swap") & pl.col("_xb").is_in(words) & pl.col("_xa").is_in(list(common)) & (pl.col("p") < float(k[1]))
         elif k[0] == "typeconf":  # typeconf:pmax[:rmin] a learned type word of the S1 is gone and another learned type word is in the pool name, whatever
             # else changed (typeswap needs exactly one swapped word): a sibling of another type (`pompiers agence lycee` / `... collectif sasu`)
             rmin = float(k[2]) if len(k) > 2 else 0.75
