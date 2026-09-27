@@ -1,6 +1,7 @@
 # v8 files for the portal, 27 Sep (barani) — updated about 06:05 IST
 
 **Portal: `v8u_s27_AR` = 0.985578** (27 Sep, about 06:00; +0.001076 over `s22t2c` 0.984502): France F0.5 about 0.955 -> 0.962.
+**Portal: `v8u_s22F12n_AR` = 0.984136** (about 06:15): the France cross-encoders inside the stack cost about 0.009 of France F0.5 (their extra rejections of exact-name and other pairs were true copies). Do not use the `s22F*` files; build on s27.
 
 Base to beat: `s22t2c` **0.984502**. Files: `s3://ml-challenge-nooglers/ml-challenge-2026/handoff-nooglers-20260926/runs/<name>/output/{matching_results,candidate_pairs}.tsv`
 (upload only `matching_results.tsv`). Every file passes the official validator **with `--check-ids`** and keeps its base's candidate file. Code:

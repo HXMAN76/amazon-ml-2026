@@ -17,7 +17,8 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 
 
 ## Portal readings
-- 27 Sep about 06:00: **`v8u_s27_AR` 0.985578** (+0.001076 over `s22t2c` 0.984502). Next suggested: `v8u_s22F12n_AR` (reads the France cross-encoders).
+- 27 Sep about 06:00: **`v8u_s27_AR` 0.985578** (+0.001076 over `s22t2c` 0.984502).
+- About 06:15: **`v8u_s22F12n_AR` 0.984136**: the France cross-encoders in the stack hurt (about -0.009 France F0.5). Drop that route; build on s27. Next: `v8k_s27_KA` (thrpk).
 
 ## Overnight work after 03:45 (user asleep; target 0.990 / top 50)
 - Findings: (1) France's noise-word swaps (fils, groupe, services, developpement) are true copies the model scores low: `thrpn` (thrp that also
