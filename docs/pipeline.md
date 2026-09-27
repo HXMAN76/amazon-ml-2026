@@ -8,6 +8,9 @@ from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
 
 ## Pipeline
 
+<p align="center"><img src="assets/pipeline.svg" width="100%" alt="Pipeline: normalise, candidates, pair model, cross-encoders, consensus stack, decision, France decoding."></p>
+
+
 1. **prepare** (`stages/prepare.py`, `text.py`): rule-based text normalisation (HTML entities, Latin-only accent stripping, digit-for-letter
    repair, DBA/alias and domain splitting, legal forms in their own field, country-specific address abbreviations incl. France,
    offline romanisation of non-Latin scripts with anyascii), Parquet output, label table.
@@ -38,7 +41,12 @@ from Hugging Face; see "Licences"), fine-tuned here on the training pairs.
 
 Every S1 entity, including entities of a country never seen in training (France), gets exactly one row; an empty list means no match.
 
+<p align="center"><img src="assets/candidates.svg" width="100%" alt="Candidate generation: three channels over 10.3M pool records give 57M candidate pairs (98.4% of true pairs); the pair model keeps a short list of 8.2M pairs."></p>
+
 ## Decoding (France)
+
+<p align="center"><img src="assets/france-rules.svg" width="100%" alt="The France decoding rules of the submitted file, each with the evidence that kept it."></p>
+
 
 France has no training labels and its records differ from the training countries: names are two words (city or brand plus a type word such as `club`, `ecole`, `comite`), many
 businesses share a building, and the region in an address is often replaced by the department. The test predictions of the stacked model are post-processed by
@@ -122,6 +130,8 @@ Locked holdout of 150,000 training S1 that no model trained on (macro F_0.5, pai
 
 **Submitted file:** `v8w_s29_FIN` = `s29` + France decoding version 8 (`france_variants.py` rules `typeswap`, `thrpn:0.9999`, `legalx`, the namesake
 and coined-alias lists from `france_lists.py`, `protect`, `restore`, caps); public leaderboard **0.987745**. `reproduce_final.sh` steps 8c and 9.
+
+<p align="center"><img src="assets/gap.svg" width="100%" alt="Holdout and leaderboard per upload; the gap between them is mostly France."></p>
 
 Test run: about 4.7 candidates per S1 (57M candidate pairs before the shortlist), about 94% of S1 receive at least one match. France has no
 training labels; its behaviour is only checked through the model's own probabilities and output statistics.

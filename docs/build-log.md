@@ -11,6 +11,8 @@ and what the leaderboard said about it. Written 28 Sep 2026, just after the wind
 | Locked holdout, first model to best stack | **0.9565 → 0.99088** (`v2` → `s29`) |
 | 50th place on the public board at the close | 0.98935 |
 
+<p align="center"><img src="assets/timeline.svg" width="100%" alt="Timeline of the three days: day 1 candidates and a first model (best 0.953), day 2 cross-encoders and the discovery that France is the gap (best 0.984502), day 3 measured France rules (best 0.987745)."></p>
+
 ---
 
 ## 1. The task and the rules we worked under
@@ -54,11 +56,17 @@ team's **best** public submission, and that unsupervised use of the test records
 | 11 | 27 Sep about 20:45 | **`v8w_s29_FIN`** | **0.987745** | +0.0019 (best) |
 | 12 | 27 Sep (last slot) | `v9_xF2_FIN` | 0.987208 | −0.0005 (below the best) |
 
+<p align="center"><img src="assets/leaderboard.svg" width="100%" alt="Line chart of the 12 leaderboard uploads, from 0.944 to the best 0.987745; two uploads went down."></p>
+<p align="center"><sub>The two country probes (France only 0.187, US only 0.453) are left out of the chart.</sub></p>
+
 ---
 
 ## 3. The architecture that emerged
 
 By the end, the solution was a cascade in which each stage only has to be good at one thing:
+
+<p align="center"><img src="assets/pipeline.svg" width="100%" alt="Pipeline: normalise, candidates, pair model, cross-encoders, consensus stack, decision, France decoding."></p>
+
 
 1. **Candidate generation.** A weighted token index over all pool records (name words, address words, numbers, 5-character prefixes, composite
    keys), 100 candidates per S1 pruned to 30 by a learned ranker, plus two dense retrieval channels from a fine-tuned multilingual encoder
@@ -192,6 +200,8 @@ A full error budget of the holdout: 505,396 kept pairs with only 603 wrong (prec
 proposed, 5,900 scored too low). The misses are mostly records with no address whose name is shared by several S1; the model's probabilities
 already match how often those are true, so US and India were effectively at their limit.
 
+<p align="center"><img src="assets/error-budget.svg" width="100%" alt="Holdout error budget: precision 0.9988, 97.4% of true pairs found; of 14,003 errors, 7,500 were never proposed, 5,900 scored too low and 603 were false matches."></p>
+
 Tests that came back null (do not repeat): per-country and rank-dependent thresholds, a US/India threshold of 0.80, sub-group recalibration,
 name "twins" between pool records, raw spelling before normalisation, row order and ID leaks, recovering exact-name records outside the
 candidate lists.
@@ -210,6 +220,8 @@ Result, the FIN rules:
   against at most 5 for the US and India (about 93% decoys).
 - **A stricter cut at 0.9999**, while re-adding plain invented names between 0.995 and 0.9999, where France shows no excess over the US.
 - **Alias protection:** a bug fix; pool records written "Xyz Co DBA <S1 name>" had been dropped as legal-form conflicts.
+
+<p align="center"><img src="assets/france-rules.svg" width="100%" alt="The France decoding rules of the submitted file: drop type-word swaps, drop below 0.9999 unless a French copy, drop legal-form conflicts, drop namesakes on another street, protect, restore, re-add invented names."></p>
 
 ### `v8w_s29_FIN` best score (about 20:45)
 The FIN rules on `s29`. France moved from about 0.963 to about 0.977. **Leaderboard 0.987745.**
@@ -232,6 +244,8 @@ words moved to the front, `and` → `et`, French street types, region against de
 | full `s28` stack (macro F0.5) | 0.990770 | 0.976026 (close to our real French level of about 0.977) |
 | **new `xencFZ` cross-encoder** (average precision) | **0.9993** | **0.9992** |
 
+<p align="center"><img src="assets/french-rewrite.svg" width="100%" alt="Dumbbell chart: on the French-rewritten holdout the e5-base cross-encoder falls from 0.9993 to 0.9710 while xencFZ holds 0.9992; the s28 stack falls to 0.9760 and s30F to 0.9867."></p>
+
 `xencFZ` is an e5-base trained on 400,000 original and 600,000 French-rewritten **training** pairs (58 minutes on one A10G).
 
 Built for the last slot: **`v9_xF2_FIN`**, the FIN rules on `s28` plus two calibrated steps from the new model:
@@ -245,6 +259,8 @@ the real French records: the French-rewritten holdout overstated how well they t
 ---
 
 ## 7. Every version and what it changed
+
+<p align="center"><img src="assets/gap.svg" width="100%" alt="Holdout and leaderboard per upload: the gap, mostly France, shrinks from 0.0125 at v2 to 0.0031 at v8w_s29_FIN."></p>
 
 | Version | Day | What changed | Why | Holdout | Leaderboard |
 |---|---|---|---|---|---|
