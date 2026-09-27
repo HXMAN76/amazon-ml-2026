@@ -70,7 +70,7 @@ cosines and ranks, and competition (rank and margin among the S1 that claim the 
 
 **Cross-encoders:** `intfloat/multilingual-e5-base` (MIT, 278M) fine-tuned on 966k training pairs from 700k S1 (uncertain band, confident false
 positives as hard negatives, digit runs tagged), scoring **every short-listed pair**; a symmetric variant (both record orders averaged, two seeds)
-**[FINAL: s27]**; `multilingual-e5-small` on the uncertain band as a second score. The S1 used to fit an encoder are excluded from later training
+**[FINAL: s27, s28]**; `multilingual-e5-small` on the uncertain band as a second score; in `s28` also `Qwen/Qwen3-0.6B` (Apache-2.0, 0.6B) fine-tuned as a cross-encoder on the same training pairs and scored on the uncertain band. The S1 used to fit an encoder are excluded from later training
 sets.
 
 **Stack (second stage):** XGBoost (depth 9, eta 0.05, up to 1,500 rounds) on 1.5M S1: S1-level and record-level consensus on the first-stage and
@@ -107,7 +107,9 @@ Locked holdout: 150,000 training S1 drawn once with a fixed seed from those outs
 | + e5-base cross-encoder on every short-listed pair (`s22`) | 0.99054 | |
 | `s22` + France decoding (type swaps, cut-off 0.985, caps) (`s22t2c`) | 0.99054 | 0.9845 |
 | symmetric cross-encoder, two seeds (`s27`) | 0.99063 | |
-| **[FINAL]** + France decoding version 8 | 0.99063 | **[score]** |
+| `s27` + France decoding version 8 (`v8u_s27_AR`) | 0.99063 | **0.985578** |
+| + Qwen3-0.6B cross-encoder score as a fourth stack feature (`s28`) | **0.99077** | |
+| **[FINAL]** `s28` + France decoding version 8 | 0.99077 | **[score]** |
 
 - **France drives the leaderboard.** US and India score at their holdout level; France started at about 0.93. Its errors are confident
   sibling decoys (type-word swaps; about 26k pairs) and France-only true-copy forms the model scores low (initials, spelled legal forms, noise words).
@@ -137,8 +139,8 @@ logged to `runs.jsonl`.
 ### B. Compliance and additional results
 - **No external data or lookups.** Only the provided files; abbreviation and legal-form tables are hand-written rules; romanisation uses the
   offline `anyascii` package. Test records were never used as training examples: the France decoding uses label-free counts on the test output.
-- **Licences and size.** XGBoost (Apache-2.0); `intfloat/multilingual-e5-small` and `-base` (MIT; 118M and 278M parameters). Total well below 8
-  billion parameters. Libraries: numpy, pandas, scipy, scikit-learn (BSD-3), polars, duckdb, rapidfuzz, pyyaml (MIT), torch (BSD-3),
+- **Licences and size.** XGBoost (Apache-2.0); `intfloat/multilingual-e5-small` and `-base` (MIT; 118M and 278M parameters); `Qwen/Qwen3-0.6B`
+  (Apache-2.0; 0.6B parameters). Total about 1.1B parameters, well below 8 billion. Libraries: numpy, pandas, scipy, scikit-learn (BSD-3), polars, duckdb, rapidfuzz, pyyaml (MIT), torch (BSD-3),
   transformers (Apache-2.0), mlflow (Apache-2.0), anyascii (ISC).
 - **Version history** of every run (git commit, parameters, metrics) is in `runs.jsonl` and the repository history.
 - **Submission checks.** Every output file passed the organisers' `validate_submission.py` with `--check-ids` and our rule checker.
