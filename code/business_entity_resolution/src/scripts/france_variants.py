@@ -14,6 +14,7 @@ Rules (a pair is dropped when any rule fires; only the given country; probabilit
   thrpk:t[:alias]       like thrpn (use instead of it) but also spares glued names (fuzzy), reordered words, words dropped, noise or
                         `france` added, initials up to 4 letters, several words changed with some shared; `alias` also spares a pair with no common
                         word when the S1 is alone at its address. What remains dropped below t: one-word swaps and ambiguous coined aliases
+  exactfar:pmax:amax    an equal name (after spaced legal forms) whose address similarity is below amax or whose house number differs, p < pmax
   swapn[:pmax]          any one-word swap of two common words that is not a France noise-word copy, p < pmax (default 1.01)
   thrx:t                p < t and the core names differ (exact-name pairs keep their probability: the slot-limit fit finds no decoys among exact-name pairs)
   typeswap:pmax[:R]     swap whose swapped-in word is a type word of the country's vocabulary (club, ecole, comite, ...): words whose rate among the S1's swap pairs does not fall when
@@ -180,6 +181,10 @@ def main() -> None:
             if len(k) > 2 and k[2] == "alias":
                 keep = keep | ((pl.col("_common") == 0) & (pl.col("addr_n") == 1))                         # coined alias of an S1 alone at its address
             c = (pl.col("p") < float(k[1])) & ~keep
+        elif k[0] == "exactfar":  # exactfar:pmax:amax an equal name (after spaced legal forms) at another address: a namesake (France has hundreds of S1
+            # with one generic name, e.g. 530 `bordeaux club`), address similarity < amax or another house number, p < pmax
+            own = protect_cols(own)
+            c = pl.col("eq_norm") & (pl.col("p") < float(k[1])) & ((pl.col("addr_tset") < float(k[2])) | (pl.col("house_eq") < 0.5))
         elif k[0] == "swapn":  # any one-word swap of two common words (word_swap.flag) that is not a France noise-word copy, p < pmax
             own = protect_cols(own)
             c = pl.col("swap") & ~pl.col("noise_swap") & (pl.col("p") < float(k[1] if len(k) > 1 else 1.01))
