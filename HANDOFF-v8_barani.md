@@ -2,6 +2,18 @@
 
 Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name this file `HANDOFF.md` (the Mac disk is case-insensitive: it would be the team's `handoff.md`).
 
+
+## Sai-side update, 27 Sep about 16:00 IST (newest; read first)
+- **Portal: `v8w_s29_AR` 0.985875** (best so far; `s29` = `s27` + Qwen3-0.6B in the `xs2` slot, your recipe `typeswap:1.01,thrpn:0.995,protect:0.9,restore:...:0.05` + `--cap`). The team cannot upload right now; the files below are ready for any slot that opens.
+- New France error classes read from raw records (full account in `EXPERIMENTS.md` section 12):
+  1. **Namesakes in another street.** Exact-name pairs whose streets do not match, on names shared by 6+ France S1 (`bordeaux club sarl`): France 0.87% of predicted pairs vs US 0.11%; 99.5% true on the US/India holdout, so France-only. About 87% decoys. `thrpn` spares exact names and the slot fit cannot see exact-name decoys (they sit in its "sure copies" count k), so the earlier "exact names carry no decoys" was a blind spot, not a measurement. Rule `nsaway:6` in `src/scripts/france_post.py`.
+  2. **Coined aliases at the S1's exact address** (`Kelojax`, `Syndelta`; train: `Novizetaumbra`) are about 15% of `thrpn`'s high-p drops and true in train. Rule `coined` (restore, slot caps kept).
+  3. `legalx` misfires on about 220 alias records (`X Co formerly known as <S1 name>`: `Co` read as a legal form); `coined` restores them.
+- Files (`s3://sagemaker-us-east-1-567503593043/runs/<name>/output/`, checker OK, not uploaded): **`v8w_s29_ARtLNC`** (`s29` + extended typeswap + `legalx` + `nsaway:6` + `coined`; estimate about 0.9870), `v8w_s29_ARtL` (control without the two new rules), `v8w_s29_ARtLN`, `v8w_s29_ARtLNaC`, `v8w_s29_ARtLN2C`, `v8w_s29_ARt`, `v8w_s29_ARtL99`, `v8w_s29_ARtL9`. Run the official validator with `--check-ids` before any upload.
+- Negative today: sibling typo fingerprint for namesakes with an empty address (owner closest 34% vs 29% chance); per-country thresholds; stack sweeps; LightGBM; Qwen coverage extension (`s31`, `s31b`); mDeBERTa cross-encoder (non-finite parameters after the first AdamW step in torch 2.10 / transformers 5.17).
+- Still open (EXPERIMENTS 12.2): per-class restores inside the `thrpn` cut (about 19k true pairs lost), same-street other-house-number exact-name pairs (14.7k), France blocking recall.
+- Infra used for this (account 567503593043, profile `hxman-26`, us-east-1): notebook `test-notebook-2` (stopped; `ml.g5.12xlarge`, 4 x A10G), S3 job lanes `jobsB`, `jobsB2`, `jobsB3`, `jobsB4` under `s3://sagemaker-us-east-1-567503593043/` (put `<job>.sh` in `<lane>/pending/`, logs in `<lane>/live/` and `<lane>/done/`, last line `exit=<code>`), work directory `/home/ec2-user/SageMaker/work` (holds `output/s29`, `models/s29`, all `v8w_*` runs), code prefixes `ber/code_x` (sai branch + these scripts) and `ber/code_v8` (this branch, deployed read-only; job scripts `aws/queue/jobs/sx_*.sh` show both). `test-notebook` (`ml.g5.16xlarge`) belongs to a teammate's Qwen run; do not stop it without asking.
+
 ## State
 - Team best on the portal: `s22t2c` **0.984502**. The team decides and uploads the 5 slots of 27 Sep; we deliver validated files + a note.
 - **Delivered (03:40):** five files, all official-validator PASS **with `--check-ids`**, in `s3://ml-challenge-nooglers/ml-challenge-2026/handoff-nooglers-20260926/runs/<name>/output/`, plus the note `handoff-nooglers-20260926/V8_FILES_barani.md` (same text as `V8_FILES_barani.md` here): `v8_tp985p`, `v8_s22F12n_tpp`, `v8F1s_tpp`, `v8F12n_ts`, `v8_s27_tpp` (suggested order and meaning in the note).

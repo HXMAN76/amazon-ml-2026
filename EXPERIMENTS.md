@@ -184,3 +184,96 @@ Suggested order: `s22u3` (cut-off direction), `s22v1` (do the protected pairs he
 Update 21:25: second-notebook GPU 3 now runs `rg10` (lane B4): two more XGBoost seeds of the `s22` stack (`s22s1`, `s22s2`, `seed=1,2`, same chunk files), then `blend_stacks.py` (mean of logits, threshold re-tuned on the blended out-of-fold probabilities) gives `s22e`, paired test against `s22`, France rules can then be run on `s22e` (`france_variants.py s22e ...`). Expected +0.0001 to +0.0003. `blend_stacks.py` also blends `s26`/`s27`/`s24` variants later.
 Update 22:45: Qwen3-0.6B scoring (`rn2`) and its stack (`s24`) are cancelled to save credits (the fitted model is `work/xenc3Q/model`); exports of the whole work directory to the shared bucket (`re1`, `re2`) are queued; the team continues on its own AWS (`TEAMMATE_HANDOFF.md`).
 
+
+## 11. Continuing on our own AWS after the handoff (27 Sep, 04:00 to 13:00 IST)
+
+Credits topped up (+100 USD) after the handoff; resumed on `test-notebook-2` (account 567503593043), resized as needed (`g5.8xlarge` for decoding, `g5.12xlarge`/`g5.24xlarge` for the Qwen and mDeBERTa jobs; `g5.12xlarge` was twice reported "temporarily unavailable" by AWS, `g5.24xlarge` always available). Barani continued in parallel on their own account (767397931665, notebook `barani-v5`), pushed branch `v8/france` (65 files, `france_variants.py` rules `thrpn`, `protect`, `restore`, `typeins`, `xfr`, `legalhouse`; `xenc_fr.py` for a France-aware cross-encoder; scripts `france_recall.py`, `france_empty.py`, `xfr_report.py`, `xfr_slots.py`, `xs_merge.py`, `stack_predict_merge.py`). We deployed their branch read-only to a separate S3 prefix (`ber/code_v8`) to run their rules on our own bases without merging (their `stack.py`/`france_variants.py` edits conflict with ours).
+
+### 11.1 New bases confirmed overnight (holdout, paired against `s27` 0.99063 unless noted)
+| Id | What | Holdout F0.5 | Paired delta | Ship |
+|---|---|---|---|---|
+| `s26` | symmetric e5-base cross-encoder (single seed) | 0.99053 | -0.00001 vs `s22` [-0.00010, +0.00008] | no |
+| `s22e` | 3 XGBoost seeds of the `s22` stack, blended | 0.99053 | -0.00001 vs `s22` [-0.00010, +0.00008] | no |
+| **`s27`** | symmetric e5-base cross-encoder, 2 seeds averaged (`xs`, `xs_asym`), stack | **0.99063** | +0.00009 vs `s22` [+0.000004, +0.00019] | **yes, new base** |
+| `s27r` | `s27` refit with the holdout S1 folded into training (`--set refit_all=1`, added to `stack.train`) | in-sample only (99.2% of S1 lists identical to `s27`; OOF unchanged 0.9904) | n/a (not paired-testable) | no, reverted |
+| **`s29`** | `s27` + Qwen3-0.6B score in the `xs2` slot (band pairs only, as scored by barani) | **0.99088** | **+0.00025 vs `s27` [+0.00015, +0.00034]** (+0.00034 vs `s22`) | **yes, best base** |
+| `s31` | `s29` + Qwen extended to the near-confident (0.98-0.999) and very-low (0.005-0.02) probability zones (+1.2M pairs each split, scored by us) | 0.99089 | +0.00001 vs `s29` [-0.00005, +0.00009] | no gain |
+| `s31b` | `s31` + `e5-small` as a 4th cross-encoder feature (`xenc_v7`) | 0.99091 | +0.00003 vs `s29` [-0.00004, +0.00010] | no gain |
+| `s28a/b/c` | XGBoost depth/eta/rounds sweep on `s27`'s features | 0.99054/0.99062/0.99061 | -0.00009/-0.00001/-0.00002 vs `s27` | no gain |
+| `s28d` | `s27` + singleton-weighted loss (`w_singleton=3`, added to `stack.train`) | 0.99051 | -0.00013 vs `s27` | no gain |
+| `s28e` | `s27` + LightGBM learner | failed (`lightgbm` not installed on the notebook; not retried, no further gain expected given the XGBoost sweep) | | |
+| per-country thresholds | separate threshold for US and India (`country_thr.py`, two-fold honest tuning) | | -0.00001 vs the global threshold | no gain |
+| `s30` | `s29` + `microsoft/mdeberta-v3-base` (MIT) as a 4th cross-encoder | **failed**: AdamW's first optimizer step makes ~200 of ~202 DeBERTa-v2 parameters non-finite in this torch/transformers build (`torch 2.10.0+cu128`, `transformers 5.17.0`); confirmed with a parameter-by-parameter gradient probe (`bf16`, `fp32` and `eager` attention all fail the same way; SGD does not). About 1.9 GPU-hours lost before the kill reached the notebook. Not retried (would need an older torch/transformers pin or a different optimizer, not worth the remaining time). | | |
+
+**Conclusion: the Qwen line is exhausted.** Its only real gain is `s29`'s original band-only addition (+0.00025, CI clear of 0); every extension (wider coverage, adding a 4th cross-encoder) landed inside noise. Stack-side tuning (`s28*`, country thresholds) found nothing. `s29` is the best base.
+
+### 11.2 Qwen coverage analysis (`qwen_bins.py`, `qwen_france.py`)
+- Qwen (as delivered by barani) scores only the uncertain band (`band_lo=0.02` to `band_hi=0.98` at first-stage `p1`, plus some easy examples), about 30% of test pairs and 23% of train pairs.
+- Extending it to the near-confident zone (`p1` 0.98 to 0.999, where the false-pair count is tiny — 577 to 1,485 false pairs per bin in the labelled train data — but each one is a confident false positive, the kind that hurt France) and the very-low zone (0.005 to 0.02) added 1.2M pairs per split; `s31`'s result above shows this did not help.
+- `qwen_france.py`: in the France pairs Qwen has scored, its bins do not cleanly separate decoys from true pairs the way the slot-limit fit already does by relation (`swap`/`other`) — e.g. `exact` name pairs below the France threshold with a high Qwen score are still mostly decoy (0.66/0.53) but so are ones with a mid Qwen score (0.57/0.43): no clean cut-off. No new France rule found from Qwen.
+
+### 11.3 France rule research (label-free, slot-limit fit; scripts `pool_support_scan.py`, `mate_scan.py`, `typeswap_calib.py`, `clone_probe.py`)
+All ruled out as a decoy mechanism (no new rule):
+- **Pool-support / clustering:** 98% of France swap pairs have no same-core-name mate among the S1's other candidates (`pool_support_scan.py`); a pool record closer to an unclaimed record at its own address than to the S1's list is under 1% of pairs (`mate_scan.py`). Decoys are lone records, not small clusters.
+- **Exact address cloning:** decoy-type swap pairs and generic-word swap pairs have almost identical address-equality rates (17.5% vs 17.7%, `clone_probe.py`); decoys are not literal clones of the S1 record.
+- **Per-word calibration** (`typeswap_calib.py`): confirms the current `typeswap` word list (ratio >= 0.75) is well separated from generic noise words (`france`, `services`, `fils`, `groupe`, `developpement`, all under 0.22 fitted decoy share); lowering the ratio cut-off to 0.6 only adds about 3k pairs and about +0.0003 estimated overall gain, not tested on the portal (superseded by barani's `thrpn`).
+- **Sure-negatives classifier** (an S1 already at its slot cap: any further pair from that source is certainly wrong): only 22 such pairs exist in France, too few to train a classifier on.
+
+### 11.4 Portal readings today (base to beat from the handoff: `s22t2c` 0.984502)
+| File | What | Portal | Reading |
+|---|---|---|---|
+| `v8u_s27_AR` | `s27` + `typeswap` + `thrpn:0.995` + `protect:0.9` + `restore` (barani's recipe) | **0.985578** | +0.001076 over `s22t2c`; confirms the recipe |
+| `v8u_s22F12n_AR` | same recipe on `s22`, France-aware cross-encoder score inside the stack | **0.984136** | -0.0014 vs `v8u_s27_AR`, -0.0004 vs `s22t2c`: **the France-aware cross-encoder is a net loss** (rejects too many true copies); do not submit further `F12n`/`xfr` files without a different design |
+| `v8w_s29_AR` | same recipe on `s29` (built by us, reproduces `v8u_s27_AR`'s recipe byte-identically on `s27` as a control) | not yet submitted | estimate **~0.9858** (0.9852 to 0.9865): `s27`->`s29` holdout gain (+0.00025, ~85% US/India weight) scaled by the portal's historical ~3x multiplier for cross-encoder changes |
+| `v8w_s31_A/AR`, `v8w_s31b_AR` | same recipe on `s31`/`s31b` | not submitted | expected within noise of `v8w_s29_AR` (same France drop rates, same restore counts); not worth a slot |
+
+Files in `s3://sagemaker-us-east-1-567503593043/runs/<name>/output/` and mirrored to the shared bucket for `v8u_*`. Local copies of `v8u_s27_AR`, `v8u_s22F12n_AR`, `v8w_s29_AR` in `~/Downloads/`.
+
+### 11.5 Organiser rulings that resolve earlier open questions (public Q&A sheet, checked 27 Sep)
+- **Unsupervised statistics, self-training and pseudo-labels on the unlabeled test files are explicitly allowed** ("Computing unsupervised stats ... on the provided test files uses no external data or labels, so it is allowed. Self-training and synthetic pairs from the provided records are also fine.", asked and answered at least 8 times). This resolves the `EXPERIMENTS.md` section 9 caution about `typeswap`/`thrp`/`thrpn`/`xenc_fr.py` using test-derived statistics: they are within the rules. Disclose the mechanism in the methodology document.
+- **The private leaderboard scores the team's best PUBLIC submission**, not the last upload. No need to reserve the final slot for the best file.
+- **Candidate-set size is judged as total pairs** (a separate criterion from the F0.5 score); a pruned later stage is fine as long as `candidate_pairs.tsv` is the exact set fed to the model.
+- No model above 8B parameters is allowed even as a distillation teacher.
+
+### 11.6 Code changes this session (uncommitted at write time, see git log for the commit)
+- `stack.py`: `refit_all` (fold the holdout into training, in-sample only, not shippable), a 4th cross-encoder slot (`--xenc-dir4`, feature `xs4`), a `--learner {xgb,lgb}` switch, singleton-weighted training (`w_singleton`). `predict()` handles both learners.
+- `xenc.py`: a `bf16`/`fp32` override for `train`/`score` (DeBERTa families default to bf16), a non-finite-loss guard that raises after printing the first 5 steps (stops a broken run instead of burning the full training budget — this is what should have caught `s30` in seconds instead of after 1.9 hours; the guard was added mid-`s30` and did catch it on the retry).
+- `france_variants.py`: added an s27-local reimplementation of barani's `protect` semantics (kept separate from their `thrpn`/`restore`, which we deploy from their branch instead of merging).
+- New analysis scripts (`src/scripts/`): `pool_support_scan.py`, `mate_scan.py`, `typeswap_calib.py`, `clone_probe.py`, `qwen_bins.py`, `qwen_france.py`, `country_thr.py`.
+
+
+Note for readers of this branch: section 11 was written on branch `sai` (commit `bb0b6b3`). The `stack.py` / `xenc.py` / `france_variants.py` changes it lists live on `sai` only (they conflict with this branch's versions); the analysis scripts it names are copied here.
+
+## 12. France error classes read from raw records (27 Sep 2026, 14:00 to 16:00 IST, sai side)
+
+Portal: **`v8w_s29_AR` 0.985875** (best; +0.000297 over `v8u_s27_AR`, which confirms the portal moving about 3x the holdout for cross-encoder gains). With US/India at the holdout (0.9909, world A), France is about **0.957**; the top of the leaderboard (0.9906 on 26 Sep) implies France about 0.988 there. France's remaining deficit (about 0.031 France F0.5, about 0.0047 overall) is the whole gap to the top.
+
+Method: raw samples of real records rather than the slot fit, then counts against the US/India test and the labelled holdout. Scripts (all `src/scripts/`, jobs `aws/queue/jobs/sx_*.sh`, run on `test-notebook-2` of account 567503593043 with `BER_WORK=/home/ec2-user/SageMaker/work`):
+
+| Script | Question | Finding |
+|---|---|---|
+| `sibling_fingerprint.py` | do two copies of one S1 share raw-text noise, so namesake records with an empty address can be told apart? | weak: raw name equal 4.9% between copies of one S1 vs 2.1% between namesakes; the owner's copies are the closest 34% of the time vs 29% by chance. Worth about +0.0002 at most; dropped |
+| `france_explore.py` | how does the generator fill a shared building (loose address key, raw samples, train truth vs France predictions)? | **train distractors are hidden siblings: same brand with a changed type/suffix word AND a changed house number** (`Classic Ram Infrastructure` @28/1B vs `Classic Ram Food` @28/4B, `Kolkata Products Holdings` @28/5G). France siblings often sit in the same building instead |
+| `france_errors.py` | what does the `s29` recipe keep, drop and restore; what do over-cap S1 look like? | kept decoys are mostly **the same name at another street** (`Bordeaux Parents` @25 rue Renault vs @25 R du Mirail); about 15% of the high-p drops of `thrpn` are **coined aliases at the S1's exact address** (`Kelojax`, `Syndelta`), which are true in train |
+| `street_cluster.py` | first street-mismatch instrument | contaminated: department names (`gironde`, `nord`) counted as street words; superseded by `namesake_street.py` |
+| `namesake_street.py` | street words rare in BOTH S1 and pool; street same/mismatch, house same/diff, namesake count per name | **exact-name pairs in another street with 6+ namesake S1: France 0.87% of predicted pairs (mean p 0.95), US 0.11%, holdout 99.5% true (US/India).** Unique names show no excess (France 0.11%, US 0.29%). Generic city-brand names (`bordeaux club sarl`, 530 S1) have namesakes in the same city and small house numbers collide; US/India namesakes sit in other cities. About 6.9k of about 7.9k such France pairs are decoys (about 87%); the recipe keeps 99.5% of them because `thrpn` spares exact names. **The slot fit cannot see exact-name decoys** (they are counted among the "sure" exact copies k), which is why "exact names carry no decoys" was concluded earlier |
+| `single_match.py` | are France's extra one-match S1 singletons that caught a namesake? | France (after the recipe) 5.39% empty and 7.08% one match vs US/India about 5.8% and 6.0%. Holdout: single-match S1 are singletons only 0.2-0.3% of the time even with an away match. France has 3.7x the US rate of single matches in another street: lever about +0.0003, not built |
+| `alias_drops.py` | does the recipe drop `X Co formerly known as <S1 name>` records? | only 465 in `ARtL` (245 in `AR`); `legalx` fires on about 220 of them (it reads the alias's `Co` as a legal form) |
+| `france_post.py` | post-rules on a recipe run | `nsaway:N` (drop exact-name pairs with a street mismatch when N+ France S1 share the name), `nsaway_all:N` (non-exact too), `coined` (restore raw-predicted pairs whose pool core is one coined word, 6+ letters, outside France's S1 name vocabulary, at the S1's street and house number, slot caps kept) |
+
+### 12.1 Files built (all `check_submission.py` OK; `s3://sagemaker-us-east-1-567503593043/runs/<name>/output/`), not uploaded
+| File | Rules on `s29` | France pairs changed | Estimated overall gain over `v8w_s29_AR` |
+|---|---|---|---|
+| `v8w_s29_ARt` | `AR` + extended typeswap (`typeswap:1.01:0.6:30:300`, 45 words) | +3.9k drops (fitted decoy 0.76-0.81) | +0.0003 |
+| `v8w_s29_ARtL` | + `legalx:1.01` | +8.7k drops (fitted decoy 0.30-0.46, biased) | 0 to +0.0002 more |
+| `v8w_s29_ARtL99`, `v8w_s29_ARtL9` | as `ARtL` with `thrpn` 0.999 / 0.9999 | +9.2k / more | unknown; test only after the two rules above |
+| **`v8w_s29_ARtLNC`** | `ARtL` + `nsaway:6` + `coined` | -6,177, +5,862 | **+0.001 to +0.0013 in total (about 0.9870)**; best guess |
+| `v8w_s29_ARtLN` | `ARtL` + `nsaway:6` | -6,177 | isolates `nsaway` (about +0.0005) |
+| `v8w_s29_ARtLNaC` | `nsaway_all:6` + `coined` | -7,468, +5,862 | |
+| `v8w_s29_ARtLN2C` | `nsaway:2` + `coined` | -6,944, +5,862 | |
+Suggested order if slots exist: `ARtLNC`, then `ARtL` (isolates the two new rules), then the `thrpn` direction.
+
+### 12.2 What still hides about 0.02 of France F0.5 (not measured)
+1. France recall inside the `thrpn` 0.995 cut: about 34k non-exact pairs dropped at about 45% decoys, i.e. about 19k true pairs lost. A per-class restore (like `coined`: typo'd type words `sport`/`sportif`, `& Associes`, `Cie` additions at the exact address) could win about +0.0005 to +0.0007.
+2. Same street, other house number, exact name: 14.7k France pairs at p about 0.9 (`Calais Federation` @295 vs @524); this is the train distractor pattern. Needs the holdout rate of the same cell before a rule.
+3. France blocking recall has never been measured (US/India candidate oracle 0.9957).

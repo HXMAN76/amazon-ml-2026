@@ -115,6 +115,10 @@ The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed f
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
+## 5d. Update 2026-09-27 about 16:00 IST (newest)
+
+Portal best `v8w_s29_AR` **0.985875**. France (about 0.957 against US/India about 0.991) is the whole gap to the leaderboard top (0.9906). New France rules `nsaway` (namesakes in another street) and `coined` (restore coined aliases at the exact address) in `src/scripts/france_post.py`; best unsubmitted file `v8w_s29_ARtLNC` (estimate about 0.9870). Details: `EXPERIMENTS.md` section 12, `HANDOFF-v8_barani.md` top block.
+
 ## 5b. Update 2026-09-26 about 02:00 IST
 
 Best: `s5` holdout 0.9832 (India 0.9812, US 0.9845), `s6` = `s5` with a per-S1 candidate shortlist (4.9 candidates per S1, same score). Team-facing guide with architecture, AWS how-to and optimization list: `TEAM_GUIDE.md`.

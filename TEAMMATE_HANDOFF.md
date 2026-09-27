@@ -1,5 +1,7 @@
 # Handoff to the team: continue on your own AWS (written 26 Sep 2026, about 22:45 IST)
 
+> **27 Sep 16:00 IST (sai side):** portal best `v8w_s29_AR` 0.985875; new France rules `nsaway` / `coined` and the ready file `v8w_s29_ARtLNC` (estimate about 0.9870). Read `HANDOFF-v8_barani.md` top block and `EXPERIMENTS.md` section 12.
+
 Read this first, then `handoff.md` (infrastructure details, pitfalls), `research.md` sections 23 to 27 (what we measured), `EXPERIMENTS.md` (registry, plans), `submission_checklist.md` (rules, freeze). The window closes **Sun 27 Sep 2026 23:59 IST**; 5 portal submissions per day; one login at a time.
 
 ## 1. Where we are
