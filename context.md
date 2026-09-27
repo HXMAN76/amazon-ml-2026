@@ -115,6 +115,10 @@ The legacy first baseline (dense per-country TF-IDF kNN, LightGBM) was removed f
 
 Run on the g5 (via a queued job): `BER_DATA=/home/ec2-user/SageMaker/dataset BER_WORK=/home/ec2-user/SageMaker/work make prepare sample block_eval`.
 
+## 5e. Final (28 Sep 2026)
+
+Challenge closed. Final file `v8w_s29_FIN` (s29 + France decoding version 8), public leaderboard **0.987745**; holdout 0.99088. See `EXPERIMENTS.md` 13.
+
 ## 5d. Update 2026-09-27 about 16:00 IST (newest)
 
 Portal best `v8w_s29_AR` **0.985875**. France (about 0.957 against US/India about 0.991) is the whole gap to the leaderboard top (0.9906). New France rules `nsaway` (namesakes in another street) and `coined` (restore coined aliases at the exact address) in `src/scripts/france_post.py`; best unsubmitted file `v8w_s29_ARtLNC` (estimate about 0.9870). Details: `EXPERIMENTS.md` section 12, `HANDOFF-v8_barani.md` top block.

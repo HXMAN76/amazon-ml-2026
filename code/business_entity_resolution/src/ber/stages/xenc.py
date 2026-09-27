@@ -31,6 +31,7 @@ MODEL = "intfloat/multilingual-e5-small"
 DATA_DIR = "xenc"  # WORK sub-folder of the pair lists and scores (`--dir xenc_v7` keeps a second set); the fitted model always lives in xenc/model
 MODEL_DIR = "xenc/model"  # WORK-relative folder of the fitted cross-encoder (set by --model-dir)
 OVERRIDES: dict = {}   # parameter overrides from --set
+DROP_TT = False        # encoders with a single token-type slot (gte-multilingual) must not get segment ids
 DIGITS = re.compile(r"\d+")
 
 
@@ -52,7 +53,10 @@ def encode_pairs(tok, ta: list[str], tb: list[str], max_len: int, decoder: bool)
     import torch
 
     if not decoder:
-        return tok(ta, tb, padding=True, truncation=True, max_length=max_len, return_tensors="pt").to("cuda")
+        enc = tok(ta, tb, padding=True, truncation=True, max_length=max_len, return_tensors="pt")
+        if DROP_TT:
+            enc.pop("token_type_ids", None)
+        return enc.to("cuda")
     ids = tok([f"Same business?\nA: {a}\nB: {b}" for a, b in zip(ta, tb)], add_special_tokens=False, truncation=True, max_length=max_len - 1)["input_ids"]
     end, pad = tok.convert_tokens_to_ids("<|im_end|>"), tok.pad_token_id
     n = max(len(x) for x in ids) + 1
@@ -154,25 +158,29 @@ def train() -> None:
     if OVERRIDES.get("max_rows"):  # smoke test: a small random subset
         d = d.sample(int(OVERRIDES["max_rows"]), seed=0)
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
-    tok = AutoTokenizer.from_pretrained(MODEL)
+    rc = bool(int(prm.get("remote_code", 0)))  # models that ship their own architecture code (gte-multilingual-reranker)
+    tok = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=rc)
     dec = is_decoder(MODEL)
     sym = int(prm.get("symmetric", 0))
     seed = int(prm.get("train_seed", 0))
     torch.manual_seed(seed)  # head initialisation and dropout; the order of the pairs uses the same seed
     if dec:
         tok.padding_side = "right"
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, **({"dtype": torch.float32} if dec else {}))
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, trust_remote_code=rc, **({"dtype": torch.float32} if dec else {}))
     model.config.pad_token_id = tok.pad_token_id
+    global DROP_TT
+    DROP_TT = getattr(model.config, "type_vocab_size", 2) < 2
     if dec:  # 0.6B parameters in fp32 with Adam leave too little room for activations on a 24 GB GPU otherwise
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
     model = model.cuda()
-    amp = torch.bfloat16 if dec else torch.float16
+    bf = dec or "deberta" in str(MODEL).lower() or bool(int(prm.get("bf16", 0)))  # DeBERTa overflows in fp16
+    amp = torch.bfloat16 if bf else torch.float16
     opt = torch.optim.AdamW(model.parameters(), lr=prm["lr"], weight_decay=0.01)
     bs, epochs = prm["batch"], prm["epochs"]
     steps = epochs * (len(y) // bs)
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda i: min(1.0, (i + 1) / (0.06 * steps)) * max(0.0, 1 - i / steps))
-    scaler = torch.amp.GradScaler(enabled=not dec)
+    scaler = torch.amp.GradScaler(enabled=not bf)
     rng = np.random.default_rng(seed)
     model.train()
     step = 0
@@ -185,7 +193,7 @@ def train() -> None:
                 flip = rng.random(len(idx)) < 0.5
                 xa, xb = [b if f else a for a, b, f in zip(xa, xb, flip)], [a if f else b for a, b, f in zip(xa, xb, flip)]
             enc = encode_pairs(tok, xa, xb, prm["max_len"], dec)
-            with torch.autocast("cuda", dtype=amp):
+            with torch.autocast("cuda", dtype=amp, enabled=not bool(int(prm.get("fp32", 0)))):
                 logit = model(**enc).logits.squeeze(-1)
             loss = torch.nn.functional.binary_cross_entropy_with_logits(logit.float(), torch.from_numpy(y[idx]).cuda())
             opt.zero_grad()
@@ -194,8 +202,11 @@ def train() -> None:
             scaler.update()
             sched.step()
             step += 1
-            if step % 200 == 0:
-                print(f"epoch {ep} step {step}/{steps} loss {loss.item():.4f} ({time.time() - t0:.0f}s)", flush=True)
+            if step <= 5 or step % 200 == 0:
+                lv = loss.item()
+                print(f"epoch {ep} step {step}/{steps} loss {lv:.4f} ({time.time() - t0:.0f}s)", flush=True)
+                if not np.isfinite(lv):
+                    raise RuntimeError(f"non-finite loss at step {step}: stop instead of training a broken model")
     out = P["work"] / MODEL_DIR
     model.save_pretrained(out)
     tok.save_pretrained(out)
@@ -212,9 +223,14 @@ def score(split: str) -> None:
     d = pl.read_parquet(P["work"] / DATA_DIR / f"{split}.parquet")
     if OVERRIDES.get("max_rows"):  # smoke test
         d = d.head(int(OVERRIDES["max_rows"]))
-    tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR)
+    rc = bool(int(prm.get("remote_code", 0)))
+    tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR, trust_remote_code=rc)
     dec = is_decoder(json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", ""))
-    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().to(torch.bfloat16 if dec else torch.float16).eval()
+    mtype = json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", "")
+    bf = dec or "deberta" in mtype or bool(int(prm.get("bf16", 0)))
+    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR, trust_remote_code=rc).cuda().to(torch.bfloat16 if bf else torch.float16).eval()
+    global DROP_TT
+    DROP_TT = getattr(model.config, "type_vocab_size", 2) < 2
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)

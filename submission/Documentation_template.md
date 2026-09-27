@@ -4,8 +4,8 @@
 **Team Members:** Roshan T (team leader), Hariheman V K, Sai Nivedh V, Baranidharan Selvaraj  
 **Submission Date:** 27 September 2026
 
-> Draft of 27 Sep 06:00 IST. Two items are filled in at the freeze: the final file (**[FINAL]**, the stacked model plus the France decoding) and its
-> leaderboard score. Every number below is reproduced by `code/business_entity_resolution/` (`reproduce_final.sh`).
+> Final version (freeze of 27/28 Sep). Final file: **`v8w_s29_FIN`** (stack `s29` plus the France decoding version 8), public leaderboard
+> **0.987745**. Every number below is reproduced by `code/business_entity_resolution/` (`reproduce_final.sh`).
 
 ---
 
@@ -18,7 +18,7 @@ pair; a second-stage **XGBoost stack** combines their scores with consensus evid
 many confident records an S1 already has, digit and house-number agreement with the S1's other records). Each S2/S3 record is assigned to at most
 one S1 and an F0.5-tuned threshold decides. France, which has no training labels, gets a **structural decoding step** that removes the
 country's look-alike decoys and keeps its own kinds of true copies. On a locked holdout of 150,000 training S1 entities, macro F0.5 is
-**0.99063** (from 0.9565 for the first pair model); the public leaderboard moved from 0.944 to **[score]**.
+**0.99088** (from 0.9565 for the first pair model); the public leaderboard moved from 0.944 to **0.987745**.
 
 ---
 
@@ -70,7 +70,8 @@ cosines and ranks, and competition (rank and margin among the S1 that claim the 
 
 **Cross-encoders:** `intfloat/multilingual-e5-base` (MIT, 278M) fine-tuned on 966k training pairs from 700k S1 (uncertain band, confident false
 positives as hard negatives, digit runs tagged), scoring **every short-listed pair**; a symmetric variant (both record orders averaged, two seeds)
-**[FINAL: s27, s28]**; `multilingual-e5-small` on the uncertain band as a second score; in `s28` also `Qwen/Qwen3-0.6B` (Apache-2.0, 0.6B) fine-tuned as a cross-encoder on the same training pairs and scored on the uncertain band. The S1 used to fit an encoder are excluded from later training
+in the final stack `s29` (as in `s27`); `Qwen/Qwen3-0.6B` (Apache-2.0, 0.6B) fine-tuned as a cross-encoder on the same training pairs and scored on
+the uncertain band (second cross-encoder feature of `s29`); `multilingual-e5-base` on every short-listed pair as a further score. The S1 used to fit an encoder are excluded from later training
 sets.
 
 **Stack (second stage):** XGBoost (depth 9, eta 0.05, up to 1,500 rounds) on 1.5M S1: S1-level and record-level consensus on the first-stage and
@@ -87,7 +88,11 @@ predictions (0.74), at most 5 S2 and 6 S3 matches per S1.
   France's noise-word copies (a word swapped into or added from `fils`, `groupe`, `services`, `developpement`, found from their replacement rates).
 - *Protect:* an S1 the cut-off would leave empty keeps its best pair (an S1 with a true match scores 0 with an empty list).
 - *Restore:* unowned short-listed pairs at the S1's own address that are one of those France copy kinds are added within the S1's free slots.
-  Each rule was checked against the labelled holdout where the same pattern exists and by slot-occupancy decoy shares in France.
+- *Final additions (version 8):* French legal-form conflicts (`sarl` against `sas`, spaced forms included) are dropped; exact names on another
+  street shared by many France S1 (namesakes in the same city: France 58 per 1,000 S1 against at most 5 in the US/India) are dropped; plain coined
+  aliases at the S1's exact address with p in [0.995, 0.9999) are re-added. Alias records that name the S1 are never dropped.
+  Each rule was checked against the labelled holdout where the same pattern exists, by France's rate per 1,000 S1 against the US/India rate of the
+  same kind, and by slot-occupancy decoy shares in France.
 
 ---
 
@@ -108,15 +113,20 @@ Locked holdout: 150,000 training S1 drawn once with a fixed seed from those outs
 | `s22` + France decoding (type swaps, cut-off 0.985, caps) (`s22t2c`) | 0.99054 | 0.9845 |
 | symmetric cross-encoder, two seeds (`s27`) | 0.99063 | |
 | `s27` + France decoding version 8 (`v8u_s27_AR`) | 0.99063 | **0.985578** |
-| + Qwen3-0.6B cross-encoder score as a fourth stack feature (`s28`) | **0.99077** | |
-| **[FINAL]** `s28` + France decoding version 8 | 0.99077 | **[score]** |
+| + Qwen3-0.6B cross-encoder score as a fourth stack feature (`s28`) | 0.99077 | |
+| + Qwen3-0.6B score in the second cross-encoder slot (`s29`) + France decoding version 8 (`v8w_s29_AR`) | **0.99088** | 0.985875 |
+| **Final:** `s29` + France decoding version 8 with namesake, legal-form and coined-alias lists (`v8w_s29_FIN`) | **0.99088** | **0.987745** |
 
 - **France drives the leaderboard.** US and India score at their holdout level; France started at about 0.93. Its errors are confident
   sibling decoys (type-word swaps; about 26k pairs) and France-only true-copy forms the model scores low (initials, spelled legal forms, noise words).
 - **Remaining holdout errors:** missed matches (about 0.008 of F0.5), mostly empty-address pool records whose name several S1 share; wrong merges
   (about 0.002), mostly look-alikes with a changed house number.
 - **What did not help:** calibration with per-S1 expected-F0.5 selection (+0.0001), more neighbours for empty-address records, a second
-  consensus round, a larger (e5-large) cross-encoder, training in a test-like universe, stack blends of seeds.
+  consensus round, a larger (e5-large) cross-encoder, training in a test-like universe, stack blends of seeds, an mmBERT cross-encoder (holdout
+  +0.00004, interval across 0), a France pseudo-label classifier (it learned the wrong boundary outside its labelled corner).
+- **Late experiment:** a French-aware e5-base cross-encoder trained on training pairs rewritten into French form (same labels; French-ized holdout
+  errors 7,749 to 1,333). Used to re-add France pairs FIN had dropped, it lowered the leaderboard (0.987143): the rewrite teaches French vocabulary
+  but not France's decoy semantics (in the training countries a swapped category word is noise, in France it marks a sibling business).
 
 ---
 

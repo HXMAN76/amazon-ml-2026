@@ -95,6 +95,15 @@ py ber.stages.stack tfidf --split test --tag _eq
 py ber.stages.stack train --name s28 --base v7 --tag _eq --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
 py ber.stages.stack predict --name s28
 
+# 8c. final stack s29 (the submitted model): s27's features with the Qwen3-0.6B band score in the second cross-encoder slot
+A="--base v7 --tag _w --xenc --xcons --xenc-fit-more 300000 --decoy --extra --sub-q 1500000 --xenc-dir xenc2SymE_v7 --xenc-dir2 xenc3Q_v7 --xenc-dir3 xenc2F_v7"
+py ber.stages.stack build --split train $A
+py ber.stages.stack tfidf --split train --tag _w
+py ber.stages.stack build --split test $A
+py ber.stages.stack tfidf --split test --tag _w
+py ber.stages.stack train --name s29 --base v7 --tag _w --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
+py ber.stages.stack predict --name s29
+
 # 9. structural decoding of the test predictions (src/scripts/france_variants.py; France only, see README "Decoding"): decoys that swap the type word of the name
 #    (learned vocabulary, from slot occupancy), a stricter cut-off for France's over-confident probabilities, and the training maximum of 5 S2 and 6 S3 matches per S1.
 #    The candidate file is unchanged; only matches are removed.
@@ -105,7 +114,11 @@ python src/scripts/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.
 R="typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01"
 python src/scripts/france_variants.py s28 v8u_s28_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
 python src/scripts/france_lists.py v8u_s28_ALL2
-python src/scripts/france_variants.py s28 final --rules "$R,droplist:fb_ns_ref,droplist:fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:fb_coined_hi" --cap
+python src/scripts/france_variants.py s28 v8u_s28_FIN --rules "$R,droplist:fb_ns_ref,droplist:fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:fb_coined_hi" --cap
+#    The submitted file (v8w_s29_FIN, leaderboard 0.987745): the same recipe on s29, lists built from s29's own decoding.
+python src/scripts/france_variants.py s29 v8w_s29_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
+python src/scripts/france_lists.py v8w_s29_ALL2 v8x/s29 s29
+python src/scripts/france_variants.py s29 final --rules "$R,droplist:s29/fb_ns_ref,droplist:s29/fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:s29/fb_coined_hi" --cap
 
 # 10. checks (the official validator is also run by `emit` when work/official/validate_submission.py exists)
 python src/scripts/check_submission.py "$BER_WORK/output/final" "$BER_DATA/test"

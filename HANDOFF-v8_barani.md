@@ -3,6 +3,12 @@
 Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name this file `HANDOFF.md` (the Mac disk is case-insensitive: it would be the team's `handoff.md`).
 
 
+## Final (28 Sep 00:15 IST, window closed)
+- **Final: `v8w_s29_FIN`, public leaderboard 0.987745** (best public submission, so it is also the private-leaderboard file). Later uploads:
+  `v8w_s29_HYB` 0.987143 (French-aware re-adds hurt). Account 567503593043: all notebooks stopped. Full account in `EXPERIMENTS.md` section 13.
+- Rebuild: `code/business_entity_resolution/reproduce_final.sh` (steps 8c and 9 build `s29` and `v8w_s29_FIN`); package:
+  `bash submission/make_package.sh v8w_s29_FIN`; methodology: `submission/Documentation_template.md` (final numbers filled in).
+
 ## Sai-side update, 27 Sep about 16:00 IST (newest; read first)
 - **Portal: `v8w_s29_AR` 0.985875** (best so far; `s29` = `s27` + Qwen3-0.6B in the `xs2` slot, your recipe `typeswap:1.01,thrpn:0.995,protect:0.9,restore:...:0.05` + `--cap`). The team cannot upload right now; the files below are ready for any slot that opens.
 - New France error classes read from raw records (full account in `EXPERIMENTS.md` section 12):

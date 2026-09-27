@@ -110,7 +110,12 @@ Locked holdout of 150,000 training S1 that no model trained on (macro F_0.5, pai
 | + name dense channel | 0.9708 |
 | + name and address dense channel (first stage 0.9757) and stack | 0.9832 |
 | + cross-encoder score, more training data, deeper stack (`s15`) | 0.9894 |
-| + stronger cross-encoder (e5-base), e5-small as second feature, refined competition, first stage on 850k S1 (`s17`, portal 0.981) | **0.9903** |
+| + stronger cross-encoder (e5-base), e5-small as second feature, refined competition, first stage on 850k S1 (`s17`, portal 0.981) | 0.9903 |
+| + e5-base on every short-listed pair (`s22`), symmetric two-seed e5-base (`s27`) | 0.99054, 0.99063 |
+| + Qwen3-0.6B cross-encoder band score (`s29`) | **0.99088** |
+
+**Submitted file:** `v8w_s29_FIN` = `s29` + France decoding version 8 (`france_variants.py` rules `typeswap`, `thrpn:0.9999`, `legalx`, the namesake
+and coined-alias lists from `france_lists.py`, `protect`, `restore`, caps); public leaderboard **0.987745**. `reproduce_final.sh` steps 8c and 9.
 
 Test run: about 4.7 candidates per S1 (57M candidate pairs before the shortlist), about 94% of S1 receive at least one match. France has no
 training labels; its behaviour is only checked through the model's own probabilities and output statistics.
@@ -118,7 +123,7 @@ training labels; its behaviour is only checked through the model's own probabili
 ## Licences and constraints
 
 Models: XGBoost (Apache-2.0) for both matching stages; `intfloat/multilingual-e5-small` (MIT, 118M parameters) as encoder for dense
-retrieval and `intfloat/multilingual-e5-small` and `intfloat/multilingual-e5-base` (MIT, 278M parameters) as cross-encoder bases. Libraries: numpy, scikit-learn, pandas (BSD-3), polars, duckdb, rapidfuzz, pyyaml,
+retrieval and `intfloat/multilingual-e5-small` and `intfloat/multilingual-e5-base` (MIT, 278M parameters) and `Qwen/Qwen3-0.6B` (Apache-2.0) as cross-encoder bases. Libraries: numpy, scikit-learn, pandas (BSD-3), polars, duckdb, rapidfuzz, pyyaml,
 mlflow, pytest (MIT/Apache-2.0), anyascii (ISC), torch (BSD-3), transformers (Apache-2.0). All far below 8B parameters. The abbreviation and
 legal-form tables in `text.py` are hand-written string rules, not external data lookups; the encoder weights are the only downloaded
 artifact and no data of the challenge is sent anywhere.

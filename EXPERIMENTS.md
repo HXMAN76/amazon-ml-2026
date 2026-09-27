@@ -277,3 +277,36 @@ Suggested order if slots exist: `ARtLNC`, then `ARtL` (isolates the two new rule
 1. France recall inside the `thrpn` 0.995 cut: about 34k non-exact pairs dropped at about 45% decoys, i.e. about 19k true pairs lost. A per-class restore (like `coined`: typo'd type words `sport`/`sportif`, `& Associes`, `Cie` additions at the exact address) could win about +0.0005 to +0.0007.
 2. Same street, other house number, exact name: 14.7k France pairs at p about 0.9 (`Calais Federation` @295 vs @524); this is the train distractor pattern. Needs the holdout rate of the same cell before a rule.
 3. France blocking recall has never been measured (US/India candidate oracle 0.9957).
+
+## 13. Final evening (27 Sep 16:00 to 23:59 IST) and the freeze
+
+**Final file: `v8w_s29_FIN`, public leaderboard 0.987745** (the private leaderboard uses the best public submission). `s29` + barani's final France
+recipe (`S29_FIN_BUILD_barani.md`; all sanity checks within tolerance except `legalx` firing on 9,589 pairs against 6,383 on `s28`, a base-model
+difference, not a bug). Rebuild: `reproduce_final.sh` steps 8c and 9; package: `submission/make_package.sh v8w_s29_FIN`.
+
+| File | What | Leaderboard |
+|---|---|---|
+| `v8w_s29_AR` | `s29` + the version-8 France recipe | 0.985875 |
+| **`v8w_s29_FIN`** | `s29` + final recipe (thrpn 0.9999, French legalx, namesake / near-namesake drop lists, coined re-adds) | **0.987745** |
+| `v8w_s29_HYB` | FIN + our French-aware restores (FRZ) + barani's `v9_xF2_FIN` adds and drops, `s29` base | 0.987143 |
+
+What was tried after FIN (all on `s29`; scripts in `src/scripts/`, jobs `aws/queue/jobs/sx_*.sh`, Sai-account runner in `aws/queue/sai_notebook/`):
+- **`s32`** = `s29` + `jhu-clsp/mmBERT-base` (MIT) cross-encoder as xs4 (trained and scored on Sai's account): holdout +0.000037 [-0.000034, +0.000109]. No gain.
+  `gte-multilingual-reranker-base` could not run (its remote code crashes in transformers 5.17); `xenc.py` gained `remote_code=1` and drops segment ids
+  for single-segment encoders.
+- **France pseudo-label student** (`france_student.py`): AUC 1.000 on its own pseudo-labels, but it dropped about 56k mostly true copies and restored
+  sibling decoys (every positive label sits at the S1's own address, so everything else looks negative). Not used.
+- **Per-cell excess over the US/India rate** (`excess_cells.py`): invalid for drops (France makes far more domains and initials, and its probabilities
+  sit lower, so rates differ for reasons that are not decoys).
+- **Typo restores** (`typo_restore.py`, 1,090 pairs, all samples true) and **multi-word type changes** (`glued_typeswap.py`, 153 kept, mostly decoys;
+  glued/domain type swaps are brand words, not decoys): too small to matter.
+- **French-aware cross-encoder** (`xfz.py`: training pairs rewritten into French form with the same labels; 90k original + 210k French-ized pairs,
+  warm start from the e5-base model, one epoch). On 60k labelled pairs: French-ized AP 0.9970 to 0.9998 (errors 7,749 to 1,333), original unchanged.
+  `xfz_decide2.py` re-added FIN-dropped France pairs with its score >= 0.98 (posterior from per-bin likelihood ratios at France's prior), 366 pairs below
+  the stack threshold with score >= 0.995, and dropped 142 type swaps into another real word (`v8w_s29_FRZ`). Its drop side contradicted the measured
+  noise-word evidence and was not used. Combined with barani's `v9_xF2_FIN` changes, the leaderboard fell to 0.987143 (-0.0006): **rewriting US/India
+  pairs into French teaches French vocabulary but not France's decoy semantics** (in the training countries a swapped category word is noise, in
+  France it marks a sibling business), so the re-added pairs include siblings. A French-aware model needs France-specific negatives, not only
+  translated training pairs.
+
+Compute at the end: every notebook of account 567503593043 stopped (28 Sep); `sai-xenc` (Sai's account) stopped at 23:31. Nothing deleted.
