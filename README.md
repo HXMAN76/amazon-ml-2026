@@ -34,7 +34,7 @@ Everything was built in three days (25 to 27 September 2026, IST) from the provi
 The full story, version by version, is in **[docs/build-log.md](docs/build-log.md)**.
 
 <p align="center">
-  <img src="docs/assets/leaderboard.svg" width="100%" alt="Line chart of the 12 leaderboard uploads over three days, from 0.944 (v2) to the best 0.987745 (v8w_s29_FIN), against the 50th place at 0.98935 and the leader at 0.991829. Two uploads went down: v8u_s22F12n_AR (0.984136) and v9_xF2_FIN (0.987208).">
+  <img src="docs/assets/leaderboard.svg" width="100%" alt="Line chart of the 12 leaderboard uploads over three days, from 0.944 (v2) to the best 0.987745 (v8w_s29_FIN), against the leader at 0.991829. Two uploads went down: v8u_s22F12n_AR (0.984136) and v9_xF2_FIN (0.987208).">
 </p>
 <p align="center"><sub>Two diagnostic uploads on 26 Sep (France only 0.187, US only 0.453) are left out: they were country probes, not candidate solutions.</sub></p>
 

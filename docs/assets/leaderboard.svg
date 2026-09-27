@@ -23,8 +23,6 @@
 <text x="62" y="82.0" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#8b949e">1.00</text>
 <line x1="72" y1="119.4" x2="772" y2="119.4" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="6 5"/>
 <text x="782" y="114.4" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#8b949e">leader 0.991829</text>
-<line x1="72" y1="132.0" x2="772" y2="132.0" stroke="#e3b341" stroke-width="1.5" stroke-dasharray="6 5"/>
-<text x="782" y="145.0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#e3b341">50th place 0.98935</text>
 <polyline points="101.2,361.7 159.5,336.4 217.8,316.1 276.2,220.0 334.5,176.8 392.8,166.8 451.2,156.5 509.5,151.1 567.8,158.4 626.2,149.6 684.5,140.1 742.8,142.8" fill="none" stroke="#56d4c4" stroke-width="3" stroke-linejoin="round"/>
 <circle cx="101.2" cy="361.7" r="6.5" fill="#161b22" stroke="#56d4c4" stroke-width="3"/>
 <text x="101.2" y="347.7" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" font-weight="600" fill="#e6edf3" paint-order="stroke" stroke="#161b22" stroke-width="5" stroke-linejoin="round">.944</text>
