@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360">
+<rect width="960" height="360" rx="14" fill="#161b22"/>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8b949e"/></marker></defs>
+<text x="28" y="42" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#e6edf3">The pipeline</text>
+<text x="28" y="64" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" fill="#8b949e">1.73M test S1 records against 4.89M S2 and 5.08M S3 records; every stage is good at one thing</text>
+<rect x="28" y="92" width="196" height="96" rx="10" fill="#0d1117" stroke="#56d4c4" stroke-width="1.5"/>
+<circle cx="50" cy="116" r="12" fill="#56d4c4"/><text x="50" y="120.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">1</text>
+<text x="70" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Normalise</text>
+<text x="44" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">HTML, accents, digit repair,</text>
+<text x="44" y="169" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">legal forms, romanisation</text>
+<rect x="256" y="92" width="196" height="96" rx="10" fill="#0d1117" stroke="#56d4c4" stroke-width="1.5"/>
+<circle cx="278" cy="116" r="12" fill="#56d4c4"/><text x="278" y="120.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">2</text>
+<text x="298" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Candidates</text>
+<text x="272" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">token index, 2 dense channels,</text>
+<text x="272" y="169" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">98.4% of true pairs found</text>
+<rect x="484" y="92" width="196" height="96" rx="10" fill="#0d1117" stroke="#56d4c4" stroke-width="1.5"/>
+<circle cx="506" cy="116" r="12" fill="#56d4c4"/><text x="506" y="120.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">3</text>
+<text x="526" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Pair model</text>
+<text x="500" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">XGBoost on 67 features,</text>
+<text x="500" y="169" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">short list ≈ 4.7 per S1</text>
+<rect x="712" y="92" width="196" height="96" rx="10" fill="#0d1117" stroke="#6cb6ff" stroke-width="1.5"/>
+<circle cx="734" cy="116" r="12" fill="#6cb6ff"/><text x="734" y="120.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">4</text>
+<text x="754" y="121" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Cross-encoders</text>
+<text x="728" y="150" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">e5-small, e5-base ×2,</text>
+<text x="728" y="169" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">Qwen3-0.6B, fine-tuned</text>
+<rect x="28" y="236" width="196" height="96" rx="10" fill="#0d1117" stroke="#6cb6ff" stroke-width="1.5"/>
+<circle cx="50" cy="260" r="12" fill="#6cb6ff"/><text x="50" y="264.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">5</text>
+<text x="70" y="265" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Consensus stack</text>
+<text x="44" y="294" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">XGBoost, depth 9, 1.5M S1,</text>
+<text x="44" y="313" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">evidence from rival S1</text>
+<rect x="256" y="236" width="196" height="96" rx="10" fill="#0d1117" stroke="#6cb6ff" stroke-width="1.5"/>
+<circle cx="278" cy="260" r="12" fill="#6cb6ff"/><text x="278" y="264.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">6</text>
+<text x="298" y="265" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">Decision</text>
+<text x="272" y="294" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">one owner per pool record,</text>
+<text x="272" y="313" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">≤ 5 S2 and ≤ 6 S3 per S1</text>
+<rect x="484" y="236" width="196" height="96" rx="10" fill="#0d1117" stroke="#e3b341" stroke-width="2"/>
+<circle cx="506" cy="260" r="12" fill="#e3b341"/><text x="506" y="264.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#0d1117">7</text>
+<text x="526" y="265" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#e6edf3">France decoding</text>
+<text x="500" y="294" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">rules measured per 1,000 S1</text>
+<text x="500" y="313" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b949e">against US / India rates</text>
+<line x1="227" y1="140.0" x2="252" y2="140.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<line x1="455" y1="140.0" x2="480" y2="140.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<line x1="683" y1="140.0" x2="708" y2="140.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<line x1="227" y1="284.0" x2="252" y2="284.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<line x1="455" y1="284.0" x2="480" y2="284.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<path d="M810.0,191 V210 H126.0 V231" fill="none" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<line x1="683" y1="284.0" x2="708" y2="284.0" stroke="#8b949e" stroke-width="2" marker-end="url(#a)"/>
+<rect x="712" y="254" width="196" height="60" rx="30" fill="#e3b341" opacity="0.14" stroke="#e3b341"/>
+<text x="810.0" y="281" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="700" fill="#e3b341">matching_results.tsv</text>
+<text x="810.0" y="299" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#8b949e">0.987745 on the leaderboard</text>
+</svg>

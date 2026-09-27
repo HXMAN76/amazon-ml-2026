@@ -1,4 +1,19 @@
-# Business Entity Resolution: Amazon ML Challenge 2026 (Team Nooglers)
+<p align="center">
+  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution: Amazon ML Challenge 2026, Team Nooglers. Best leaderboard score 0.987745, locked holdout 0.99088.">
+</p>
+
+<p align="center">
+  <img alt="Leaderboard 0.987745" src="https://img.shields.io/badge/leaderboard-0.987745-e3b341?style=for-the-badge"> <img alt="Holdout F0.5 0.99088" src="https://img.shields.io/badge/holdout%20F0.5-0.99088-56d4c4?style=for-the-badge">
+</p>
+<p align="center">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-cross--encoders-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
+  <img alt="Hugging Face" src="https://img.shields.io/badge/Hugging%20Face-e5%20%7C%20Qwen3-FFD21E?style=flat-square&logo=huggingface&logoColor=black">
+  <img alt="XGBoost" src="https://img.shields.io/badge/XGBoost-2%20stages-189FDD?style=flat-square">
+  <img alt="DuckDB" src="https://img.shields.io/badge/DuckDB-blocking-FFF000?style=flat-square&logo=duckdb&logoColor=black">
+  <img alt="Polars" src="https://img.shields.io/badge/Polars-dataframes-CD792C?style=flat-square&logo=polars&logoColor=white">
+  <img alt="AWS SageMaker" src="https://img.shields.io/badge/AWS-SageMaker-FF9900?style=flat-square">
+</p>
 
 For every business record in Source 1 (S1), the task is to find the records in Source 2 and Source 3 (S2, S3) that describe the same business.
 Our solution has several stages:
@@ -13,11 +28,15 @@ Everything was built in three days (25 to 27 September 2026, IST) from the provi
 | | |
 |---|---|
 | Best leaderboard score | **0.987745** (`v8w_s29_FIN`, 27 Sep) |
-| First leaderboard score | 0.944 (`v2`, 25 Sep) |
 | Locked holdout (US and India), first model → best stack | 0.9565 → 0.99088 |
 | France F0.5 (estimated from leaderboard probes) | about 0.92 (day 2) → about 0.977 (`v8w_s29_FIN`) |
 
 The full story, version by version, is in **[docs/build-log.md](docs/build-log.md)**.
+
+<p align="center">
+  <img src="docs/assets/leaderboard.svg" width="100%" alt="Line chart of the 12 leaderboard uploads over three days, from 0.944 (v2) to the best 0.987745 (v8w_s29_FIN), against the 50th place at 0.98935 and the leader at 0.991829. Two uploads went down: v8u_s22F12n_AR (0.984136) and v9_xF2_FIN (0.987208).">
+</p>
+<p align="center"><sub>Two diagnostic uploads on 26 Sep (France only 0.187, US only 0.453) are left out: they were country probes, not candidate solutions.</sub></p>
 
 ---
 
@@ -39,6 +58,10 @@ The full story, version by version, is in **[docs/build-log.md](docs/build-log.m
 - **Rules:** open models under MIT or Apache-2.0 with at most 8B parameters, no external data or lookups, five leaderboard uploads a day.
 
 ## 2. The final pipeline
+
+<p align="center">
+  <img src="docs/assets/pipeline.svg" width="100%" alt="Pipeline: normalise, candidates, pair model, cross-encoders, consensus stack, decision, France decoding, then matching_results.tsv.">
+</p>
 
 | Stage | What it does | Code |
 |---|---|---|
@@ -73,7 +96,7 @@ The leaderboard gave a break-even point: a French rule helps when more than 26% 
 | `v8u_s27_AR` | 3 | Symmetric cross-encoder, France cut-off with protections | 0.99063 | 0.985578 |
 | `v8w_s29_AR` | 3 | Qwen3-0.6B cross-encoder | 0.99088 | 0.985875 |
 | **`v8w_s29_FIN`** | 3 | France rules measured per 1,000 S1 (type words, legal forms, namesakes, 0.9999 cut, alias fix) | 0.99088 | **0.987745** |
-| `v9_xF2_FIN` | 3 | French-aware cross-encoder restores and drops on `s28` | 0.990770 | not reported |
+| `v9_xF2_FIN` | 3 | French-aware cross-encoder restores and drops on `s28` | 0.990770 | 0.987208 |
 | `v9_s30F_FIN` | after close | Stack `s30F` with the French-aware cross-encoder as a feature | 0.990776 | not uploaded |
 
 \* Out-of-fold on the training sample. The holdout covers only the US and India, because training has no French records.
@@ -88,6 +111,7 @@ The leaderboard gave a break-even point: a French rule helps when more than 26% 
 - **After the window closed.** An e5-base cross-encoder trained on original plus French-rewritten training pairs (`xencFZ`) scores 0.9992 average precision on the French-rewritten pairs.
   - The stack built on it (`s30F`) raises the French-rewritten holdout from 0.976026 (`s28`) to **0.986655**, with the US/India holdout unchanged (0.990776).
   - Its file `v9_s30F_FIN` passes the official validator but could not be uploaded.
+  - A caution: `v9_xF2_FIN`, which used the same cross-encoder for restores and drops on top of the FIN rules, scored 0.987208 on the leaderboard, below the best. Gains on the French-rewritten holdout did not fully carry over to the real French records.
 
 **Tried and dropped:**
 - per-country and rank-dependent thresholds;
@@ -123,6 +147,7 @@ Training uses only the provided labels.
 ├── docs/
 │   ├── build-log.md           the full three-day story
 │   ├── pipeline.md            the pipeline in detail: stages, France decoding, reproduction, licences
+│   ├── assets/                README figures (banner, leaderboard chart, pipeline diagram)
 │   ├── handoffs/              handoff notes between sessions and teammates
 │   └── archive/               plans, architecture notes and handoffs of earlier versions
 ├── data/                      place for the challenge dataset (not committed)
