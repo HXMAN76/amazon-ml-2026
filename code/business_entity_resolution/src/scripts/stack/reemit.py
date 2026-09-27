@@ -1,6 +1,6 @@
 """Re-emit a model's output with per-country thresholds (the pair probabilities are unchanged).
 
-Usage: python src/scripts/reemit.py NAME NEWNAME [--thr france=0.85,us=0.71,india=0.71] [--global-thr 0.71]
+Usage: python src/scripts/stack/reemit.py NAME NEWNAME [--thr france=0.85,us=0.71,india=0.71] [--global-thr 0.71]
 Reads WORK/output/NAME/pair_p.parquet and models/NAME/config.json, keeps the exclusive assignment of the model, applies the country's
 threshold (default: the model's threshold), and writes WORK/output/NEWNAME/{matching_results,candidate_pairs}.tsv through the normal
 `emit` path (validation included). The candidate file is unchanged: only the matches change.

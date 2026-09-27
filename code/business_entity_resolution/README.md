@@ -42,14 +42,14 @@ Every S1 entity, including entities of a country never seen in training (France)
 
 France has no training labels and its records differ from the training countries: names are two words (city or brand plus a type word such as `club`, `ecole`, `comite`), many
 businesses share a building, and the region in an address is often replaced by the department. The test predictions of the stacked model are post-processed by
-`src/scripts/france_variants.py` with three structural rules that use only the test files and the training data's known limits:
+`src/scripts/france/france_variants.py` with three structural rules that use only the test files and the training data's known limits:
 - **Type-word swap decoys.** A pair whose core names differ by exactly one common word on each side is a decoy when the swapped-in word belongs to the country's type vocabulary. The
   vocabulary is estimated without labels from slot occupancy: an S1 has at most 5 S2 and 6 S3 matches, true copies must fit into the free slots, so their number per S1 falls to zero when the S1 is
   full, while decoys arrive at a rate that does not depend on how full it is. Words whose rate does not fall (ratio of S1 with three or more exact copies to S1 with none of at least 0.75) are type words.
 - **A stricter probability cut-off for France** (0.985): the model's probabilities are over-confident there.
 - **Capacities**: at most 5 S2 and 6 S3 matches per S1 in every country.
 
-Version 8 of the decoding (rules `thrpn`, `protect`, `restore`; `src/scripts/france_recall.py`) keeps France's own kinds of true copies, which the
+Version 8 of the decoding (rules `thrpn`, `protect`, `restore`; `src/scripts/france/france_recall.py`) keeps France's own kinds of true copies, which the
 training data never shows and the model therefore scores low:
 - **Protected cut-off `thrpn`** (0.995 instead of the plain 0.985): the cut-off drops only pairs that are not equal after spaced legal forms
   (`s a r l`), not initials of the S1's name, and not a noise-word copy (a word swapped into or added from `fils`, `groupe`, `services`,
@@ -92,8 +92,14 @@ and an MLflow sqlite database. `make test` runs the unit and end-to-end tests (2
 ```
 src/ber/                 package: text.py, config.py, decision.py, split.py, tracking.py, validate.py, synth.py
   stages/                prepare, sample, block, block_eval, prune, dense, dense_all, pairs, train_gpu, score_rest, xenc, stack, predict
-src/scripts/             error_analysis.py, noise_analysis.py, miss_analysis.py, country_expected.py, shortlist_eval.py,
-                         paired_models.py (paired bootstrap), check_submission.py, qa_prepare.py
+src/scripts/france/      French decoding and French adaptation: france_variants.py (rule engine), france_lists.py (namesake and
+                         invented-name lists), france_recall.py, france_post.py, band_kinds.py, word_swap.py, namesake_street.py,
+                         frenchify.py (French-form rewrite of training records), stack_langfree.py (language-free stack features);
+                         late France tools: xfz.py, xfz_decide.py, xfz_decide2.py (French-aware cross-encoder decisions),
+                         excess_cells.py, glued_typeswap.py, typo_restore.py, france_student.py, pool_support_scan.py
+src/scripts/stack/       score and stack tools: avg_xenc.py, xs_merge.py, stack_predict_merge.py, blend_stacks.py, reemit.py,
+                         paired_models.py (paired bootstrap)
+src/scripts/check_submission.py   submission checker
 src/tests/               unit and end-to-end tests
 configs/params.yaml      all tunables
 reproduce_final.sh       the exact command sequence of the submitted model

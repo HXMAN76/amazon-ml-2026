@@ -1,5 +1,5 @@
 """Generic names in the same city: is a same-name record in another street (or at another house number) the S1's copy or a namesake's?
-Usage: python src/scripts/namesake_street.py MODEL [RECIPE_RUN]
+Usage: python src/scripts/france/namesake_street.py MODEL [RECIPE_RUN]
 France names are "<city> <type word> <legal form>" (530 S1 are called `bordeaux club sarl`), so namesakes share the city, and house numbers
 are small: the same name, city and house number with another street happens by chance, while US/India namesakes live in other cities.
 Street words = address tokens rare among BOTH the country's S1 and pool addresses (drops cities, regions and departments). Per predicted pair:

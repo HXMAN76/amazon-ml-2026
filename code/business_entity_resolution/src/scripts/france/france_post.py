@@ -1,4 +1,4 @@
-"""France post-rules on top of a France-variant run. Usage: python src/scripts/france_post.py MODEL RUN_IN RUN_OUT --rules nsaway[:NMIN],nsaway_all[:NMIN],coined
+"""France post-rules on top of a France-variant run. Usage: python src/scripts/france/france_post.py MODEL RUN_IN RUN_OUT --rules nsaway[:NMIN],nsaway_all[:NMIN],coined
 Reads WORK/output/RUN_IN/{matching_results,candidate_pairs}.tsv, writes WORK/output/RUN_OUT/ (candidates copied unchanged).
   nsaway:N     drop France pairs whose core names are equal, whose streets do not match (namesake_street.py) and whose name is shared by at
                least N France S1 (default 6). Generic city-brand names ("bordeaux club sarl") have namesakes in the same city and small house

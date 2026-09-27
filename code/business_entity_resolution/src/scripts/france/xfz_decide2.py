@@ -1,4 +1,4 @@
-"""Revise a France recipe with the French-aware cross-encoder score xsF. Usage: python src/scripts/xfz_decide2.py MODEL RUN_IN RUN_OUT XS_FR EVAL_XS EVAL [PRIOR_RESTORE PRIOR_DROP]
+"""Revise a France recipe with the French-aware cross-encoder score xsF. Usage: python src/scripts/france/xfz_decide2.py MODEL RUN_IN RUN_OUT XS_FR EVAL_XS EVAL [PRIOR_RESTORE PRIOR_DROP]
 XS_FR: (q, pid, xs) of France's test pairs; EVAL_XS / EVAL: the French-ized labelled eval pairs and their scores. The eval set is mostly positive, so\ndecisions use per-bin likelihood ratios with the prior of the set being revised (about 0.5 true among the pairs RUN_IN dropped, 0.95 among those it kept).
 Restores raw pairs RUN_IN dropped with xsF above the restore cut, drops kept pairs below the drop cut, never touching the decoy classes that US/India
 labels cannot teach (type-word changes, French legal-form conflicts, exact names in another street). Cuts: restored bins reach a posterior >= 0.9, dropped bins <= 0.2; writes RUN_OUT_R (restores) and RUN_OUT_RD (restores + drops)."""

@@ -1,9 +1,9 @@
 # v9 (CPU lane jobs2): French-ized copy of the training data (frenchify.py), 12 sample true pairs, then `prepare` on it into work_fr.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
 export BER_WORK=$SM/work_t
-python src/scripts/frenchify.py $SM/data_fr --sample 12
+python src/scripts/france/frenchify.py $SM/data_fr --sample 12
 df -h $SM | tail -1
-python src/scripts/frenchify.py $SM/data_fr
+python src/scripts/france/frenchify.py $SM/data_fr
 BER_DATA=$SM/data_fr BER_WORK=$SM/work_fr python -m ber.stages.prepare --split train 2>&1 | tail -6
 BER_WORK=$SM/work_fr python - <<'PY'
 import polars as pl

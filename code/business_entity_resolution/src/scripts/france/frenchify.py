@@ -1,4 +1,4 @@
-"""French-style copy of the training data, labels kept. Usage: python src/scripts/frenchify.py OUT_DATA_DIR [--sample N]
+"""French-style copy of the training data, labels kept. Usage: python src/scripts/france/frenchify.py OUT_DATA_DIR [--sample N]
 Rewrites every record of $BER_DATA/train/train_source{1,2,3}.tsv into French form with a fixed, hand-written dictionary (domain knowledge,
 no test data): legal forms (LLC -> SARL, Inc -> SAS, spaced forms kept spaced), category words (bakery -> boulangerie, school -> ecole, ...)
 with the category word moved to the front as in French names, connectors (and -> et), noise-type words (sons -> fils, group -> groupe),

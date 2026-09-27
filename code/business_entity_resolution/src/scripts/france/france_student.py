@@ -1,5 +1,5 @@
 """France student: a classifier trained on France pseudo-labels that decides the pairs the France rules leave to a crude cut.
-Usage: python src/scripts/france_student.py MODEL RUN_IN RUN_OUT [--drop T] [--restore T] [--tag NAME]
+Usage: python src/scripts/france/france_student.py MODEL RUN_IN RUN_OUT [--drop T] [--restore T] [--tag NAME]
 The organisers allow self-training on the test files. Pseudo-labels come only from signals measured on raw records (EXPERIMENTS.md 12):
   positive  exact core name at the S1's street and house number with p >= 0.99; coined aliases at the S1's exact address; alias records that
             name the S1 ("X Co formerly known as <S1 name>"); noise-word copies (fils, groupe, services, developpement, france) at the exact address

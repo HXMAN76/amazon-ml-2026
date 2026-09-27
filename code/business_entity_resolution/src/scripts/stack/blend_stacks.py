@@ -1,5 +1,5 @@
 """Blend stacked models that were trained on the same chunk files (other XGBoost seeds, other learners): mean of the logits.
-Usage: python src/scripts/blend_stacks.py NEW MODEL_A MODEL_B [MODEL_C ...]
+Usage: python src/scripts/stack/blend_stacks.py NEW MODEL_A MODEL_B [MODEL_C ...]
 Needs for every model: models/<m>/{holdout_pred,oof_tune}.parquet (from `stack train`) and output/<m>/pair_p.parquet (from `stack predict`). Writes models/NEW/ (holdout_pred, oof_tune,
 holdout.json with the threshold tuned on the blended out-of-fold probabilities, config.json) and the outputs of NEW (pair_p and the two TSV files, validated) so that paired_models.py,
 reemit.py and france_variants.py work on NEW like on any model."""

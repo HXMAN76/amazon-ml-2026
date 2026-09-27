@@ -1,5 +1,5 @@
 """French-aware cross-encoder from French-ized training pairs (training data only, labels unchanged).
-Usage: python src/scripts/xfz.py make WORKDIR N_ORIG N_FR | evalset WORKDIR N | eval WORKDIR MODEL_DIR
+Usage: python src/scripts/france/xfz.py make WORKDIR N_ORIG N_FR | evalset WORKDIR N | eval WORKDIR MODEL_DIR
 The US/India pair texts (`name1 | addr`, normalised, digits tagged) are rewritten into French form by one deterministic token map applied to
 both records of a pair, so a copy stays a copy and a distractor stays a distractor: legal forms (llc -> sarl, incorporated -> sas, ...), category
 words (bakery -> boulangerie, school -> ecole, ...) moved to the front of the name as in French names, and/et, sons/fils, group/groupe; street

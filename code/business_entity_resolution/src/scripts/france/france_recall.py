@@ -1,4 +1,4 @@
-"""Where are France's missing true copies? Usage: python src/scripts/france_recall.py MODEL [XDIR]
+"""Where are France's missing true copies? Usage: python src/scripts/france/france_recall.py MODEL [XDIR]
 The generator gives an S1 about 3.46 matches (train); the model and the France rules keep about 3.2 to 3.3 per France S1, and 12% of France's
 unassigned pool records have a best probability of 0.1 to 0.72 (US 3%). This looks at the shortlisted pairs whose pool record nobody owns (a restore
 candidate: adding it cannot take a record from another S1) by the kind of name relation a true France copy shows (exact core, equal after spaced

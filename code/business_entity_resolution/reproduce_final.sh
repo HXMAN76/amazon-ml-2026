@@ -82,7 +82,7 @@ for d in "xenc2Fsym_v7 xenc2sym" "xenc2Fsym2_v7 xenc2sym2"; do set -- $d
   pyt ber.stages.xenc score --split train --dir $1 --model-dir $2/model --set score_batch=512,symmetric=1
   pyt ber.stages.xenc score --split test --dir $1 --model-dir $2/model --set score_batch=512,symmetric=1
 done
-python src/scripts/avg_xenc.py xenc2SymE_v7 xenc2Fsym_v7 xenc2Fsym2_v7
+python src/scripts/stack/avg_xenc.py xenc2SymE_v7 xenc2Fsym_v7 xenc2Fsym2_v7
 py ber.stages.xenc data --base v7 --dir xenc3Q_v7 --set fit_more=300000,band_lo=0.01,band_hi=0.99
 pyt ber.stages.xenc train --dir xenc2_v7 --base-model Qwen/Qwen3-0.6B --model-dir xenc3Q/model --set fit_more=300000,band_lo=0.01,band_hi=0.99,epochs=1
 pyt ber.stages.xenc score --split train --dir xenc3Q_v7 --model-dir xenc3Q/model --set score_batch=256,max_len=192
@@ -104,21 +104,21 @@ py ber.stages.stack tfidf --split test --tag _w
 py ber.stages.stack train --name s29 --base v7 --tag _w --set max_depth=9,eta=0.05,rounds=1500,early_stop=50
 py ber.stages.stack predict --name s29
 
-# 9. structural decoding of the test predictions (src/scripts/france_variants.py; France only, see README "Decoding"): decoys that swap the type word of the name
+# 9. structural decoding of the test predictions (src/scripts/france/france_variants.py; France only, see README "Decoding"): decoys that swap the type word of the name
 #    (learned vocabulary, from slot occupancy), a stricter cut-off for France's over-confident probabilities, and the training maximum of 5 S2 and 6 S3 matches per S1.
 #    The candidate file is unchanged; only matches are removed.
-python src/scripts/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.985" --cap
+python src/scripts/france/france_variants.py s22 s22final --rules "typeswap:1.01,thr:0.985" --cap
 #    Version 8 of the decoding (README "Decoding (France)") on s28. Every rule was chosen by comparing France's pairs per 1,000 S1 with the US / India
 #    rates of the same kind (the labelled holdout keeps those kinds 99%+ true): a French excess is decoys. First the rule-based run, then the pair lists
 #    built on it (namesakes on another street, coined copies the 0.9999 cut over-drops), then the final file (v8u_s28_FIN).
 R="typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01"
-python src/scripts/france_variants.py s28 v8u_s28_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
-python src/scripts/france_lists.py v8u_s28_ALL2
-python src/scripts/france_variants.py s28 v8u_s28_FIN --rules "$R,droplist:fb_ns_ref,droplist:fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:fb_coined_hi" --cap
+python src/scripts/france/france_variants.py s28 v8u_s28_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
+python src/scripts/france/france_lists.py v8u_s28_ALL2
+python src/scripts/france/france_variants.py s28 v8u_s28_FIN --rules "$R,droplist:fb_ns_ref,droplist:fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:fb_coined_hi" --cap
 #    The submitted file (v8w_s29_FIN, leaderboard 0.987745): the same recipe on s29, lists built from s29's own decoding.
-python src/scripts/france_variants.py s29 v8w_s29_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
-python src/scripts/france_lists.py v8w_s29_ALL2 v8x/s29 s29
-python src/scripts/france_variants.py s29 final --rules "$R,droplist:s29/fb_ns_ref,droplist:s29/fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:s29/fb_coined_hi" --cap
+python src/scripts/france/france_variants.py s29 v8w_s29_ALL2 --rules "$R,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap
+python src/scripts/france/france_lists.py v8w_s29_ALL2 v8x/s29 s29
+python src/scripts/france/france_variants.py s29 final --rules "$R,droplist:s29/fb_ns_ref,droplist:s29/fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:s29/fb_coined_hi" --cap
 
 # 10. checks (the official validator is also run by `emit` when work/official/validate_submission.py exists)
 python src/scripts/check_submission.py "$BER_WORK/output/final" "$BER_DATA/test"

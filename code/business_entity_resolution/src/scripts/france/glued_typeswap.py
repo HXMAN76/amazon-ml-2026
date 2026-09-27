@@ -1,5 +1,5 @@
 """Type-word swaps hidden inside glued names and domains, and multi-word type changes, that the token rules cannot see.
-Usage: python src/scripts/glued_typeswap.py MODEL RUN_IN RUN_OUT [--glued]
+Usage: python src/scripts/france/glued_typeswap.py MODEL RUN_IN RUN_OUT [--glued]
 France's decoys are siblings with another type word (`lille club sarl` against `lille ecole sarl`). The typeswap rules compare word sets, so a
 sibling written as one token (`lilleecolesarl.com`, `lilleecole`) passes. A France pair is flagged when the S1 name has a type word, the pool name
 is a single token (glued or domain) that contains none of the S1's type words (typos allowed: partial ratio < 80), contains another type word

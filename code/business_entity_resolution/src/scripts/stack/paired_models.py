@@ -1,6 +1,6 @@
 """Paired bootstrap comparison of two stacked models on the locked holdout.
 
-Usage: python src/scripts/paired_models.py NAME_A NAME_B
+Usage: python src/scripts/stack/paired_models.py NAME_A NAME_B
 Reads WORK/models/<name>/holdout_pred.parquet and holdout.json (threshold) for both models, applies exclusive assignment and the
 model's own threshold, and prints the mean difference B - A of per-S1 F0.5 with its 95% paired bootstrap interval.
 """

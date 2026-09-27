@@ -1,5 +1,5 @@
 """Build France decoy-rule variants of a model's output. Usage:
-  python src/scripts/france_variants.py NAME NEWNAME --rules swap_exact,weak:80:0.9999:shared,legal:0.9999,thr:0.985,tiny:0.9999 [--country france]
+  python src/scripts/france/france_variants.py NAME NEWNAME --rules swap_exact,weak:80:0.9999:shared,legal:0.9999,thr:0.985,tiny:0.9999 [--country france]
 Rules (a pair is dropped when any rule fires; only the given country; probabilities of everything else are unchanged, the candidate file is unchanged):
   swap_exact[:pmax]     one common word swapped (word_swap.py) and the S1 has a confident exact-name copy, p < pmax (default 0.9999)
   swap_all[:pmax]       one common word swapped, p < pmax

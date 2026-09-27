@@ -1,4 +1,4 @@
-"""Restore France pairs a recipe dropped whose only name difference is a misspelt word. Usage: python src/scripts/typo_restore.py MODEL RUN_IN RUN_OUT
+"""Restore France pairs a recipe dropped whose only name difference is a misspelt word. Usage: python src/scripts/france/typo_restore.py MODEL RUN_IN RUN_OUT
 France's decoys swap in a different type word (club / ecole); the generator's copies misspell a word (coordination / curdination, amicale / aimlcae).
 Restored: raw-predicted France pairs (MODEL's pair_p at its threshold, p >= 0.9) that RUN_IN dropped, where exactly one word differs on each side and
 the two words are at least 75% similar (character ratio) but are not both known type words (sport / sportif), there is no French legal-form conflict,

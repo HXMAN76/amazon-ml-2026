@@ -1,5 +1,5 @@
 """Per-cell France excess over the US/India rate, to decide which pairs a France recipe should restore or drop.
-Usage: python src/scripts/excess_cells.py MODEL RUN_IN RUN_OUT [--min-n 150] [--restore-share 0.15] [--drop-share 0.5]
+Usage: python src/scripts/france/excess_cells.py MODEL RUN_IN RUN_OUT [--min-n 150] [--restore-share 0.15] [--drop-share 0.5]
 A cell = name relation (exact, glued, initials, domain, alias, coined, reorder, words dropped, word added, noise added, one word swapped,
 type-word change, typo, other) x address relation (same street + same house, same street other house, street mismatch, unknown) x p band.
 On the labelled holdout these cells are 99%+ true, so France's pairs per 1,000 S1 above the US/India rate are decoys:

@@ -1,4 +1,4 @@
-"""Average two symmetric cross-encoder seeds into one score file (as used by stacks s27 and s28). Usage: python src/scripts/avg_xenc.py OUT DIR_A DIR_B
+"""Average two symmetric cross-encoder seeds into one score file (as used by stacks s27 and s28). Usage: python src/scripts/stack/avg_xenc.py OUT DIR_A DIR_B
 For each split, joins WORK/DIR_A/{split}_xs.parquet and WORK/DIR_B/{split}_xs.parquet (columns xs, xs_asym, scored with symmetric=1) and writes
 WORK/OUT/{split}_xs.parquet with xs = sigmoid of the mean logit, xs_asym = mean of the two asymmetries, xs_seed_gap = |logit_A - logit_B|."""
 

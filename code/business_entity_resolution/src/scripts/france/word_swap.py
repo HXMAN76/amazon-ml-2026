@@ -1,5 +1,5 @@
 """Pairs whose names differ by one swapped common word ("nje ecole eurl" against "nje centre eurl"): how often, and are they true?
-Usage: python src/scripts/word_swap.py MODEL. A swap = the core names differ by exactly one token on each side (the rest equal as sets) and both
+Usage: python src/scripts/france/word_swap.py MODEL. A swap = the core names differ by exactly one token on each side (the rest equal as sets) and both
 tokens are common (they occur in at least DF_MIN core names of the split's S1 file); such pairs are near-copies of a sibling business, not noise.
 Holdout: true share of predicted pairs with a swap, by probability zone (labelled). Test: share of the predicted pairs with a swap, per country."""
 

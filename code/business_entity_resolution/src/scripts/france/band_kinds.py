@@ -1,4 +1,4 @@
-"""Which kinds of pair does the France cut-off still drop, and how true is each kind where labels exist? Usage: python src/scripts/band_kinds.py MODEL [CUT [LO]]
+"""Which kinds of pair does the France cut-off still drop, and how true is each kind where labels exist? Usage: python src/scripts/france/band_kinds.py MODEL [CUT [LO]]
 The protected cut-off (france_variants.py thrpn, default 0.995) drops France pairs with p below CUT that are not equal after spaced legal forms, not
 initials and not noise-word copies. Here those pairs are split into kinds (glued with a dropped letter, alias marker "d b a" / "formerly" / "f k a",
 same words reordered, no common word = coined alias, one common word swapped, words added, words dropped, other) with counts and examples; the same

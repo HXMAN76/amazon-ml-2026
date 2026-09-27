@@ -1,4 +1,4 @@
-"""Cross-encoder scores for a stack rebuild in which only France changes. Usage: python src/scripts/xs_merge.py OUT BASE_DIR FR_DIR [--keep-old-noise] [--only-swaps]
+"""Cross-encoder scores for a stack rebuild in which only France changes. Usage: python src/scripts/stack/xs_merge.py OUT BASE_DIR FR_DIR [--keep-old-noise] [--only-swaps]
 Writes WORK/OUT/test_xs.parquet = WORK/BASE_DIR/test_xs.parquet with the scores of the pairs in WORK/FR_DIR/test_xs.parquet (the France pairs, scored
 by a France-aware cross-encoder) replaced. `stack build --split test --xenc-dir OUT` then gives the stacked model the new France scores and
 leaves every other country's features, and so its probabilities, exactly as before.

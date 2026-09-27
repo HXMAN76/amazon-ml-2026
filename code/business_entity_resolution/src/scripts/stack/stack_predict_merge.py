@@ -1,5 +1,5 @@
 """Score one country's rebuilt stack chunks with an existing stacked model and merge them into that model's test probabilities.
-Usage: python src/scripts/stack_predict_merge.py NEWNAME BASE TAG
+Usage: python src/scripts/stack/stack_predict_merge.py NEWNAME BASE TAG
 `stack build --split test --tag TAG --ctry france ...` writes chunks for France's S1 only (for example with France's cross-encoder scores
 swapped, xs_merge.py); this scores them with BASE's XGBoost model, replaces those pairs in output/BASE/pair_p.parquet (every other pair keeps
 BASE's probability, so its matches are unchanged), and writes output/NEWNAME and models/NEWNAME (BASE's config: threshold, exclusivity)."""

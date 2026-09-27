@@ -1,5 +1,5 @@
 """Pair lists for france_variants.py's droplist / addlist rules, chosen by comparing France's rate per 1,000 S1 with the US and India rates
-(the labelled holdout keeps these kinds 99%+ true, so a French excess over the US/India rate is decoys). Usage: python src/scripts/france_lists.py RUN [OUTDIR [MODEL]]
+(the labelled holdout keeps these kinds 99%+ true, so a French excess over the US/India rate is decoys). Usage: python src/scripts/france/france_lists.py RUN [OUTDIR [MODEL]]
 RUN is a France-variant run (e.g. v8u_s28_ALL2) whose kept pairs the lists refer to; writes WORK/v8x/{fb_ns_ref, fb_nsnear_ref, fb_coined_hi}.parquet.
   fb_ns_ref      drop: exact core name on another street, the name shared by 11+ France S1 and raw p < 0.9999, or by 6+ and raw p < 0.99
                  (France 58 and 44 per 1,000 S1 against at most 5 for the US / India; no excess at p >= 0.9999 or for rarer names).

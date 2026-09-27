@@ -1,4 +1,4 @@
-"""Pool-side name consistency as a France decoy signal. Usage: python src/scripts/pool_support_scan.py MODEL
+"""Pool-side name consistency as a France decoy signal. Usage: python src/scripts/france/pool_support_scan.py MODEL
 A sibling business (same address, one type word swapped) leaves several pool records with the SAME core name in the S1's candidate list (its own copies in S2 and S3).
 The true copies of one S1 carry independent noise, so two of them rarely share an identical name that differs from the S1's. For every predicted pair the script counts
 the other candidates of the same S1 with the same core name (sup_same: same source, sup_cross: the other source).

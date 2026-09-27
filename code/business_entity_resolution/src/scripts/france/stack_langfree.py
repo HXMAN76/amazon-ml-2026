@@ -1,4 +1,4 @@
-"""Language-free sibling / noise features added to existing stack chunks. Usage: python src/scripts/stack_langfree.py TAG_IN TAG_OUT
+"""Language-free sibling / noise features added to existing stack chunks. Usage: python src/scripts/france/stack_langfree.py TAG_IN TAG_OUT
 Copies WORK/stack{TAG_IN}/{train,test}/chunk_*.parquet to WORK/stack{TAG_OUT}/ with extra columns computed from the split's own records, per country:
   lf_n_miss, lf_n_extra, lf_n_common  words only in the S1 core, only in the pool core, shared
   lf_miss_maxdf, lf_extra_mindf       log document frequency (S1 cores of the country) of the differing words: two common words swapped is a sibling

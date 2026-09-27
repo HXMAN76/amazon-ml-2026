@@ -19,7 +19,7 @@ for split in ("train", "test"):
 PY
 python -m ber.stages.stack train --name s30F --base v7 --tag _eqLF --set max_depth=9,eta=0.05,rounds=1500,early_stop=50 2>&1 | grep -E "HOLDOUT|OOF|top features|Traceback" | cut -c1-240
 python -m ber.stages.stack predict --name s30F 2>&1 | grep -E "kept|Traceback" | tail -2
-python src/scripts/paired_models.py s28 s30F 2>&1 | grep -E "delta_B_minus_A|holdout" | head -4
+python src/scripts/stack/paired_models.py s28 s30F 2>&1 | grep -E "delta_B_minus_A|holdout" | head -4
 python - <<'PY'
 import json, os
 from pathlib import Path
@@ -42,9 +42,9 @@ for name in ("s28", "s28L", "s30F"):
         pr = decision.assign_exclusive(d.select("q", "pid", "label").with_columns(pl.Series("p", p))).filter(pl.col("p") >= thr)
         print(f"{name} holdout {tag}: macro F0.5 {decision.macro_f05(pr, nt):.6f} (kept {pr.height}, wrong {pr.filter(pl.col('label') == 0).height})", flush=True)
 PY
-python src/scripts/france_variants.py s30F v9_s30F_ALL2 --rules "typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap 2>&1 | grep -E "^rule|^alias|total dropped|wrote|Traceback" | cut -c1-200
-python src/scripts/france_lists.py v9_s30F_ALL2 v8x/F s30F 2>&1 | grep -E "^fb_|Traceback"
-python src/scripts/france_variants.py s30F v9_s30F_FIN --rules "typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01,droplist:F/fb_ns_ref,droplist:F/fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:F/fb_coined_hi" --cap 2>&1 | grep -E "^rule|^alias|^addlist|total dropped|wrote|Traceback" | cut -c1-200
+python src/scripts/france/france_variants.py s30F v9_s30F_ALL2 --rules "typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05" --cap 2>&1 | grep -E "^rule|^alias|total dropped|wrote|Traceback" | cut -c1-200
+python src/scripts/france/france_lists.py v9_s30F_ALL2 v8x/F s30F 2>&1 | grep -E "^fb_|Traceback"
+python src/scripts/france/france_variants.py s30F v9_s30F_FIN --rules "typeswap:1.01,typeswap:1.01:0.6:30:300,thrpn:0.9999,legalx:1.01,droplist:F/fb_ns_ref,droplist:F/fb_nsnear_ref,protect:0.9,restore:noise_swap+noise_extra+initials+spelled_legal+glued:0.05,addlist:F/fb_coined_hi" --cap 2>&1 | grep -E "^rule|^alias|^addlist|total dropped|wrote|Traceback" | cut -c1-200
 n=v9_s30F_FIN; o=$BER_WORK/output/$n
 python $BER_WORK/official/validate_submission.py --matching $o/matching_results.tsv --candidate $o/candidate_pairs.tsv --test-dir $BER_DATA/test --check-ids | tail -3 | grep -q "^PASS" \
   && { echo "$n: PASS with --check-ids"; aws s3 cp $o/ s3://$B/ber/v8/runs/$n/output/ --recursive --exclude "*" --include "*.tsv" --only-show-errors; } || echo "$n: VALIDATOR FAILED"
