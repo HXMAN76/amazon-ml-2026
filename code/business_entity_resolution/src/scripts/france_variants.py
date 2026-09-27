@@ -126,7 +126,8 @@ def main() -> None:
     rules_list = [] if a.no_rules else a.rules.split(",")
     protect = [float(r.split(":")[1]) for r in rules_list if r.startswith("protect:")]
     restore = [r.split(":") for r in rules_list if r.startswith("restore:")]
-    rules_list = [r for r in rules_list if not r.startswith(("protect:", "restore:"))]
+    addlist = [r.split(":")[1] for r in rules_list if r.startswith("addlist:")]
+    rules_list = [r for r in rules_list if not r.startswith(("protect:", "restore:", "addlist:"))]
     exs = own.filter(pl.col("core_eq") & (pl.col("p") >= 0.999)).group_by("q", "src").len().rename({"len": "k"})
     slots = s1.filter(pl.col("ctry") == a.country).select("q").join(pl.DataFrame({"src": [2, 3]}), how="cross").join(exs, on=["q", "src"], how="left").with_columns(pl.col("k").fill_null(0))
     if any(s.startswith(("typeswap", "typeins", "typeconf")) for s in rules_list):
@@ -154,6 +155,10 @@ def main() -> None:
             c = (pl.col("name_tset") < float(k[1])) & (pl.col("addr_tset") >= 90) & (pl.col("house_eq") > 0.5) & (pl.col("p") < float(k[2]))
             if len(k) > 3 and k[3] == "shared":
                 c = c & (pl.col("addr_n") >= 2)
+        elif k[0] == "droplist":  # droplist:NAME drop the pairs listed in WORK/v8x/NAME.parquet (q, pid), e.g. a cell list from a research job
+            dl = pl.read_parquet(P["work"] / "v8x" / f"{k[1]}.parquet").select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).unique().with_columns(pl.lit(True).alias("_dl_" + k[1]))
+            own = own.join(dl, on=["q", "pid"], how="left")
+            c = pl.col("_dl_" + k[1]).fill_null(False)
         elif k[0] == "legalx":  # legalx:pmax both names carry a legal form and the two sets share none (sarl / sas, sas / s a): a sibling company.
             # Holdout: such candidates are 5-9% true and the model rejects them; France keeps 4x the US rate at a mean p of 0.91
             if "_la" not in own.columns:
@@ -300,6 +305,16 @@ def main() -> None:
         c = c.sort("p", descending=True).unique("pid", keep="first")  # one S1 per pool record
         c = c.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", "src"]).alias("_rk")).filter(pl.col("_rk") <= pl.col("cap") - pl.col("used"))
         print(f"restore {'+'.join(kinds)} p >= {pmin}: adds {c.height} pairs to {c['q'].n_unique()} {a.country} S1; by kind {sorted(c.group_by('kind').len().rows())}", flush=True)
+        out = (out.join(c.select("q", "pid").with_columns(pl.lit(True).alias("_add")), on=["q", "pid"], how="left")
+                  .with_columns(pl.when(pl.col("_add")).then(pl.max_horizontal(pl.col("p"), pl.lit(thr + 1e-4))).otherwise(pl.col("p")).cast(pl.Float32).alias("p")).drop("_add"))
+    for name in addlist:  # addlist:NAME add the listed pairs (WORK/v8x/NAME.parquet, q, pid) whose record nobody owns, within the S1's free slots
+        from france_recall import restore_candidates
+
+        al = pl.read_parquet(P["work"] / "v8x" / f"{name}.parquet").select(pl.col("q").cast(pl.Int64), pl.col("pid").cast(pl.Int64)).unique()
+        c = restore_candidates(out, thr, s1, pool).join(al, on=["q", "pid"], how="semi").filter(pl.col("slot_free"))
+        c = c.sort("p", descending=True).unique("pid", keep="first")
+        c = c.with_columns(pl.col("p").rank("ordinal", descending=True).over(["q", "src"]).alias("_rk")).filter(pl.col("_rk") <= pl.col("cap") - pl.col("used"))
+        print(f"addlist {name}: {al.height} listed, adds {c.height} pairs to {c['q'].n_unique()} S1", flush=True)
         out = (out.join(c.select("q", "pid").with_columns(pl.lit(True).alias("_add")), on=["q", "pid"], how="left")
                   .with_columns(pl.when(pl.col("_add")).then(pl.max_horizontal(pl.col("p"), pl.lit(thr + 1e-4))).otherwise(pl.col("p")).cast(pl.Float32).alias("p")).drop("_add"))
     if a.cap:
