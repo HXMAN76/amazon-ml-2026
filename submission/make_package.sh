@@ -12,10 +12,12 @@ rm -rf "$OUT" "$OUT.zip"
 mkdir -p "$OUT/output" "$OUT/code/business_entity_resolution"
 aws s3 cp "$S3/matching_results.tsv" "$OUT/output/" --only-show-errors
 aws s3 cp "$S3/candidate_pairs.tsv" "$OUT/output/" --only-show-errors
-PKG=code/business_entity_resolution
-rsync -a --exclude '__pycache__' --exclude '*.pyc' --exclude '.pytest_cache' "$PKG/src" "$OUT/$PKG/"
-cp "$PKG/README.md" "$PKG/requirements.txt" "$PKG/requirements-gpu.txt" "$PKG/reproduce_final.sh" "$OUT/$PKG/"
-cp -r "$PKG/configs" "$OUT/$PKG/"
+PKG=code/business_entity_resolution   # layout inside the zip; the sources live at the repository root
+mkdir -p "$OUT/$PKG/src"
+rsync -a --exclude '__pycache__' --exclude '*.pyc' --exclude '.pytest_cache' src/ber src/scripts src/tests "$OUT/$PKG/src/"
+cp docs/pipeline.md "$OUT/$PKG/README.md"
+cp requirements.txt requirements-gpu.txt reproduce_final.sh "$OUT/$PKG/"
+cp -r configs "$OUT/$PKG/"
 cp submission/Documentation_template.md "$OUT/"
 (cd dist && zip -qr Nooglers_submission.zip Nooglers_submission)
 python3 - "$OUT/output" <<'PY'

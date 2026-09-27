@@ -1,7 +1,7 @@
 # Running the pipeline on a GPU with SageMaker training jobs (no notebook)
 
 `sm.py` (laptop) starts a job on an **ml.g5.4xlarge** (A10G 24 GB, 16 vCPU, 64 GB RAM) that runs `make` stages of
-`code/business_entity_resolution` with `entry.py`, and streams the job's log to your terminal. You pay only while a job runs.
+the pipeline at the repository root (`src/`, `configs/`, `Makefile`) with `entry.py`, and streams the job's log to your terminal. You pay only while a job runs.
 Every job of a run shares its working directory on S3 (`s3://sagemaker-us-east-1-<account>/ber/work/<run>/`). A job restores it,
 runs its stages and saves it after every stage, so the next job continues and a failed job keeps its finished stages.
 

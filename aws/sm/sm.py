@@ -12,7 +12,7 @@
   python aws/sm/sm.py checkpoints --run v5                stage checkpoints of a run (time, files, holdout scores)
   python aws/sm/sm.py queue-setup [--instance ml.g5.4xlarge]   notebook job queue (team workflow): scripts, lifecycle, type
   python aws/sm/sm.py nb start|stop|status                start / stop the notebook barani-v5
-  python aws/sm/sm.py publish                             upload code/business_entity_resolution for the queued jobs
+  python aws/sm/sm.py publish                             upload the pipeline (src, configs, Makefile, ...) for the queued jobs
   python aws/sm/sm.py enqueue aws/queue/jobs/smoke.sh     queue a job (one at a time on the notebook GPU)
   python aws/sm/sm.py jobs                                runner beacon + pending / live / done jobs
   python aws/sm/sm.py jlog <job>                          follow a job's log until exit=<code>
@@ -42,7 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-PKG = REPO / "code" / "business_entity_resolution"
+PKG_NAME = "business_entity_resolution"   # name of the code directory on the job (/opt/code/<PKG_NAME>) and the notebook
+PKG_ITEMS = ["src", "configs", "Makefile", "reproduce_final.sh", "requirements.txt", "requirements-gpu.txt"]   # repo-root paths shipped
 ENTRY = Path(__file__).resolve().parent / "entry.py"
 REGION = "us-east-1"
 IMAGE = "763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:2.7.1-gpu-py312"   # AWS PyTorch DLC, Python 3.12, CUDA
@@ -66,14 +67,16 @@ def job_name(run: str, stages: list[str], now: datetime | None = None) -> str:
     return f"{head}-{slug[:max(room, 1)].strip('-')}-{ts}"
 
 
-def build_tarball(pkg: Path = PKG, entry: Path = ENTRY) -> bytes:
-    """The code shipped to the job: the package directory (without caches) plus entry.py, as a gzipped tar."""
+def build_tarball(root: Path = REPO, entry: Path = ENTRY) -> bytes:
+    """The code shipped to the job: the pipeline items of the repo root (without caches) under <PKG_NAME>/, plus entry.py, as a gzipped tar."""
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for p in sorted(pkg.rglob("*")):
-            rel = f"{pkg.name}/{p.relative_to(pkg).as_posix()}"
-            if p.is_file() and not any(fnmatch.fnmatch("/" + rel, pat) for pat in PKG_SKIP):
-                tar.add(p, arcname=rel)
+        for item in PKG_ITEMS:
+            top = root / item
+            for p in sorted([top] if top.is_file() else top.rglob("*")):
+                rel = f"{PKG_NAME}/{p.relative_to(root).as_posix()}"
+                if p.is_file() and not any(fnmatch.fnmatch("/" + rel, pat) for pat in PKG_SKIP):
+                    tar.add(p, arcname=rel)
         tar.add(entry, arcname="entry.py")
     return buf.getvalue()
 
@@ -479,10 +482,11 @@ def queue_setup(sess, profile: str, instance: str) -> None:
 def publish(sess, profile: str) -> None:
     """Code the jobs run: the package -> ber/code (mirror), entry.py -> ber/tools."""
     _, bucket, _ = _ids(sess)
-    rc = _aws(profile, "s3", "sync", str(PKG), f"s3://{bucket}/ber/code", "--delete", "--exclude", "*__pycache__*",
-              "--exclude", ".pytest_cache/*", "--exclude", "models/*", "--exclude", "work/*", "--exclude", ".DS_Store", "--only-show-errors")
+    only = [a for item in PKG_ITEMS for a in ("--include", f"{item}/*" if (REPO / item).is_dir() else item)]
+    rc = _aws(profile, "s3", "sync", str(REPO), f"s3://{bucket}/ber/code", "--delete", "--exclude", "*", *only, "--exclude", "*__pycache__*",
+              "--exclude", "*.pytest_cache/*", "--exclude", "*.DS_Store", "--only-show-errors")
     sess.client("s3").upload_file(str(ENTRY), bucket, "ber/tools/entry.py")
-    print(f"published {PKG.name} -> s3://{bucket}/ber/code" + ("" if rc == 0 else f" (sync exit {rc})"))
+    print(f"published {', '.join(PKG_ITEMS)} -> s3://{bucket}/ber/code" + ("" if rc == 0 else f" (sync exit {rc})"))
 
 
 def enqueue(sess, path: str, name: str | None, queue: str = "jobs") -> None:

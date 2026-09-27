@@ -1,6 +1,6 @@
 #!/bin/bash
 # Reproduces the final submission (stack s28 with the version-8 France decoding, file v8u_s28_AR; the earlier s22 route is kept in steps 1-8) from the raw TSV files.
-# Run from code/business_entity_resolution.
+# Run from the repository root.
 #   BER_DATA=<folder with train/ and test/>  BER_WORK=<scratch, about 120 GB>  bash reproduce_final.sh
 # Two Python environments are used: `ber` (Python 3.12, requirements.txt) for everything except the steps marked [torch], which need the
 # `pytorch` environment (requirements-gpu.txt: torch with CUDA, transformers, sentencepiece, plus polars, duckdb, pyyaml, scikit-learn).

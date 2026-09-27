@@ -1,5 +1,5 @@
 # v6 step f2: cross-encoder v3 (all 900k S1, 2 epochs), stack bs_w4 paired against bs_w3, set model, blend bs_final4, test weighting, errors
-# Stages are Makefile targets (code/business_entity_resolution/Makefile); checkpoints to the common bucket after each stage.
+# Stages are Makefile targets (the Makefile at the repository root); checkpoints to the common bucket after each stage.
 source <(aws s3 cp s3://sagemaker-us-east-1-645311222213/ber/queue/jobs/_header.sh -)
 [ -d $SM/work/xenc_prev ] || cp -r $SM/work/xenc $SM/work/xenc_prev  # keep the existing v2 backup (for the comparison and a rollback)
 export STK=bs_w4 STK_TAG=w4 SETM=bs_set4 FINAL=bs_final4 PREV=bs_w3

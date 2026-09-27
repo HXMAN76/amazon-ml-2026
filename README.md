@@ -103,45 +103,48 @@ Training uses only the provided labels.
 
 ```
 .
-├── README.md                          this file
-├── code/business_entity_resolution/   the pipeline (Python package `ber`), with its own README
-│   ├── src/ber/                       text normalisation, config, decision, split, tracking, validation
-│   │   └── stages/                    prepare, sample, block, prune, dense, dense_all, pairs, train_gpu,
-│   │                                  score_rest, xenc, xenc_fr, stack, predict
-│   ├── src/scripts/france/            France decoding and French adaptation (france_variants.py, france_lists.py,
-│   │                                  frenchify.py, stack_langfree.py and their helpers)
-│   ├── src/scripts/stack/             score and stack tools (avg_xenc.py, xs_merge.py, blend_stacks.py,
-│   │                                  paired_models.py, ...)
-│   ├── src/scripts/check_submission.py
-│   ├── src/tests/                     unit and end-to-end tests
-│   ├── configs/params.yaml            every tunable
-│   └── reproduce_final.sh             the exact command sequence of the final model
+├── README.md                  this file
+├── src/
+│   ├── ber/                   the pipeline package: text normalisation, config, decision, split, tracking, validation
+│   │   └── stages/            prepare, sample, block, prune, dense, dense_all, pairs, train_gpu, score_rest,
+│   │                          xenc, xenc_fr, stack, predict
+│   ├── scripts/france/        France decoding and French adaptation (france_variants.py, france_lists.py,
+│   │                          frenchify.py, stack_langfree.py, xfz*.py and their helpers)
+│   ├── scripts/stack/         score and stack tools (avg_xenc.py, xs_merge.py, blend_stacks.py, paired_models.py, ...)
+│   ├── scripts/check_submission.py
+│   └── tests/                 unit and end-to-end tests
+├── configs/params.yaml        every tunable
+├── Makefile                   stage targets with hash-based caching, `make test`
+├── reproduce_final.sh         the exact command sequence of the submitted model
+├── requirements.txt           CPU environment; requirements-gpu.txt for the torch steps
 ├── aws/
-│   ├── sm/                            job client: publish code, enqueue jobs, follow logs (sm.py)
-│   ├── queue/                         SageMaker notebook job runner (GPU and CPU lanes) and the final build jobs
-│   ├── notebook/                      runner of the team's shared notebook
-│   └── jobs/                          Qwen scoring job templates
-├── iam/                               IAM policy documents for the notebook role and teammates
+│   ├── sm/                    job client: publish code, enqueue jobs, follow logs (sm.py)
+│   ├── queue/                 SageMaker notebook job runner (GPU and CPU lanes) and the build jobs
+│   ├── notebook/              runner of the team's shared notebook
+│   └── jobs/                  Qwen scoring job templates
+├── iam/                       IAM policy documents for the notebook role and teammates
+├── submission/                methodology document for the organisers and the packaging script
 ├── docs/
-│   ├── build-log.md                   the full three-day story
-│   ├── handoffs/                      handoff notes between sessions and teammates
-│   └── archive/                       plans, architecture notes and handoffs of earlier versions
-├── data/                              place for the challenge dataset (not committed)
-└── output/                            downloaded submission files (git-ignored)
+│   ├── build-log.md           the full three-day story
+│   ├── pipeline.md            the pipeline in detail: stages, France decoding, reproduction, licences
+│   ├── handoffs/              handoff notes between sessions and teammates
+│   └── archive/               plans, architecture notes and handoffs of earlier versions
+├── data/                      place for the challenge dataset (not committed)
+└── output/                    downloaded submission files (git-ignored)
 ```
 
 ## 5. Reproducing
 
-The pipeline README, [code/business_entity_resolution/README.md](code/business_entity_resolution/README.md), gives the requirements, the environment setup and the checks. In short:
+[docs/pipeline.md](docs/pipeline.md) gives the requirements, the environment setup and the checks. In short, from the repository root:
 
 ```bash
-cd code/business_entity_resolution
 pip install -r requirements.txt            # plus requirements-gpu.txt in a second environment for the torch steps
 export BER_DATA=/path/to/dataset BER_WORK=/path/to/work
 TORCH_PYTHON=/path/to/gpu-env/bin/python bash reproduce_final.sh
 ```
 
-`reproduce_final.sh` rebuilds the `s28` stack with the final France decoding and writes `$BER_WORK/output/final/`. Expect about 6 hours on 64 vCPU and one A10G GPU.
+`reproduce_final.sh` rebuilds the submitted file `v8w_s29_FIN` (stack `s29` with the final France decoding) into `$BER_WORK/output/final/`; the
+`s28` variant `v8u_s28_FIN` is built on the way. `bash submission/make_package.sh <RUN_NAME>` packs a run into the organisers' zip layout. Expect about 6 hours on 64 vCPU and one A10G GPU.
 
 On AWS, the same steps ran as queued jobs on a SageMaker notebook: `python aws/sm/sm.py publish`, then `python aws/sm/sm.py enqueue aws/queue/jobs/<job>.sh`.
 
@@ -155,6 +158,8 @@ The jobs kept in `aws/queue/jobs/` are:
 | Document | What it holds |
 |---|---|
 | `docs/build-log.md` | Every version, every leaderboard reading, why each step was taken, what we learned |
+| `docs/pipeline.md` | The pipeline in detail: every stage, the France decoding rules, reproduction, holdout results, licences |
+| `submission/Documentation_template.md` | The methodology document for the organisers |
 | `docs/handoffs/v8-france-handoff.md` | State of the France work on day 3 (v8 recipe, delivered files, open questions) |
 | `docs/handoffs/team-handoff.md` | The team's running handoff: infrastructure, status, data facts |
 | `docs/handoffs/team-aws-handoff.md` | Handoff for teammates continuing on their own AWS accounts |
@@ -170,6 +175,9 @@ Some documents still mention files by their old names:
 
 | Old name | New name |
 |---|---|
+| `code/business_entity_resolution/` (`src/`, `configs/`, `Makefile`, `reproduce_final.sh`, requirements) | the repository root |
+| `code/business_entity_resolution/README.md` | `docs/pipeline.md` |
+| `src/scripts/<name>.py` (France and stack scripts) | `src/scripts/france/<name>.py`, `src/scripts/stack/<name>.py` |
 | `NOOGLERS_BUILD_LOG.md` | `docs/build-log.md` |
 | `handoff.md` | `docs/handoffs/team-handoff.md` |
 | `TEAMMATE_HANDOFF.md` | `docs/handoffs/team-aws-handoff.md` |

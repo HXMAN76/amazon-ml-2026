@@ -25,14 +25,16 @@ def test_job_name_is_valid_and_bounded():
 
 
 def test_tarball_has_package_and_entry_but_no_caches(tmp_path):
-    pkg = tmp_path / "business_entity_resolution"
-    (pkg / "src" / "ber" / "__pycache__").mkdir(parents=True)
-    (pkg / "src" / "ber" / "x.py").write_text("x = 1\n")
-    (pkg / "src" / "ber" / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"\0")
-    (pkg / "Makefile").write_text("all:\n")
+    root = tmp_path / "repo"
+    (root / "src" / "ber" / "__pycache__").mkdir(parents=True)
+    (root / "src" / "ber" / "x.py").write_text("x = 1\n")
+    (root / "src" / "ber" / "__pycache__" / "x.cpython-312.pyc").write_bytes(b"\0")
+    (root / "Makefile").write_text("all:\n")
+    (root / "docs").mkdir()
+    (root / "docs" / "notes.md").write_text("not shipped\n")
     entry = tmp_path / "entry.py"
     entry.write_text("print('hi')\n")
-    names = tarfile.open(fileobj=io.BytesIO(sm.build_tarball(pkg, entry)), mode="r:gz").getnames()
+    names = tarfile.open(fileobj=io.BytesIO(sm.build_tarball(root, entry)), mode="r:gz").getnames()
     assert set(names) == {"entry.py", "business_entity_resolution/Makefile", "business_entity_resolution/src/ber/x.py"}
 
 
