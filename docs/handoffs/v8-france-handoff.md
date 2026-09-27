@@ -11,8 +11,8 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 
 ## Sai-side update, 27 Sep about 16:00 IST (newest; read first)
 - **Portal: `v8w_s29_AR` 0.985875** (best so far; `s29` = `s27` + Qwen3-0.6B in the `xs2` slot, your recipe `typeswap:1.01,thrpn:0.995,protect:0.9,restore:...:0.05` + `--cap`). The team cannot upload right now; the files below are ready for any slot that opens.
-- New France error classes read from raw records (full account in `EXPERIMENTS.md` section 12):
-  1. **Namesakes in another street.** Exact-name pairs whose streets do not match, on names shared by 6+ France S1 (`bordeaux club sarl`): France 0.87% of predicted pairs vs US 0.11%; 99.5% true on the US/India holdout, so France-only. About 87% decoys. `thrpn` spares exact names and the slot fit cannot see exact-name decoys (they sit in its "sure copies" count k), so the earlier "exact names carry no decoys" was a blind spot, not a measurement. Rule `nsaway:6` in `src/scripts/france_post.py`.
+- New France error classes read from raw records (full account in `docs/archive/experiments-registry.md` section 12):
+  1. **Namesakes in another street.** Exact-name pairs whose streets do not match, on names shared by 6+ France S1 (`bordeaux club sarl`): France 0.87% of predicted pairs vs US 0.11%; 99.5% true on the US/India holdout, so France-only. About 87% decoys. `thrpn` spares exact names and the slot fit cannot see exact-name decoys (they sit in its "sure copies" count k), so the earlier "exact names carry no decoys" was a blind spot, not a measurement. Rule `nsaway:6` in `src/scripts/france/france_post.py`.
   2. **Coined aliases at the S1's exact address** (`Kelojax`, `Syndelta`; train: `Novizetaumbra`) are about 15% of `thrpn`'s high-p drops and true in train. Rule `coined` (restore, slot caps kept).
   3. `legalx` misfires on about 220 alias records (`X Co formerly known as <S1 name>`: `Co` read as a legal form); `coined` restores them.
 - Files (`s3://sagemaker-us-east-1-567503593043/runs/<name>/output/`, checker OK, not uploaded): **`v8w_s29_ARtLNC`** (`s29` + extended typeswap + `legalx` + `nsaway:6` + `coined`; estimate about 0.9870), `v8w_s29_ARtL` (control without the two new rules), `v8w_s29_ARtLN`, `v8w_s29_ARtLNaC`, `v8w_s29_ARtLN2C`, `v8w_s29_ARt`, `v8w_s29_ARtL99`, `v8w_s29_ARtL9`. Run the official validator with `--check-ids` before any upload.
@@ -22,7 +22,7 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 
 ## State
 - Team best on the portal: `s22t2c` **0.984502**. The team decides and uploads the 5 slots of 27 Sep; we deliver validated files + a note.
-- **Delivered (03:40):** five files, all official-validator PASS **with `--check-ids`**, in `s3://ml-challenge-nooglers/ml-challenge-2026/handoff-nooglers-20260926/runs/<name>/output/`, plus the note `handoff-nooglers-20260926/V8_FILES_barani.md` (same text as `V8_FILES_barani.md` here): `v8_tp985p`, `v8_s22F12n_tpp`, `v8F1s_tpp`, `v8F12n_ts`, `v8_s27_tpp` (suggested order and meaning in the note).
+- **Delivered (03:40):** five files, all official-validator PASS **with `--check-ids`**, in `s3://ml-challenge-nooglers/ml-challenge-2026/handoff-nooglers-20260926/runs/<name>/output/`, plus the note `handoff-nooglers-20260926/V8_FILES_barani.md` (same text as `docs/archive/v8-portal-files.md` here): `v8_tp985p`, `v8_s22F12n_tpp`, `v8F1s_tpp`, `v8F12n_ts`, `v8_s27_tpp` (suggested order and meaning in the note).
 - No portal score for any v8 file yet. Honest outlook: +0.001 to +0.002 together (0.9855 to 0.9865); 0.990 would need France about 0.987.
 - User decisions: team picks uploads; `barani-v5` may run through Sunday; commits on local branch `v8/france` (this worktree), **no push**; no test data for training (official README: "using only the provided training data").
 
@@ -109,7 +109,7 @@ Updated 27 Sep 2026 about 03:45 IST. Window closes 27 Sep 23:59 IST. Never name 
 - A GPU-lane job must never wait on a CPU-lane output (deadlock).
 
 ## Code (branch v8/france, local commits)
-`src/ber/stages/xenc_fr.py` (+ `src/tests/test_xenc_fr.py`), `stack.py --ctry`, scripts `france_empty`, `emptied_samples`, `xfr_report`, `xfr_slots`, `xs_merge` (`--keep-old-noise`, `--only-swaps`), `stack_predict_merge`, `france_variants` (+ `xfr`, `protect`, `typeins`, `legalhouse`, per-rule slot-fit decoy share), `aws/queue` two-lane runner, `aws/sm --queue`, jobs `aws/queue/jobs/v8*.sh`, note `V8_FILES_barani.md`.
+`src/ber/stages/xenc_fr.py` (+ `src/tests/test_xenc_fr.py`), `stack.py --ctry`, scripts `france_empty`, `emptied_samples`, `xfr_report`, `xfr_slots`, `xs_merge` (`--keep-old-noise`, `--only-swaps`), `stack_predict_merge`, `france_variants` (+ `xfr`, `protect`, `typeins`, `legalhouse`, per-rule slot-fit decoy share), `aws/queue` two-lane runner, `aws/sm --queue`, jobs `aws/queue/jobs/v8*.sh`, note `docs/archive/v8-portal-files.md`.
 
 ## Next
 1. Wait for the team's portal readings; `v8u_follow` pre-builds `thrp` 0.99 / 0.995 (+protect) on s22 and s22F12n. Deliver more files only on request (template `v8w_deliver.sh`).

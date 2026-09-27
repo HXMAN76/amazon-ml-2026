@@ -71,7 +71,7 @@ By the end, the solution was a cascade in which each stage only has to be good a
    S1 that claim the same record.
 5. **Decision.** Each pool record goes to at most one S1; one F0.5-tuned threshold; at most 5 S2 and 6 S3 matches per S1.
 6. **France decoding.** Rules for the unlabelled country, each backed by measured evidence, applied after the model
-   (`src/scripts/france_variants.py`, `france_lists.py`).
+   (`src/scripts/france/france_variants.py`, `france_lists.py`).
 
 ---
 
@@ -299,5 +299,5 @@ applied. On the French-rewritten holdout, `s28` scores 0.976026; the new stack h
   for every version above (`v0` to `v9_xF2_FIN`, including `v8w_s29_FIN`); our runs also in `s3://sagemaker-us-east-1-645311222213/ber/v8/runs/`.
 - **Model checkpoints:** team folder `work/` (cross-encoders `xenc`, `xenc2`, `xenc2sym`, `xenc2sym2`, `xenc3Q`; stacks in `work/models/`:
   `v7`, `s22`, `s26`, `s27`, ...). The newest models (`s28`, `s28L`, `s28T`, `xencFZ`, `s30F`) are on the `barani-v5` notebook disk.
-- **Code:** branch `v8/france`; the final France recipe in `code/business_entity_resolution/src/scripts/france_variants.py` and
+- **Code:** branch `v8/france`; the final France recipe in `code/business_entity_resolution/src/scripts/france/france_variants.py` and
   `france_lists.py`, the French-rewrite in `frenchify.py`, reproduction in `code/business_entity_resolution/reproduce_final.sh`.
