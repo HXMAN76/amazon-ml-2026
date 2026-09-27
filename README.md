@@ -198,3 +198,30 @@ The jobs kept in `aws/queue/jobs/` are:
 - The libraries are numpy, pandas, scikit-learn, polars, duckdb, rapidfuzz, anyascii, torch and transformers, all under MIT, BSD, ISC or Apache licences.
 
 Every model is far below the 8B limit. No external data or lookups are used. The legal-form, abbreviation and French-rewrite tables are hand-written string rules.
+
+## Team Nooglers
+
+<table align="center">
+  <tr>
+    <td align="center" width="25%">
+      <a href="https://github.com/SaiNivedh26"><img src="https://github.com/SaiNivedh26.png?size=200" width="100" alt="Sai Nivedh V"></a><br>
+      <b>Sai Nivedh V</b><br>
+      <a href="https://github.com/SaiNivedh26">@SaiNivedh26</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/Git-Roshan09"><img src="https://github.com/Git-Roshan09.png?size=200" width="100" alt="Roshan T"></a><br>
+      <b>Roshan T</b><br>
+      <a href="https://github.com/Git-Roshan09">@Git-Roshan09</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/HXMAN76"><img src="https://github.com/HXMAN76.png?size=200" width="100" alt="Hari Heman V K"></a><br>
+      <b>Hari Heman V K</b><br>
+      <a href="https://github.com/HXMAN76">@HXMAN76</a>
+    </td>
+    <td align="center" width="25%">
+      <a href="https://github.com/imbaraniii"><img src="https://github.com/imbaraniii.png?size=200" width="100" alt="Baranidharan S"></a><br>
+      <b>Baranidharan S</b><br>
+      <a href="https://github.com/imbaraniii">@imbaraniii</a>
+    </td>
+  </tr>
+</table>
