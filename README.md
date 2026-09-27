@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution, Amazon ML Challenge 2026, Team Nooglers: leaderboard error (1 − F0.5) fell from 0.056 at the first upload (v2, 0.944) to 0.0123 at the best upload (v8w_s29_FIN, 0.987745), 78% less.">
+  <img src="docs/assets/banner.svg" width="100%" alt="Business Entity Resolution: Amazon ML Challenge 2026, Team Nooglers. Best leaderboard score 0.987745, locked holdout 0.99088, 10.3M pool records, 12 uploads in 3 days.">
 </p>
 
 <p align="center">
