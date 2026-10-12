@@ -31,6 +31,7 @@ MODEL = "intfloat/multilingual-e5-small"
 DATA_DIR = "xenc"  # WORK sub-folder of the pair lists and scores (`--dir xenc_v7` keeps a second set); the fitted model always lives in xenc/model
 MODEL_DIR = "xenc/model"  # WORK-relative folder of the fitted cross-encoder (set by --model-dir)
 OVERRIDES: dict = {}   # parameter overrides from --set
+DROP_TT = False        # encoders with a single token-type slot (gte-multilingual) must not get segment ids
 DIGITS = re.compile(r"\d+")
 
 
@@ -52,7 +53,10 @@ def encode_pairs(tok, ta: list[str], tb: list[str], max_len: int, decoder: bool)
     import torch
 
     if not decoder:
-        return tok(ta, tb, padding=True, truncation=True, max_length=max_len, return_tensors="pt").to("cuda")
+        enc = tok(ta, tb, padding=True, truncation=True, max_length=max_len, return_tensors="pt")
+        if DROP_TT:
+            enc.pop("token_type_ids", None)
+        return enc.to("cuda")
     ids = tok([f"Same business?\nA: {a}\nB: {b}" for a, b in zip(ta, tb)], add_special_tokens=False, truncation=True, max_length=max_len - 1)["input_ids"]
     end, pad = tok.convert_tokens_to_ids("<|im_end|>"), tok.pad_token_id
     n = max(len(x) for x in ids) + 1
@@ -154,15 +158,18 @@ def train() -> None:
     if OVERRIDES.get("max_rows"):  # smoke test: a small random subset
         d = d.sample(int(OVERRIDES["max_rows"]), seed=0)
     ta, tb, y = d["ta"].to_list(), d["tb"].to_list(), d["label"].to_numpy().astype(np.float32)
-    tok = AutoTokenizer.from_pretrained(MODEL)
+    rc = bool(int(prm.get("remote_code", 0)))  # models that ship their own architecture code (gte-multilingual-reranker)
+    tok = AutoTokenizer.from_pretrained(MODEL, trust_remote_code=rc)
     dec = is_decoder(MODEL)
     sym = int(prm.get("symmetric", 0))
     seed = int(prm.get("train_seed", 0))
     torch.manual_seed(seed)  # head initialisation and dropout; the order of the pairs uses the same seed
     if dec:
         tok.padding_side = "right"
-    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, **({"dtype": torch.float32} if dec else {}))
+    model = AutoModelForSequenceClassification.from_pretrained(MODEL, num_labels=1, trust_remote_code=rc, **({"dtype": torch.float32} if dec else {}))
     model.config.pad_token_id = tok.pad_token_id
+    global DROP_TT
+    DROP_TT = getattr(model.config, "type_vocab_size", 2) < 2
     if dec:  # 0.6B parameters in fp32 with Adam leave too little room for activations on a 24 GB GPU otherwise
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
@@ -216,11 +223,14 @@ def score(split: str) -> None:
     d = pl.read_parquet(P["work"] / DATA_DIR / f"{split}.parquet")
     if OVERRIDES.get("max_rows"):  # smoke test
         d = d.head(int(OVERRIDES["max_rows"]))
-    tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR)
+    rc = bool(int(prm.get("remote_code", 0)))
+    tok = AutoTokenizer.from_pretrained(P["work"] / MODEL_DIR, trust_remote_code=rc)
     dec = is_decoder(json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", ""))
     mtype = json.loads((P["work"] / MODEL_DIR / "config.json").read_text()).get("model_type", "")
     bf = dec or "deberta" in mtype or bool(int(prm.get("bf16", 0)))
-    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR).cuda().to(torch.bfloat16 if bf else torch.float16).eval()
+    model = AutoModelForSequenceClassification.from_pretrained(P["work"] / MODEL_DIR, trust_remote_code=rc).cuda().to(torch.bfloat16 if bf else torch.float16).eval()
+    global DROP_TT
+    DROP_TT = getattr(model.config, "type_vocab_size", 2) < 2
     ta, tb = d["ta"].to_list(), d["tb"].to_list()
     order = np.argsort([len(a) + len(b) for a, b in zip(ta, tb)])
     xs = np.zeros(len(order), dtype=np.float32)
